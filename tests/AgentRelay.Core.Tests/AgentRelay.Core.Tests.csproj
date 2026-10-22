@@ -17,6 +17,7 @@
     <Using Include="Microsoft.VisualStudio.TestTools.UnitTesting" />
     <ProjectReference Include="../../src/AgentRelay.Core/AgentRelay.Core.csproj" />
     <ProjectReference Include="../../src/AgentRelay.Cli/AgentRelay.Cli.csproj" />
+    <ProjectReference Include="../../src/AgentRelay.Mcp/AgentRelay.Mcp.csproj" />
   </ItemGroup>
 
 </Project>

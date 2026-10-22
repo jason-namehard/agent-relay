@@ -1,6 +1,6 @@
 # Agent Relay 协议提案
 
-状态：`relay_version: 1`，Phase 2 单次执行已实现；MCP 与自动会话恢复按后续阶段交付。跨进程 JSON 使用 UTF-8，时间使用带 `Z` 的 UTC RFC 3339；GUI 按用户时区显示。实际命令见 [README](../README.md)。
+状态：`relay_version: 1`，单次执行、精确会话继续、stdio MCP 与经审阅的配置迁移已实现。跨进程 JSON 使用 UTF-8，时间使用带 `Z` 的 UTC RFC 3339；GUI 按用户时区显示。实际命令见 [README](../README.md)。
 
 ## 任务与事件
 
@@ -135,7 +135,11 @@ JSON 统一返回 `{relay_version, ok, task_id, state, next_action, data, error}
 
 自动投递成功时固定等待文案：`任务 {task_id} 已交接，正在等待结果文件 {result_path}。请结束当前轮；收到继续消息或用户粘贴提示词后再处理。` 手工模式返回 `awaiting_manual`，明确说明尚需用户把请求提交给 B。
 
-MCP Phase 4 只映射同一核心操作为 `relay_task_dispatch`、`relay_task_ack`、`relay_task_complete`、`relay_task_fail`、`relay_task_status`、`relay_prompt_show` 等工具；不设置无限等待或后台轮询工具。权限、幂等及错误语义与 CLI 相同。
+Phase 4 stdio MCP 映射共享核心的 `relay_task_dispatch`、`relay_task_ack`、`relay_task_start`、`relay_task_complete`、`relay_task_fail`、`relay_task_status`、`relay_prompt_show` 七个工具。服务器启动时绑定 Agent，from/sender 不由工具参数提供；读取仅限参与任务。没有无限等待或后台轮询工具。权限、幂等、当前尝试和完成要求与 CLI 相同。
+
+工具结果同时返回文本 JSON 与 structuredContent。错误使用 `isError=true` 和核心错误码；手工等待、投递未知和接收方显式失败仍须按任务状态处理，不自动重新执行。管理权限和配置批准不通过 MCP 暴露。MCP 协议协商、JSON-RPC 和取消由官方 SDK 处理，stdout 仅用于协议，诊断输出到 stderr，EOF 退出。
+
+迁移使用 `planned → applying → applied → validated`，回滚使用 `rolling_back → rolled_back`。中断的 applying/rolling_back 由 `migration recover` 根据精确原始/候选字节判断，内容不匹配则为 unknown，不自动写文件。每份提案保存单一文件的原始、候选和前后片段；apply/rollback 均须显式批准与原因，并拒绝覆盖后续修改。`disable_old` 必须引用已 validated 的新迁移，验证只接受当前尝试中匹配 route-id 的 MCP 派发、后续 task.completed 与 session.resume_submitted/completed；各批准与变化写 migration_events，备份不进入 TTL。
 
 ## TTL 与清理
 

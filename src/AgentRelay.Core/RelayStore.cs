@@ -47,6 +47,11 @@ public sealed class RelayStore
             CREATE TABLE IF NOT EXISTS desktop (id INTEGER PRIMARY KEY CHECK(id=1), executable TEXT NOT NULL);
             CREATE TABLE IF NOT EXISTS continuations (task_id TEXT NOT NULL, attempt_id TEXT NOT NULL,
                 event TEXT NOT NULL, json TEXT NOT NULL, PRIMARY KEY(task_id,attempt_id,event));
+            CREATE TABLE IF NOT EXISTS adapter_sources (id TEXT NOT NULL, version TEXT NOT NULL,
+                json TEXT NOT NULL, PRIMARY KEY(id,version));
+            CREATE TABLE IF NOT EXISTS migrations (id TEXT PRIMARY KEY, json TEXT NOT NULL);
+            CREATE TABLE IF NOT EXISTS migration_events (seq INTEGER PRIMARY KEY AUTOINCREMENT,
+                migration_id TEXT NOT NULL, json TEXT NOT NULL);
             """;
         command.ExecuteNonQuery();
         using var insert = connection.CreateCommand();

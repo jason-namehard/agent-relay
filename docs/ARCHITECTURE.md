@@ -66,7 +66,7 @@ sequenceDiagram
 
 建议账本位置 `%LOCALAPPDATA%\AgentRelay\relay.db`；临时目录 `%LOCALAPPDATA%\AgentRelay\workspace\<task_id>\`；AMQ 根目录在受管 `transport\amq\`，与 Git 工作区分离。`RELAY_HOME` 可显式覆盖本项目数据根目录，迁移须验证，不静默寻找替代目录。
 
-SQLite 表包括 `settings`、`agents`、`permissions`、`adapters`、`tasks`、`callbacks`、`events`、`artifacts`、`outbox`、`notifications`，Phase 2 增加 `executors/executions`，Phase 3 增加 `resumers/continuations/desktop`。当前尝试保存在任务聚合内，旧尝试通过产物、回调和事件关联；迁移备份表留在 Phase 4。事件和当前状态同事务提交，写事务串行化并递增 `revision`，不另建事件溯源框架。幂等键用唯一约束，原始请求字段直接比较，不增加摘要层。
+SQLite 表包括 `settings`、`agents`、`permissions`、`adapters`、`tasks`、`callbacks`、`events`、`artifacts`、`outbox`、`notifications`，Phase 2 增加 `executors/executions`，Phase 3 增加 `resumers/continuations/desktop`，Phase 4 增加 `adapter_sources/migrations/migration_events`。当前尝试保存在任务聚合内，旧尝试通过产物、回调和事件关联；迁移原始、候选和备份文件保存在独立的 migrations 目录，不进入任务 TTL。事件和当前状态同事务提交，写事务串行化并递增 `revision`，不另建事件溯源框架。幂等键用唯一约束，原始请求字段直接比较，不增加摘要层。
 
 Phase 2 增加 `executors` 和 `executions`。后者以任务和尝试为唯一键，记录 worker、会话和领取租期，状态为 `scheduled → receiving → running → finished`；已证明启动失败为 `launch_failed`，无法确认结果为 `unknown`，旧结果不再适用为 `discarded`。后台 worker 不继承派发终端的输出管道，向受管报告文件输出；派发进程在启动后退出。
 

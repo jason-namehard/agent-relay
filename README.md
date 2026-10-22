@@ -24,8 +24,10 @@ flowchart LR
 - 默认三天的受管 Markdown 文件 TTL、预览清理、重启恢复与持久 Inbox。
 - 精确 Codex 会话继续：`codex-queue` 保存提交回执，`codex-exec-resume` 验证原 UUID 的一次完成轮次。
 - Windows 本地通知、关闭程序后的点击激活、提示词窗口和一键复制；继续提交独立去重。
+- stdio MCP 的七个任务工具，启动时绑定 Agent 身份，与 CLI 共用方向权限和完成契约。
+- JSON/TOML 配置迁移的精确预览、来源版本登记、备份、明确批准、验证、独立停旧和回滚。
 
-阶段为 **Phase 3 — Exact Session Continuation**。本机 Windows 已完成 A→B→原 A 的真实 CLI 闭环，原会话保留旧上下文；也验证了原生 queue 回执、通知冷启动激活和复制。MCP/迁移和管理 GUI 分别在 Phase 4/5。
+阶段为 **Phase 4 — MCP & Reviewed Migrations**。本机 Windows 已通过候选配置启动 MCP，派发真实 B，再恢复同一个 A 会话；迁移完成新入口验证、单独批准停旧及回滚。当前 80 项自动回归通过，管理 GUI 在 Phase 5。
 
 ## 构建与验证
 
@@ -147,6 +149,28 @@ dotnet $relay --home $dataRoot prompt copy --task $task.task_id
 
 验证真实 A→B→原 A 闭环可给 `verify-real-agents.ps1` 添加 `-ResumeOrigin`。它创建独立测试会话，检查旧上下文标记、B 的结果和重复继续去重；不向用户当前聊天投递消息。
 
+## stdio MCP 与配置迁移
+
+发布包在 `mcp/` 提供独立 MCP 入口。宿主为每个 Agent 启动一个实例，共用同一个 Relay 数据目录：
+
+```powershell
+dotnet ./artifacts/relay/mcp/relay-mcp.dll --home $dataRoot --agent agent-a
+```
+
+MCP 提供派发、ack、start、complete、fail、单次 status 和提示词七个工具。身份在启动时固定，模型不能用参数切换派发方或回调方；不会暴露修改权限、批准迁移或无限等待工具。`execute=true` 可启动独立的单次 worker，MCP 客户端关闭后仍能提交结果和继续原会话。
+
+已有配置先只读盘点，再生成准确的变更提案：
+
+```powershell
+dotnet $relay --home $dataRoot adapter inspect-config --path C:/Users/you/.codex/config.toml --format toml
+dotnet $relay --home $dataRoot migration plan --manifest ./migration.json
+dotnet $relay --home $dataRoot migration show --id <migration-UUID>
+```
+
+预览不修改配置；应用和回滚须在审阅后显式 `--approve --reason`。JSON/TOML 以唯一精确片段变更，保留 BOM、换行和无关内容；文件已变化则停止。旧入口须引用已验证的新迁移，单独提案、单独批准停用。备份位于数据目录的 `migrations/`，不受三天 TTL 清理。完整 manifest、MCP 参数、证据与恢复流程见 [Phase 4 指南](docs/PHASE4.md)。
+
+真实闭环验证可给 `verify-real-agents.ps1` 添加 `-McpMigration`，它只修改独立测试配置，验证 MCP 派发、真实完成与原会话继续，再验证单独停旧和回滚；会消耗模型额度。
+
 ## 超时、重试与清理
 
 ```powershell
@@ -173,5 +197,7 @@ dotnet $relay --home $dataRoot cleanup --apply
 [项目概要](docs/PROJECT_BRIEF.md) · [架构](docs/ARCHITECTURE.md) · [协议](docs/PROTOCOL.md) · [适配器](docs/ADAPTERS.md) · [UI 规格](docs/UI_SPEC.md) · [研究与路线图](docs/ROADMAP_AND_RESEARCH.md)
 
 [Phase 1 验收](docs/PHASE1.md) · [Phase 2 验收](docs/PHASE2.md) · [Phase 3 验收](docs/PHASE3.md)
+
+[Phase 4 使用与验收](docs/PHASE4.md)
 
 应用代码采用 [MIT License](LICENSE)。依赖和外部工具的来源、许可及分发说明见 [Third-party notices](THIRD_PARTY_NOTICES.md)。

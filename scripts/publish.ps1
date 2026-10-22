@@ -4,6 +4,8 @@ $projectRoot = Split-Path -Parent $PSScriptRoot
 $destination = Join-Path $projectRoot 'artifacts/relay'
 & $Dotnet publish (Join-Path $projectRoot 'src/AgentRelay.Cli/AgentRelay.Cli.csproj') -c Release --no-restore -o $destination
 if ($LASTEXITCODE -ne 0) { throw 'Publish failed' }
+& $Dotnet publish (Join-Path $projectRoot 'src/AgentRelay.Mcp/AgentRelay.Mcp.csproj') -c Release --no-restore -o (Join-Path $destination 'mcp')
+if ($LASTEXITCODE -ne 0) { throw 'MCP publish failed' }
 if ($IncludeDesktop) {
     if (-not $IsWindows) { throw 'The desktop helper must be built on Windows' }
     & $Dotnet publish (Join-Path $projectRoot 'src/AgentRelay.Notify/AgentRelay.Notify.csproj') -c Release --no-restore -o (Join-Path $destination 'desktop')

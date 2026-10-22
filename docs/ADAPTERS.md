@@ -1,6 +1,6 @@
 # Agent Relay 适配器与迁移
 
-状态：AMQ 传输、Codex 只读单次执行、精确会话继续及 Windows 通知已实现；迁移按 Phase 4 交付。适配器不得持有独立任务状态机；任务契约见 [PROTOCOL](PROTOCOL.md)。
+状态：AMQ 传输、Codex 只读单次执行、精确会话继续、Windows 通知、stdio MCP 与经审阅的 JSON/TOML 迁移已实现。适配器不得持有独立任务状态机；任务契约见 [PROTOCOL](PROTOCOL.md)。
 
 ## 接口与能力
 
@@ -58,6 +58,8 @@ Codex、Claude 的路径及覆盖规则需由宿主版本的官方文档、诊�
 指定 `auto` 但派发能力不满足时转 `awaiting_manual` 并返回人工操作状态；禁止悄悄换主机、会话或执行命令。图中的权限和能力表现见 [UI_SPEC](UI_SPEC.md)。
 
 ## 迁移与回滚
+
+Phase 4 的实际用法、manifest、来源登记和验证证据见 [PHASE4](PHASE4.md)。`adapter inspect-config` 只读盘点 JSON/TOML MCP 条目；`adapter sources` 展示声明来源，不等同于运行时能力验证。迁移逐文件、逐片段进行，不自动转译或执行发现的 skills/脚本代码。
 
 1. 只读盘点用户选择的插件、skills、MCP 和脚本，提取命令、配置位置、会话来源、回调及既有权限；命令内容先作为数据存档。
 2. 生成适配器提案：能力映射、来源、许可证、依赖、版本、保留项与不支持项。Agent 提交的代码只保存用于审阅，不自动执行。

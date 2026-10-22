@@ -1,6 +1,6 @@
 # Agent Relay 发布包
 
-CLI 需要 .NET 10 runtime；Windows x64 的 `desktop/AgentRelay.Notify.exe` 自带所需运行库。AMQ 与 Codex CLI 由使用者单独安装并登记，不包含在包内。
+CLI 与 `mcp/relay-mcp.dll` 需要 .NET 10 runtime；Windows x64 的 `desktop/AgentRelay.Notify.exe` 自带所需运行库。AMQ 与 Codex CLI 由使用者单独安装并登记，不包含在包内。
 
 在解压目录运行 PowerShell：
 
@@ -15,6 +15,8 @@ dotnet $relay --home $dataRoot desktop configure --executable ./desktop/AgentRel
 ```
 
 按 [项目使用文档](https://github.com/jason-namehard/agent-relay#readme) 登记 Agent、验证路径、授权方向，再选择手工交接或单次 Codex worker。原生 CLI 路径必须是明确的可执行文件；路径验证不修改 Agent 配置。
+
+stdio MCP 由宿主启动，使用 `dotnet ./mcp/relay-mcp.dll --home <数据目录> --agent <已登记Agent>`；每个实例绑定一个 Agent。JSON/TOML 配置接入按 [Phase 4 迁移指南](https://github.com/jason-namehard/agent-relay/blob/main/docs/PHASE4.md) 先 plan/show，审阅后 apply；旧入口独立验证与批准，回滚拒绝覆盖后续修改。升级已有数据目录先运行一次 `init` 创建新增表。
 
 [精确会话恢复指南](https://github.com/jason-namehard/agent-relay/blob/main/docs/PHASE3.md) 说明 `codex-queue`、`codex-exec-resume` 和 `origin.json`。没有原会话能力时，Inbox 保留结果与继续提示词：
 

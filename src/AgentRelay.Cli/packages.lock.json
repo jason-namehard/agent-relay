@@ -53,10 +53,16 @@
           "SQLitePCLRaw.core": "2.1.13"
         }
       },
+      "Tomlyn": {
+        "type": "Transitive",
+        "resolved": "2.10.1",
+        "contentHash": "ykjOY3IpYmC4SpPcAZRTl/w2jTmhPMDydHq8xcV7tTBAQ22nKBsOkPqauIrZlMjHm03cmKfV23UOPscKp+J4Og=="
+      },
       "agentrelay.core": {
         "type": "Project",
         "dependencies": {
-          "Microsoft.Data.Sqlite": "[10.0.13, )"
+          "Microsoft.Data.Sqlite": "[10.0.13, )",
+          "Tomlyn": "[2.10.1, )"
         }
       }
     }

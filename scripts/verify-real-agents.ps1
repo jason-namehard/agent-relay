@@ -5,17 +5,20 @@ param(
     [string]$Dotnet = 'dotnet',
     [string]$WorkDirectory,
     [switch]$ResumeOrigin,
+    [switch]$McpMigration,
     [ValidateRange(10, 1800)][int]$TimeoutSeconds = 300
 )
 $ErrorActionPreference = 'Stop'
 $projectRoot = Split-Path -Parent $PSScriptRoot
+if ($McpMigration) { $ResumeOrigin = $true }
 if ([string]::IsNullOrWhiteSpace($WorkDirectory)) {
     $WorkDirectory = Join-Path $projectRoot ('artifacts/real-agents/' + [guid]::NewGuid())
 }
 $WorkDirectory = [IO.Path]::GetFullPath($WorkDirectory)
 New-Item -ItemType Directory -Path $WorkDirectory -Force | Out-Null
 $dataRoot = Join-Path $WorkDirectory 'relay'
-& $Dotnet build (Join-Path $projectRoot 'src/AgentRelay.Cli/AgentRelay.Cli.csproj') -c Release
+$buildTarget = if ($McpMigration) { 'AgentRelay.slnx' } else { 'src/AgentRelay.Cli/AgentRelay.Cli.csproj' }
+& $Dotnet build (Join-Path $projectRoot $buildTarget) -c Release
 if ($LASTEXITCODE -ne 0) { throw 'Build failed' }
 $cli = Join-Path $projectRoot 'src/AgentRelay.Cli/bin/Release/net10.0/relay.dll'
 function Invoke-Relay([string[]]$Arguments) {
@@ -85,10 +88,100 @@ if ($ResumeOrigin) {
         ConvertTo-Json | Set-Content -LiteralPath $originPath -Encoding utf8
     $originArguments = @('--origin-session',$originPath)
 }
-$clock = [Diagnostics.Stopwatch]::StartNew()
 $dispatchArguments = @('task','dispatch','--from','agent-a','--to','agent-b','--request',$request,
     '--mode','auto','--idempotency-key','real-flow-1','--execute','--execution-timeout-seconds',"$TimeoutSeconds") + $originArguments
-$dispatch = Invoke-Relay $dispatchArguments
+if ($McpMigration) {
+    $mcpDll = Join-Path $projectRoot 'src/AgentRelay.Mcp/bin/Release/net10.0/relay-mcp.dll'
+    $runtime = (Get-Command $Dotnet).Source
+    $hostConfig = Join-Path $WorkDirectory 'host-config.toml'
+    $legacyArgs = @($mcpDll,'--home',$dataRoot,'--agent','agent-a','--route-id','legacy') | ConvertTo-Json -Compress
+    $originalConfig = "# Existing local route`n[mcp_servers.legacy]`ncommand = $($runtime | ConvertTo-Json -Compress)`nargs = $legacyArgs`nenabled = true`n"
+    Set-Content -LiteralPath $hostConfig -Value $originalConfig -Encoding utf8 -NoNewline
+    $newArgs = @($mcpDll,'--home',$dataRoot,'--agent','agent-a','--route-id','{{migration_id}}') | ConvertTo-Json -Compress
+    $revision = git -C $projectRoot rev-parse HEAD
+    if (git -C $projectRoot status --porcelain) { $revision += '+working-tree' }
+    $source = @{adapter_id='relay-mcp';version='0.4.0';repository='https://github.com/jason-namehard/agent-relay';
+        revision=$revision;license='MIT';capabilities=@('stdio_mcp','completion_callback','session_resume');dependencies=@('.NET 10');limitations=@('Local stdio')}
+    $manifest = Join-Path $WorkDirectory 'migration.json'
+    $proposal = @{source=$source;target_path=$hostConfig;format='toml';before='';
+        after="`n[mcp_servers.agent_relay]`ncommand = $($runtime | ConvertTo-Json -Compress)`nargs = $newArgs`n"}
+    $proposal | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $manifest -Encoding utf8
+    $migrationPlan = (Invoke-Relay @('migration','plan','--manifest',$manifest)).data.plan
+    if ([IO.File]::ReadAllText($hostConfig) -ne $originalConfig) { throw 'Planning changed the host fixture' }
+    Invoke-Relay @('migration','apply','--id',$migrationPlan.migration_id,'--approve','--reason','Reviewed isolated integration fixture') | Out-Null
+    $inventory = Invoke-Relay @('adapter','inspect-config','--path',$hostConfig,'--format','toml')
+    function Test-CodexMcpConfig([bool]$LegacyEnabled) {
+        $probeDirectory = Join-Path $WorkDirectory 'host-config-probe'
+        New-Item -ItemType Directory -Path $probeDirectory -Force | Out-Null
+        Copy-Item -LiteralPath $hostConfig -Destination (Join-Path $probeDirectory 'config.toml')
+        $probe = [Diagnostics.ProcessStartInfo]::new([IO.Path]::GetFullPath($Codex))
+        $probe.UseShellExecute=$false; $probe.CreateNoWindow=$true
+        $probe.RedirectStandardOutput=$true; $probe.RedirectStandardError=$true
+        $probe.StandardOutputEncoding=[Text.UTF8Encoding]::new($false)
+        $probe.Environment['CODEX_HOME']=$probeDirectory
+        foreach ($argument in @('mcp','list','--json')) { $probe.ArgumentList.Add($argument) }
+        $process = [Diagnostics.Process]::Start($probe)
+        $output = $process.StandardOutput.ReadToEndAsync(); $diagnostics = $process.StandardError.ReadToEndAsync()
+        if (-not $process.WaitForExit(20000)) { $process.Kill($true); $process.WaitForExit(); throw 'Codex MCP config probe timed out' }
+        if ($process.ExitCode -ne 0) { throw $diagnostics.GetAwaiter().GetResult() }
+        $raw = $output.GetAwaiter().GetResult()
+        $raw | Set-Content -LiteralPath (Join-Path $WorkDirectory "codex-mcp-legacy-$LegacyEnabled.json") -Encoding utf8
+        $servers = $raw | ConvertFrom-Json
+        if (@($servers | Where-Object {$_.name -eq 'agent_relay' -and $_.enabled}).Count -ne 1 -or
+            @($servers | Where-Object {$_.name -eq 'legacy' -and $_.enabled -eq $LegacyEnabled}).Count -ne 1) {
+            throw 'Codex did not recognize the expected new and legacy route settings'
+        }
+    }
+    Test-CodexMcpConfig $true
+    $entry = @($inventory.data.mcp_entries | Where-Object name -eq 'agent_relay')[0]
+    $transport = [Diagnostics.ProcessStartInfo]::new($entry.command)
+    $transport.UseShellExecute=$false; $transport.CreateNoWindow=$true
+    $transport.RedirectStandardInput=$true; $transport.RedirectStandardOutput=$true; $transport.RedirectStandardError=$true
+    $transport.StandardInputEncoding=[Text.UTF8Encoding]::new($false)
+    $transport.StandardOutputEncoding=[Text.UTF8Encoding]::new($false)
+    $transport.StandardErrorEncoding=[Text.UTF8Encoding]::new($false)
+    foreach ($argument in $entry.arguments) { $transport.ArgumentList.Add($argument) }
+    $mcp = [Diagnostics.Process]::Start($transport); $mcpErrors = $mcp.StandardError.ReadToEndAsync()
+    $wire = [Collections.Generic.List[string]]::new()
+    function Send-Mcp($Message) { $mcp.StandardInput.WriteLine(($Message | ConvertTo-Json -Depth 20 -Compress)); $mcp.StandardInput.Flush() }
+    function Receive-Mcp($Id) {
+        for ($i=0; $i -lt 100; $i++) {
+            $line = $mcp.StandardOutput.ReadLineAsync()
+            if (-not $line.Wait(20000)) { throw 'MCP response timed out' }
+            $raw = $line.GetAwaiter().GetResult()
+            if ($null -eq $raw) { throw 'MCP transport closed unexpectedly' }
+            $wire.Add($raw); $message = $raw | ConvertFrom-Json
+            if ($message.id -eq $Id) {
+                if ($message.error) { throw ($message.error | ConvertTo-Json -Compress) }
+                return $message.result
+            }
+        }
+        throw 'MCP response ID was not found'
+    }
+    try {
+        Send-Mcp @{jsonrpc='2.0';id=1;method='initialize';params=@{protocolVersion='2025-11-25';capabilities=@{};clientInfo=@{name='relay-phase4-verifier';version='1'}}}
+        Receive-Mcp 1 | Out-Null
+        Send-Mcp @{jsonrpc='2.0';method='notifications/initialized';params=@{}}
+        Send-Mcp @{jsonrpc='2.0';id=2;method='tools/list';params=@{}}
+        if (@((Receive-Mcp 2).tools).Count -ne 7) { throw 'Expected the seven Relay task tools' }
+        $clock = [Diagnostics.Stopwatch]::StartNew()
+        Send-Mcp @{jsonrpc='2.0';id=3;method='tools/call';params=@{name='relay_task_dispatch';arguments=@{
+            to='agent-b';content=$instruction.request_markdown;idempotency_key='real-flow-1';mode='auto';execute=$true;
+            timeout_seconds=$TimeoutSeconds;origin_session=(Get-Content $originPath -Raw | ConvertFrom-Json)}}}
+        $reply = Receive-Mcp 3
+        if ($reply.isError) { throw ($reply | ConvertTo-Json -Depth 10) }
+        $dispatch = $reply.structuredContent
+        $clock.Stop()
+    } finally {
+        $mcp.StandardInput.Close()
+        if (-not $mcp.WaitForExit(10000)) { $mcp.Kill($true); $mcp.WaitForExit(); throw 'MCP server did not exit on stdin EOF' }
+        $wire | Set-Content -LiteralPath (Join-Path $WorkDirectory 'mcp-wire.jsonl') -Encoding utf8
+        $mcpErrors.GetAwaiter().GetResult() | Set-Content -LiteralPath (Join-Path $WorkDirectory 'mcp-stderr.log') -Encoding utf8
+    }
+} else {
+    $clock = [Diagnostics.Stopwatch]::StartNew()
+    $dispatch = Invoke-Relay $dispatchArguments
+}
 $clock.Stop()
 if ($clock.Elapsed.TotalSeconds -ge 10) { throw 'Dispatch did not return before task execution finished' }
 $task = $dispatch.data.task
@@ -129,6 +222,21 @@ if ($ResumeOrigin) {
     $summary.continuation_state = $continuation.state
     $summary.original_context_recovered = $true
     $summary.duplicate_continuation = 'deduplicated'
+}
+if ($McpMigration) {
+    Invoke-Relay @('migration','validate','--id',$migrationPlan.migration_id,'--task',$task.task_id) | Out-Null
+    $proposal.before='enabled = true'; $proposal.after='enabled = false'; $proposal.purpose='disable_old'; $proposal.validated_migration_id=$migrationPlan.migration_id
+    $proposal | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $manifest -Encoding utf8
+    $disable = (Invoke-Relay @('migration','plan','--manifest',$manifest)).data.plan
+    Invoke-Relay @('migration','apply','--id',$disable.migration_id,'--approve','--reason','New route verified; approve old fixture entry disable') | Out-Null
+    if (-not [IO.File]::ReadAllText($hostConfig).Contains('enabled = false')) { throw 'Old entry was not disabled' }
+    Test-CodexMcpConfig $false
+    Invoke-Relay @('migration','rollback','--id',$disable.migration_id,'--approve','--reason','Restore fixture old entry') | Out-Null
+    Invoke-Relay @('migration','rollback','--id',$migrationPlan.migration_id,'--approve','--reason','Restore fixture baseline') | Out-Null
+    if ([IO.File]::ReadAllText($hostConfig) -ne $originalConfig) { throw 'Rollback did not preserve the original fixture' }
+    if (-not (Test-Path $migrationPlan.backup_path)) { throw 'Migration backup missing' }
+    $summary.mcp_dispatch=$true; $summary.migration_id=$migrationPlan.migration_id
+    $summary.workflow_validated=$true; $summary.separate_old_entry_disable=$true; $summary.rollback_restored_original=$true
 }
 $summary | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $WorkDirectory 'summary.json') -Encoding utf8
 [pscustomobject]$summary

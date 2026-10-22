@@ -12,8 +12,13 @@ Agent Relay 的应用代码按本仓库 MIT License 提供。研究对象不是�
 | System.CommandLine | 2.0.13 | MIT；.NET Foundation and Contributors | 命令行解析及帮助 |
 | SQLitePCLRaw.bundle_e_sqlite3 / core / lib.e_sqlite3 / provider.e_sqlite3 | 2.1.13 | Apache-2.0；Copyright 2014–2024 SourceGear, LLC | SQLite 原生桥接及二进制 |
 | SQLite | 由 lib.e_sqlite3 包携带 | [上游 public domain 声明](https://www.sqlite.org/copyright.html) | 嵌入式数据库引擎 |
+| ModelContextProtocol / ModelContextProtocol.Core | 2.3.0 | 包声明 Apache-2.0；Model Context Protocol a Series of LF Projects, LLC，许可转换中的 MIT 内容另见原文 | stdio MCP 协议、协商、工具与客户端测试 |
+| Microsoft.Extensions.Hosting 及实际传递依赖 | 10.0.13；完整版本见 lockfile | MIT；.NET Foundation and Contributors | MCP 服务生命周期、依赖注入及 stderr 日志 |
+| Tomlyn | 2.10.1 | BSD-2-Clause；Copyright 2019–2026 Alexandre Mutel | TOML 读取与语法校验 |
 
 许可全文位于 `licenses/`。Microsoft.Data.Sqlite 来源为 [dotnet/efcore](https://github.com/dotnet/efcore)，System.CommandLine 来源为 [dotnet/command-line-api](https://github.com/dotnet/command-line-api)，SQLitePCLRaw 来源为 [ericsink/SQLitePCL.raw](https://github.com/ericsink/SQLitePCL.raw)。许可证适用于各自组件，不因本项目 MIT 声明而被替换。打包脚本将本文件、项目 LICENSE 和依赖许可全文一起复制到分发目录。
+
+MCP SDK 使用固定 NuGet 修订 [9a327829](https://github.com/modelcontextprotocol/csharp-sdk/tree/9a327829ef066c44a0d737c58bf3c7617d7c701c)，原始 `LICENSE` 和 `THIRD-PARTY-NOTICES.txt` 保留为 `licenses/MCP-SDK-Apache-2.0.txt`、`licenses/MCP-SDK-THIRD-PARTY-NOTICES.txt`，包括原有 MIT 内容及授权转换说明。Tomlyn 使用固定修订 [6cc82dd2](https://github.com/xoofx/Tomlyn/tree/6cc82dd23a2c0aefb858f92a51c1b184e2812103)，原始许可保留为 `licenses/Tomlyn-BSD-2-Clause.txt`。通过包引用使用这些组件，没有复制其应用示例作为本项目业务实现。
 
 ## 开发依赖
 

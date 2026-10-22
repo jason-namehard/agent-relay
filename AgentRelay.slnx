@@ -2,6 +2,7 @@
   <Folder Name="/src/">
     <Project Path="src/AgentRelay.Cli/AgentRelay.Cli.csproj" />
     <Project Path="src/AgentRelay.Core/AgentRelay.Core.csproj" />
+    <Project Path="src/AgentRelay.Mcp/AgentRelay.Mcp.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/AgentRelay.Core.Tests/AgentRelay.Core.Tests.csproj" />

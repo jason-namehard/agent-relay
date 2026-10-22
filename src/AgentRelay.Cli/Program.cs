@@ -6,7 +6,6 @@ using AgentRelay.Core;
 using Microsoft.Data.Sqlite;
 using System.Diagnostics;
 using System.ComponentModel;
-using System.Reflection;
 
 return await RelayCli.RunAsync(args);
 
@@ -115,12 +114,39 @@ public static class RelayCli
             });
 
         var adapter = Group("adapter", "显式验证可信的外部适配器");
+        Sync(adapter, "inspect-config", "只读盘点指定 JSON/TOML 的 MCP 命令；不显示 env 值或执行命令", ["path!", "format!"],
+            (s, v) => s.InspectConfiguration(v.Get("path"), v.Get("format")));
+        Sync(adapter, "sources", "列出迁移登记的来源、版本和声明能力", [], (s, _) => s.AdapterSources());
         Sync(adapter, "list", "查看验证记录", [], (s, _) => s.Adapters());
         Add(adapter, "verify", "在隔离目录运行 AMQ init/send/drain，不启动 AI", ["id!", "executable!"], async (s, v) =>
         {
             if (v.Get("id") != "amq-cli") throw new RelayException("unsupported_adapter", "当前只支持 amq-cli。");
             return await s.VerifyAmqAsync(v.Get("executable"), v.CancellationToken);
         });
+
+        var migration = Group("migration", "配置迁移预览、批准、验证与回滚");
+        Sync(migration, "plan", "按唯一精确片段生成提案；不修改目标配置", ["manifest!"], (s, v) =>
+        {
+            var options = new JsonSerializerOptions(RelayJson.Options) { RespectRequiredConstructorParameters = true,
+                RespectNullableAnnotations = true, UnmappedMemberHandling = System.Text.Json.Serialization.JsonUnmappedMemberHandling.Disallow };
+            var request = JsonSerializer.Deserialize<MigrationRequest>(File.ReadAllText(v.Get("manifest")), options)
+                ?? throw new JsonException("Expected migration manifest.");
+            var plan = s.PlanMigration(request);
+            return new { plan, preview = File.ReadAllText(plan.PreviewPath) };
+        });
+        Sync(migration, "show", "展示已保存的精确提案与备份位置", ["id!"], (s, v) =>
+        {
+            var plan = s.Migration(v.Get("id")); return new { plan, preview = File.ReadAllText(plan.PreviewPath) };
+        });
+        Sync(migration, "list", "列出迁移状态", [], (s, _) => s.Migrations());
+        Sync(migration, "apply", "审阅后明确批准应用；配置变化则停止", ["id!", "approve?", "reason"],
+            (s, v) => s.ApplyMigration(v.Get("id"), v.Flag("approve"), v.Optional("reason") ?? ""));
+        Sync(migration, "validate", "以该 route-id 的派发、完成和继续证据验证新入口", ["id!", "task!"],
+            (s, v) => s.ValidateMigration(v.Get("id"), v.Get("task")));
+        Sync(migration, "rollback", "明确批准回滚；后续修改不能被备份覆盖", ["id!", "approve?", "reason"],
+            (s, v) => s.RollbackMigration(v.Get("id"), v.Flag("approve"), v.Optional("reason") ?? ""));
+        Sync(migration, "recover", "只核对中断的应用/回滚状态，不自动写目标配置", ["id!"], (s, v) => s.RecoverMigration(v.Get("id")));
+        Sync(migration, "audit", "迁移批准、应用、验证与回滚历史", ["id!"], (s, v) => s.MigrationAudit(v.Get("id")));
 
         var task = Group("task", "任务派发、显式回调与恢复");
         Add(task, "dispatch", "保存交接并立即返回；execute 启动有界单次 worker", ["from!", "to!", "request!", "mode", "adapter", "idempotency-key!", "deadline-at", "origin-session", "execute?", "execution-timeout-seconds"], async (s, v) =>
@@ -239,32 +265,9 @@ public static class RelayCli
 
     private static void LaunchExecution(RelayService service, TaskRecord task, int timeoutSeconds)
     {
-        if (!service.ScheduleExecution(task.TaskId, task.AttemptId, task.RecipientId, timeoutSeconds)) return;
-        // ShellExecute starts a separate Windows process without retaining the dispatch console pipes.
-        var shellLaunch = OperatingSystem.IsWindows();
-        var start = new ProcessStartInfo(Environment.ProcessPath!)
-        {
-            UseShellExecute = shellLaunch, CreateNoWindow = true,
-            RedirectStandardInput = !shellLaunch, RedirectStandardOutput = !shellLaunch, RedirectStandardError = !shellLaunch
-        };
-        if (shellLaunch) start.WindowStyle = ProcessWindowStyle.Hidden;
-        if (string.Equals(Path.GetFileNameWithoutExtension(start.FileName), "dotnet", StringComparison.OrdinalIgnoreCase))
-            start.ArgumentList.Add(Assembly.GetEntryAssembly()!.Location);
         var report = Path.Combine(Path.GetDirectoryName(task.RequestPath)!, "worker-report.json");
-        foreach (var arg in new[] { "--home", service.Home, "task", "run", "--task", task.TaskId, "--attempt", task.AttemptId,
-                     "--sender", task.RecipientId, "--timeout-seconds", timeoutSeconds.ToString(CultureInfo.InvariantCulture), "--report-path", report })
-            start.ArgumentList.Add(arg);
-        try
-        {
-            using var process = Process.Start(start)!;
-            if (!shellLaunch) process.StandardInput.Close();
-            service.RecordExecutionWorker(task.TaskId, task.AttemptId, process.Id);
-        }
-        catch (Win32Exception error)
-        {
-            service.ExecutionLaunchFailed(task.TaskId, task.AttemptId, error.Message);
-            throw new RelayException("worker_launch_failed", error.Message, 3);
-        }
+        DetachedWorker.Launch(service, task, timeoutSeconds, ["--home", service.Home, "task", "run", "--task", task.TaskId,
+            "--attempt", task.AttemptId, "--sender", task.RecipientId, "--timeout-seconds", timeoutSeconds.ToString(CultureInfo.InvariantCulture), "--report-path", report]);
     }
 
     private sealed record Values(ParseResult Parse, Dictionary<string, Option<string>> Options,
