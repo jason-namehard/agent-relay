@@ -8,6 +8,8 @@ if ($LASTEXITCODE -ne 0) { throw 'Publish failed' }
 if ($LASTEXITCODE -ne 0) { throw 'MCP publish failed' }
 if ($IncludeDesktop) {
     if (-not $IsWindows) { throw 'The desktop helper must be built on Windows' }
+    & $Dotnet publish (Join-Path $projectRoot 'src/AgentRelay.Desktop/AgentRelay.Desktop.csproj') -c Release --no-restore -o (Join-Path $destination 'gui')
+    if ($LASTEXITCODE -ne 0) { throw 'Desktop GUI publish failed' }
     & $Dotnet publish (Join-Path $projectRoot 'src/AgentRelay.Notify/AgentRelay.Notify.csproj') -c Release --no-restore -o (Join-Path $destination 'desktop')
     if ($LASTEXITCODE -ne 0) { throw 'Desktop publish failed' }
     $assets = Get-Content (Join-Path $projectRoot 'src/AgentRelay.Notify/obj/project.assets.json') -Raw | ConvertFrom-Json

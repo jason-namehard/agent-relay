@@ -6,4 +6,4 @@ Agent Relay 应用源码按 [MIT License](LICENSE) 提供。MIT 许可只覆盖�
 
 Windows App SDK 分发条款原文见 `licenses/nuget/microsoft.windowsappsdk.runtime/1.8.260921001/license.txt`，第三方声明见同目录 `NOTICE.txt`。其他构建组件的原始条款在 `licenses/nuget/`。自包含 Windows 发布包的 .NET 运行库许可和第三方声明由打包脚本从实际使用的 runtime pack 复制到 `licenses/dotnet-runtime/`。
 
-CLI 可独立于 Windows 辅助程序使用。全部组件来源、版本及用途见 [第三方声明](THIRD_PARTY_NOTICES.md)。
+WPF 管理界面 `gui/AgentRelay.Desktop.exe` 也附带 .NET 运行库，运行库原始许可与第三方声明同样保存在 `licenses/dotnet-runtime/`。它不依赖 Windows App SDK 通知组件。CLI 可独立于 Windows 组件使用。全部组件来源、版本及用途见 [第三方声明](THIRD_PARTY_NOTICES.md)。

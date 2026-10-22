@@ -1,6 +1,6 @@
 # Agent Relay 架构
 
-状态：已批准架构；Phase 2 单次真实 CLI 执行落地。实际能力见 [PHASE1](PHASE1.md) 和 [PHASE2](PHASE2.md)。协议字段和状态以 [PROTOCOL](PROTOCOL.md) 为准。
+状态：Phase 5 已落地。实际能力见 [PHASE1](PHASE1.md) 至 [PHASE5](PHASE5.md)。协议字段和状态以 [PROTOCOL](PROTOCOL.md) 为准。
 
 ## 组件与依赖方向
 

@@ -24,7 +24,7 @@ MCP SDK 使用固定 NuGet 修订 [9a327829](https://github.com/modelcontextprot
 
 MSTest.TestFramework / MSTest.TestAdapter 4.0.2、Microsoft.NET.Test.Sdk 18.0.1 用于构建和测试，不随 CLI 应用分发。其传递依赖由许可检查脚本一并列出；本次恢复的全部开发包声明为 MIT 或 Apache-2.0。具体版本和内容记录在测试项目的 lockfile。
 
-.NET SDK 和运行时遵循 [.NET 许可](https://github.com/dotnet/runtime/blob/main/LICENSE.TXT) 及其第三方声明。CLI 默认为 framework-dependent；可选 Windows 通知程序为 self-contained，打包脚本把实际 .NET Core / Windows Desktop runtime pack 的许可和声明复制到发布包 `licenses/dotnet-runtime/`。
+.NET SDK 和运行时遵循 [.NET 许可](https://github.com/dotnet/runtime/blob/main/LICENSE.TXT) 及其第三方声明。CLI/MCP 为 framework-dependent；WPF GUI 与 Windows 通知程序为 self-contained，打包脚本把实际 .NET Core / Windows Desktop runtime pack 的许可和声明复制到发布包 `licenses/dotnet-runtime/`。GUI 复用 WPF 平台控件与 Win32 消息，不增加第三方 UI 或图形框架。
 
 ## 可选 Windows 通知组件
 

@@ -4,7 +4,7 @@ $projectRoot = Split-Path -Parent $PSScriptRoot
 $seen = @{}
 $allowed = @('MIT', 'Apache-2.0', 'BSD-2-Clause')
 $projects = @('src/AgentRelay.Core', 'src/AgentRelay.Cli', 'src/AgentRelay.Mcp', 'tests/AgentRelay.Core.Tests')
-if ($IncludeDesktop) { $projects += 'src/AgentRelay.Notify' }
+if ($IncludeDesktop) { $projects += 'src/AgentRelay.Notify', 'src/AgentRelay.Desktop', 'tests/AgentRelay.Desktop.Smoke' }
 foreach ($project in $projects) {
     $assetsPath = Join-Path $projectRoot "$project/obj/project.assets.json"
     $assets = Get-Content -LiteralPath $assetsPath -Raw | ConvertFrom-Json

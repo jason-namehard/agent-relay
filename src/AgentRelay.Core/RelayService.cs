@@ -96,8 +96,7 @@ public sealed partial class RelayService
         });
     }
 
-    public object Permissions() => store.Read(s => s.Query("SELECT sender,recipient,decision FROM permissions ORDER BY sender,recipient",
-        r => new { from = r.GetString(0), to = r.GetString(1), decision = r.GetString(2) }));
+    public object Permissions() => ConnectionPermissions();
 
     private static AgentRecord Agent(StoreSession s, string id) =>
         s.Json<AgentRecord>("SELECT json FROM agents WHERE id=$id", ("$id", id))

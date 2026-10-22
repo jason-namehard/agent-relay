@@ -1,6 +1,6 @@
 # Agent Relay 发布包
 
-CLI 与 `mcp/relay-mcp.dll` 需要 .NET 10 runtime；Windows x64 的 `desktop/AgentRelay.Notify.exe` 自带所需运行库。AMQ 与 Codex CLI 由使用者单独安装并登记，不包含在包内。
+CLI 与 `mcp/relay-mcp.dll` 需要 .NET 10 runtime；Windows x64 的 `gui/AgentRelay.Desktop.exe` 和 `desktop/AgentRelay.Notify.exe` 自带所需运行库。AMQ 与 Codex CLI 由使用者单独安装并登记，不包含在包内。
 
 在解压目录运行 PowerShell：
 
@@ -9,6 +9,9 @@ $relay = Join-Path $PWD 'relay.dll'
 $dataRoot = Join-Path $PWD '.relay'
 dotnet $relay --home $dataRoot init
 dotnet $relay --help
+
+# 原生 Windows 管理界面，与 CLI 指定同一数据目录。
+./gui/AgentRelay.Desktop.exe --home $dataRoot
 
 # Windows 可选桌面通知；首次发送时登记该程序的当前用户点击激活入口。
 dotnet $relay --home $dataRoot desktop configure --executable ./desktop/AgentRelay.Notify.exe
@@ -31,4 +34,6 @@ dotnet $relay --home $dataRoot cleanup --dry-run
 
 保留解压目录的位置，使 Windows 通知仍能启动对应程序。停止本数据目录的提醒可运行 `desktop disable`；移动或删除程序前，在原位置运行 `./desktop/AgentRelay.Notify.exe --unregister` 移除应用注册。没有注册系统计划任务或服务；所有进程关闭后的截止时间在下次 `recover` 处理。
 
-应用代码为 MIT。使用或再分发 Windows 辅助程序前，请阅读 `DISTRIBUTION_TERMS.md`、`THIRD_PARTY_NOTICES.md` 和 `licenses/` 中各组件原始条款。
+GUI 的 Agents、Connections、Inbox、Adapters、Audit 和 Settings 共用核心操作。启动恢复可能处理已登记的待投递和继续操作；Refresh 只读。迁移应用、回滚、重试及适配器命令验证会显示影响并要求明确批准，详见 [Phase 5 指南](https://github.com/jason-namehard/agent-relay/blob/main/docs/PHASE5.md)。
+
+应用代码为 MIT。使用或再分发 Windows 组件前，请阅读 `DISTRIBUTION_TERMS.md`、`THIRD_PARTY_NOTICES.md` 和 `licenses/` 中各组件原始条款。

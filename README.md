@@ -27,7 +27,30 @@ flowchart LR
 - stdio MCP 的七个任务工具，启动时绑定 Agent 身份，与 CLI 共用方向权限和完成契约。
 - JSON/TOML 配置迁移的精确预览、来源版本登记、备份、明确批准、验证、独立停旧和回滚。
 
-阶段为 **Phase 4 — MCP & Reviewed Migrations**。本机 Windows 已通过候选配置启动 MCP，派发真实 B，再恢复同一个 A 会话；迁移完成新入口验证、单独批准停旧及回滚。当前 80 项自动回归通过，管理 GUI 在 Phase 5。
+阶段为 **Phase 5 — Windows GUI**。原生 WPF 界面提供 Agent 登记、方向连接图、Inbox、任务证据、适配器验证、迁移审阅和设置。核心 82 项自动回归及 Windows 窗口交互测试通过；CLI、MCP 与 GUI 共用同一个账本，无常驻服务或轮询依赖。
+
+## Windows 桌面界面
+
+Windows 分发包中运行 `gui/AgentRelay.Desktop.exe`。默认数据目录与 CLI 相同，也可显式指定：
+
+```powershell
+./gui/AgentRelay.Desktop.exe --home C:/relay-data
+```
+
+界面启动做一次恢复；Home/Inbox 接到本机账本提交事件后刷新，编辑页面保留输入并提示 `Refresh`。有向连接图以 Green/Red/Gray 区分允许、明确拒绝和不可用，默认拒绝用虚线及文字。配置迁移显示精确片段，应用与回滚均需审阅、填写理由和明确批准。完整操作见 [Phase 5](docs/PHASE5.md)。
+
+![Windows Connections 页面，使用独立测试登记数据](docs/images/phase5-connections.png)
+
+从源码构建 Windows 组件：
+
+```powershell
+dotnet restore src/AgentRelay.Notify/AgentRelay.Notify.csproj --locked-mode
+pwsh ./scripts/test-desktop.ps1
+pwsh ./scripts/check-licenses.ps1 -IncludeDesktop
+pwsh ./scripts/publish.ps1 -IncludeDesktop
+```
+
+GUI 和通知程序自带运行库；CLI、MCP 仍需要 .NET 10 runtime。窗口交互测试只使用专用配置与模拟任务，不调用模型。
 
 ## 构建与验证
 
@@ -198,6 +221,6 @@ dotnet $relay --home $dataRoot cleanup --apply
 
 [Phase 1 验收](docs/PHASE1.md) · [Phase 2 验收](docs/PHASE2.md) · [Phase 3 验收](docs/PHASE3.md)
 
-[Phase 4 使用与验收](docs/PHASE4.md)
+[Phase 4 使用与验收](docs/PHASE4.md) · [Phase 5 桌面指南](docs/PHASE5.md)
 
 应用代码采用 [MIT License](LICENSE)。依赖和外部工具的来源、许可及分发说明见 [Third-party notices](THIRD_PARTY_NOTICES.md)。

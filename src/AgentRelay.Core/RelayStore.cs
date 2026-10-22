@@ -90,6 +90,7 @@ public sealed class RelayStore
         using var transaction = connection.BeginTransaction();
         var result = operation(new StoreSession(connection, transaction));
         transaction.Commit();
+        WindowsLedgerSignal.Publish();
         return result;
     }
 }

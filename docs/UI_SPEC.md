@@ -1,6 +1,6 @@
 # Agent Relay 桌面交互规格
 
-状态：Phase 5 实现依据；Phase 0 仅设计。界面采用紧凑 Windows 桌面布局，技术标签用 English，说明与错误信息使用中文。
+状态：Phase 5 已实现，使用与验证见 [PHASE5](PHASE5.md)。界面采用紧凑 Windows 桌面布局，技术标签用 English，说明与错误信息使用中文。
 
 ## 页面结构
 
@@ -66,7 +66,7 @@ flowchart TD
 
 Windows 通知尝试由完成事件或已启用的单次计划任务触发，点击后打开任务详情；通知关闭时结果仍在 Inbox。没有调度器且所有进程退出时，下次 CLI/GUI 运行才处理漏掉的时限，Settings 明确显示 `Deadline Handling: On Next Command`。
 
-GUI 启动读取持久状态并做一次显式恢复；运行期间使用本机事件通知更新，需要时手动刷新，不能依赖文件 watcher 或周期状态查询维持正确性。跨进程 UI 通知失败仅影响刷新，用户刷新即可读取账本。
+GUI 启动读取持久状态并做一次显式恢复。Windows 的 SQLite 写事务提交后发布不含任务内容的窗口消息，Home/Inbox 合并事件并只读刷新；其他页面保留编辑与预览，显示 `Ledger changed · Refresh`。无文件 watcher 或周期状态查询。跨进程 UI 提示失败只影响刷新，用户刷新仍可读取账本。
 
 ## 配置与迁移
 
