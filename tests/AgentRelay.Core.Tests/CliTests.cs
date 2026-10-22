@@ -1,0 +1,75 @@
+using System.Text.Json;
+
+namespace AgentRelay.Core.Tests;
+
+[TestClass]
+[DoNotParallelize]
+public sealed class CliTests
+{
+    [TestMethod]
+    public async Task UnknownOptionReturnsJsonErrorAndDoesNotCreateDataDirectory()
+    {
+        var home = Path.Combine(Path.GetTempPath(), "AgentRelay.Tests", Guid.NewGuid().ToString());
+        var result = await Invoke("--home", home, "task", "status", "--task", "missing", "--typo", "x");
+        Assert.AreEqual(2, result.Code);
+        Assert.AreEqual("invalid_arguments", result.Json.GetProperty("error").GetProperty("code").GetString());
+        Assert.IsFalse(Directory.Exists(home));
+    }
+
+    [TestMethod]
+    public async Task StatusBeforeInitializationIsReadOnly()
+    {
+        var home = Path.Combine(Path.GetTempPath(), "AgentRelay.Tests", Guid.NewGuid().ToString());
+        var result = await Invoke("task", "status", "--task", "missing", "--home", home);
+        Assert.AreEqual(3, result.Code);
+        Assert.AreEqual("not_initialized", result.Json.GetProperty("error").GetProperty("code").GetString());
+        Assert.IsFalse(Directory.Exists(home));
+    }
+
+    [TestMethod]
+    [DataRow(false)]
+    [DataRow(true)]
+    public async Task ManualCliWorkflowReturnsActionRequiredThenAcceptsFinalCallback(bool failure)
+    {
+        var root = Path.Combine(Path.GetTempPath(), "AgentRelay.Tests", Guid.NewGuid().ToString());
+        var home = Path.Combine(root, "data");
+        await Invoke("--home", home, "init");
+        foreach (var id in new[] { "agent-a", "agent-b" })
+        {
+            var path = Path.Combine(root, id + ".json");
+            File.WriteAllText(path, "{}");
+            Assert.AreEqual(0, (await Invoke("--home", home, "agent", "register", "--id", id, "--config-path", path)).Code);
+            Assert.AreEqual(0, (await Invoke("--home", home, "agent", "validate", "--id", id)).Code);
+        }
+        await Invoke("--home", home, "permission", "set", "--from", "agent-a", "--to", "agent-b", "--decision", "allow");
+        var request = Path.Combine(root, "request.md"); File.WriteAllText(request, "Review code");
+        var dispatched = await Invoke("--home", home, "task", "dispatch", "--from", "agent-a", "--to", "agent-b",
+            "--request", request, "--mode", "manual", "--idempotency-key", "cli-task");
+        Assert.AreEqual(4, dispatched.Code);
+        Assert.IsTrue(dispatched.Json.GetProperty("ok").GetBoolean());
+        var task = dispatched.Json.GetProperty("data").GetProperty("task");
+        var resultPath = task.GetProperty("result_path").GetString()!;
+        File.WriteAllText(resultPath, "Result ready");
+        var completed = await Invoke("--home", home, "task", failure ? "fail" : "complete", "--task", task.GetProperty("task_id").GetString()!,
+            "--attempt", task.GetProperty("attempt_id").GetString()!, "--sender", "agent-b", "--idempotency-key", "done",
+            "--status", failure ? "failed" : "succeeded", "--result", resultPath, "--error-code", "fixture", "--message", "Fixture result");
+        Assert.AreEqual(0, completed.Code);
+        Assert.AreEqual(failure ? "failed" : "succeeded", completed.Json.GetProperty("state").GetString());
+        Assert.IsTrue(completed.Json.GetProperty("ok").GetBoolean());
+        Directory.Delete(root, recursive: true);
+    }
+
+    private static async Task<(int Code, JsonElement Json)> Invoke(params string[] args)
+    {
+        var original = Console.Out;
+        using var output = new StringWriter();
+        Console.SetOut(output);
+        try
+        {
+            var code = await RelayCli.RunAsync(args);
+            using var json = JsonDocument.Parse(output.ToString());
+            return (code, json.RootElement.Clone());
+        }
+        finally { Console.SetOut(original); }
+    }
+}

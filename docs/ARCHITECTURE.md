@@ -1,6 +1,6 @@
 # Agent Relay 架构
 
-状态：Phase 0 提案。协议字段和状态以 [PROTOCOL](PROTOCOL.md) 为准。
+状态：已批准架构；Phase 1 核心落地。后续组件按阶段实现；实际能力见 [PHASE1](PHASE1.md)。协议字段和状态以 [PROTOCOL](PROTOCOL.md) 为准。
 
 ## 组件与依赖方向
 
@@ -64,11 +64,11 @@ sequenceDiagram
 
 建议账本位置 `%LOCALAPPDATA%\AgentRelay\relay.db`；临时目录 `%LOCALAPPDATA%\AgentRelay\workspace\<task_id>\`；AMQ 根目录在受管 `transport\amq\`，与 Git 工作区分离。`RELAY_HOME` 可显式覆盖本项目数据根目录，迁移须验证，不静默寻找替代目录。
 
-SQLite 表按实际职责设置：`agents`、`permissions`、`adapters`、`tasks`、`attempts`、`events`、`artifacts`、`outbox`、`notifications`、`migration_backups`。事件和当前状态同事务提交，不另建事件溯源框架。幂等键用唯一约束，变更用任务 `revision` 防止并发覆盖；原始请求字段直接比较，不增加摘要层。
+Phase 1 SQLite 表为 `settings`、`agents`、`permissions`、`adapters`、`tasks`、`callbacks`、`events`、`artifacts`、`outbox`、`notifications`。当前尝试保存在任务聚合内，旧尝试通过产物、回调和事件关联；迁移备份表留在 Phase 4。事件和当前状态同事务提交，写事务串行化并递增 `revision`，不另建事件溯源框架。幂等键用唯一约束，原始请求字段直接比较，不增加摘要层。
 
 SQLite 事务中只做本地账本写入，不等待模型或外部 CLI。并发遇到锁超时时有限重试短事务，耗尽后明确报错。Microsoft 文档确认 SQLite 同时仅允许一个待提交写事务，见 [事务文档](https://learn.microsoft.com/en-us/dotnet/standard/data/sqlite/transactions)。
 
-文件先写临时文件再同目录发布，随后登记引用。文件系统和 SQLite 不具备共同事务：未登记文件由显式清理处理；已登记但文件缺失，显示 `artifact_missing`，不能伪造空结果。完成和清理通过同一任务修订号及产物删除标记协调；过期产物不能接受新的完成引用，必须重新提交新产物。
+文件先写临时文件再同目录发布，随后登记引用。文件系统和 SQLite 不具备共同事务：未登记 workspace 文件按文件系统创建时间及当前 TTL 显式清理；已登记但文件缺失，报告缺失，不能伪造空结果。完成和清理通过写事务及产物删除标记协调；过期产物不能接受新的完成引用，必须重新提交新产物。
 
 ## 崩溃与未知投递
 

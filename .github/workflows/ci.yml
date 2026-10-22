@@ -1,0 +1,26 @@
+name: CI
+on:
+  push:
+    branches: [main]
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  test:
+    strategy:
+      matrix:
+        os: [windows-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+      - run: dotnet restore --locked-mode
+      - run: dotnet test --configuration Release --no-restore
+      - name: Check direct and transitive package licenses
+        shell: pwsh
+        run: ./scripts/check-licenses.ps1
+      - name: Package CLI with license notices
+        shell: pwsh
+        run: ./scripts/publish.ps1

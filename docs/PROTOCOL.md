@@ -1,6 +1,6 @@
 # Agent Relay 协议提案
 
-状态：`relay_version: 1` 设计草案，尚无实现。跨进程 JSON 使用 UTF-8，时间使用带 `Z` 的 UTC RFC 3339；GUI 按用户时区显示。
+状态：`relay_version: 1`，Phase 1 CLI 已实现；MCP 与自动会话恢复按后续阶段交付。跨进程 JSON 使用 UTF-8，时间使用带 `Z` 的 UTC RFC 3339；GUI 按用户时区显示。实际命令见 [README](../README.md)。
 
 ## 任务与事件
 
@@ -26,7 +26,7 @@
 }
 ```
 
-Relay 另写 `recorded_at` 和事务序号，不按客户端时钟决定事件顺序。路径相对 `RELAY_HOME`，只允许登记的受管文件；完成前检查文件存在、可读、未过期。`task.completed` 必须提供成功状态和结果文件；`task.failed` 必须提供失败状态、`error_code`、可读说明和失败报告文件，记录执行是否可能产生副作用。
+Relay 另写 `recorded_at` 和事务序号，不按客户端时钟决定事件顺序。信封可用相对 `RELAY_HOME` 的路径；Phase 1 本机 CLI 与账本使用完整受管路径。完成前检查文件存在、可读、未过期。`task.completed` 必须提供成功状态和结果文件；`task.failed` 必须提供失败状态、`error_code`、可读说明和失败报告文件。`side_effects_possible` 未报告时为 `null`，显式标注可能产生副作用时为 `true`，不把未知当成无副作用。
 
 | 事件 | 生产者与含义 |
 | --- | --- |
@@ -84,13 +84,13 @@ stateDiagram-v2
 
 ## Markdown 产物
 
-请求、结果分别为受管 `request.md`、`result.md`，失败为 `failure.md`。使用 YAML frontmatter：`relay_version`、`task_id`、`attempt_id`、`sender_id`、`recipient_id`、`artifact_kind`、`created_at`、`expires_at`；正文使用 `Summary`、`Instructions`、`Acceptance Criteria` 或 `Result`、`Verification`、`Limitations`。
+每次尝试使用 `workspace/<task_id>/<attempt_id>/`，请求和已接受结果按 `request-<artifact_id>.md`、`result-<artifact_id>.md` 或 `failure-<artifact_id>.md` 独立保存。`result.md` 是交给 B 的结果写入位置，完成时登记该提交文件并生成不可变快照。使用 YAML frontmatter：`relay_version`、`task_id`、`attempt_id`、`sender_id`、`recipient_id`、`artifact_kind`、`created_at`、`expires_at`；正文建议使用 `Summary`、`Instructions`、`Acceptance Criteria` 或 `Result`、`Verification`、`Limitations`。
 
 正文是交接数据，不是自动执行脚本。Relay 不推断任务、不执行嵌入命令。格式借鉴 Agents Handoff 的 frontmatter/正文分层，但该项目的变更交接 schema 不是 Relay 任务 schema；不宣称协议兼容。
 
 ## CLI 与 MCP 契约
 
-拟议命令，不应当作已安装命令执行：
+Phase 1 命令（需要先构建 CLI）：
 
 ```text
 relay agent discover
@@ -128,4 +128,4 @@ MCP Phase 4 只映射同一核心操作为 `relay_task_dispatch`、`relay_task_a
 
 清理仅处理账本登记且位于 Relay 管理根目录内的文件；不接受任意目录递归删除。先将到期产物标为待删除并防止新增引用，再删除并记录 `artifact_expired`；进程中断可继续同一删除。到期前新写入的文件不删除。过期仍活动的任务先持久化 `timed_out` 和人工恢复提示，再移除过期文件；提示明确标注文件不可用，不复制悬空路径作为可用结果。
 
-任务、事件和幂等键不随三天文件 TTL 删除，Phase 1 保留小型元数据以支持迟到和重复事件；Audit 不保存完整正文。元数据长期归档另议，不增加自动数据库清理框架。普通删除只表示逻辑移除，不承诺安全物理擦除。
+任务、事件和幂等键不随三天文件 TTL 删除；Phase 1 SQLite 还保留原请求快照，以支持精确幂等比对和经批准的重试。Audit 不保存完整正文。未登记 workspace 文件按文件系统创建时间和当前 TTL 处理；临时文件 TTL 不等于数据库内容保留期。数据库长期归档另议，不增加自动清理框架。普通删除只表示逻辑移除，不承诺安全物理擦除。
