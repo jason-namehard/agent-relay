@@ -22,7 +22,11 @@ public sealed partial class RelayService
                 if (previous.Input != input) throw new RelayException("idempotency_conflict", "同一派发幂等键对应不同内容。", 5);
                 return previous.Task;
             }
-            RequirePaths(Agent(s, request.From)); RequirePaths(Agent(s, request.To));
+            var requester = Agent(s, request.From);
+            RequirePaths(requester); RequirePaths(Agent(s, request.To));
+            var resumer = s.Json<ResumerRecord>("SELECT json FROM resumers WHERE agent_id=$id", ("$id", request.From));
+            if (request.OriginSession is { } target && resumer is not null)
+                CodexSessionResumer.RequireBinding(requester, resumer, target);
             RequirePermission(s, request.From, request.To);
             var now = Now;
             var deadline = request.DeadlineAt ?? now.AddMinutes(settings.TaskTimeoutMinutes);
@@ -34,7 +38,8 @@ public sealed partial class RelayService
                 TaskId = taskId, RequesterId = request.From, RecipientId = request.To, AttemptId = attemptId,
                 AdapterId = request.AdapterId, Mode = request.Mode, CreatedAt = now, DeadlineAt = deadline,
                 State = InitialState(s, request.Mode, request.AdapterId), RequestPath = "",
-                ResultPath = Path.Combine(workspace.AttemptDirectory(taskId, attemptId), "result.md"), OriginSession = request.OriginSession
+                ResultPath = Path.Combine(workspace.AttemptDirectory(taskId, attemptId), "result.md"), OriginSession = request.OriginSession,
+                ResumeAdapter = request.OriginSession is null ? null : resumer
             };
             var artifact = workspace.Publish(value, "request", request.Content, now, settings.ArtifactTtlDays);
             value.RequestPath = artifact.Path;
@@ -119,6 +124,7 @@ public sealed partial class RelayService
             s.Save(task);
             s.Event(task, failed ? "task.failed" : "task.completed", sender, Now, late ? "late_completion" : "");
             s.Notify(task, failed ? "failed" : "ready", failed ? "接收方报告失败，请查看失败文件。" : "结果已就绪，可复制继续提示词。", Now);
+            QueueContinuation(s, task, failed ? "failed" : "ready");
         });
     }
 
@@ -137,10 +143,10 @@ public sealed partial class RelayService
             if (previous.Result is not null)
             {
                 if (previous.Input != json) throw new RelayException("idempotency_conflict", "回调幂等键已被不同内容使用。", 5);
-                return View(RelayJson.Read<TaskView>(previous.Result).Task);
+                return View(RelayJson.Read<TaskView>(previous.Result).Task, s);
             }
             apply(s, task);
-            var result = View(task);
+            var result = View(task, s);
             s.Execute("INSERT INTO callbacks VALUES($task,$attempt,$sender,$key,$input,$result)",
                 ("$task", taskId), ("$attempt", attemptId), ("$sender", sender), ("$key", key),
                 ("$input", json), ("$result", RelayJson.Write(result)));
@@ -175,10 +181,11 @@ public sealed partial class RelayService
             if (task.State == TaskState.Succeeded || task.State == TaskState.Cancelled)
                 throw new RelayException("state_conflict", "任务已成功或已取消。", 5);
             task.State = TaskState.Cancelled;
+            task.ResumeStatus = "manual_required";
             s.Save(task); s.Event(task, "task.cancelled", "operator", Now, reason);
             s.Execute("UPDATE outbox SET state='settled',lease_until=NULL WHERE task_id=$id", ("$id", taskId));
             s.Notify(task, "cancelled", "已停止 Relay 后续派发；宿主执行未被终止。", Now);
-            return View(task);
+            return View(task, s);
         });
     }
 
@@ -198,6 +205,7 @@ public sealed partial class RelayService
             task.AttemptId = Guid.NewGuid().ToString(); task.ExecutionAttempt++;
             task.DeadlineAt = Now.AddMinutes(settings.TaskTimeoutMinutes);
             task.ErrorCode = null; task.ErrorMessage = null; task.SideEffectsPossible = null;
+            task.ResumeStatus = "manual_required";
             var artifact = workspace.Publish(task, "request", input.Content, Now, settings.ArtifactTtlDays);
             AddArtifact(s, artifact); task.RequestPath = artifact.Path;
             task.ResultPath = Path.Combine(workspace.AttemptDirectory(task.TaskId, task.AttemptId), "result.md");
@@ -214,9 +222,9 @@ public sealed partial class RelayService
     public TaskView Status(string id) => store.Read(s =>
     {
         var task = s.Task(id);
-        return View(task) with { Execution = Execution(s, id, task.AttemptId) };
+        return View(task, s) with { Execution = Execution(s, id, task.AttemptId), Continuation = LatestContinuation(s, task) };
     });
-    public List<TaskView> Tasks() => store.Read(s => s.Query("SELECT json FROM tasks ORDER BY rowid DESC", r => View(RelayJson.Read<TaskRecord>(r.GetString(0)))));
+    public List<TaskView> Tasks() => store.Read(s => s.Query("SELECT json FROM tasks ORDER BY rowid DESC", r => View(RelayJson.Read<TaskRecord>(r.GetString(0)), s)));
     public List<InboxItem> Inbox() => store.Read(s => s.Query("SELECT id,task_id,event,message,created_at,is_read FROM notifications ORDER BY id DESC",
         r => new InboxItem(r.GetInt64(0), r.GetString(1), r.GetString(2), r.GetString(3), DateTimeOffset.Parse(r.GetString(4)), r.GetBoolean(5))));
     public List<AuditEvent> Audit(string? taskId = null) => store.Read(s => s.Query(
@@ -225,11 +233,13 @@ public sealed partial class RelayService
     public List<ArtifactRecord> Artifacts(string taskId) => store.Read(s => s.Query("SELECT json FROM artifacts WHERE task_id=$id",
         r => RelayJson.Read<ArtifactRecord>(r.GetString(0)), ("$id", taskId)));
 
-    private TaskView View(TaskRecord task)
+    private TaskView View(TaskRecord task, StoreSession? session = null)
     {
         var overdue = !Terminal(task.State) && task.DeadlineAt <= Now;
         var ready = task.State is TaskState.Succeeded or TaskState.Failed;
-        var resultExists = File.Exists(task.ResultPath);
+        ArtifactRecord? ResultArtifact(StoreSession s) => s.Json<ArtifactRecord>("SELECT json FROM artifacts WHERE path=$path", ("$path", task.ResultPath));
+        var artifact = ready ? session is null ? store.Read(ResultArtifact) : ResultArtifact(session) : null;
+        var resultExists = artifact is { State: "available" } && artifact.ExpiresAt > Now && File.Exists(task.ResultPath);
         var action = overdue ? "recover" : task.State switch
         {
             TaskState.AwaitingConfirmation => "approve",
@@ -249,6 +259,7 @@ public sealed partial class RelayService
                 : $"任务 {task.TaskId} 已保存，状态 {task.State}，正在等待结果文件 {task.ResultPath}。请结束当前轮；收到继续消息或用户粘贴提示词后再处理。截止时间：{task.DeadlineAt:O}。";
         if (overdue || task.State == TaskState.TimedOut) prompt = $"任务 {task.TaskId} 已超过截止时间，未获得有效完成结果。请运行 recover 或检查证据；不要自动重复派发。";
         if (task.State == TaskState.DeliveryUnknown) prompt = $"任务 {task.TaskId} 的投递状态未知，可能已被接收。请检查运输证据，禁止自动重发。";
+        if (task.State == TaskState.Cancelled) prompt = $"任务 {task.TaskId} 已取消。请检查审计与可能的晚到结果，不要自动继续或重复派发。";
         if (!Terminal(task.State) && task.ErrorCode == "execution_unknown")
         {
             action = "inspect_execution_evidence";

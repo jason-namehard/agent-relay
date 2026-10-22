@@ -11,6 +11,7 @@ public sealed partial class RelayService
                 : [s.Task(taskId)];
             foreach (var task in tasks)
             {
+                RecoverContinuations(s, task);
                 if (Terminal(task.State)) continue;
                 var execution = Execution(s, task.TaskId, task.AttemptId);
                 if (execution is { State: "scheduled" or "receiving" or "running" } && execution.LeaseUntil <= Now)
@@ -27,6 +28,7 @@ public sealed partial class RelayService
                     task.State = TaskState.TimedOut; s.Save(task);
                     s.Event(task, "task.timed_out", "relay", Now);
                     s.Notify(task, "timed_out", "截止时间已过，未收到有效完成结果；宿主可能仍在执行。", Now);
+                    QueueContinuation(s, task, "timed_out");
                     s.Execute("UPDATE outbox SET state='settled',lease_until=NULL WHERE task_id=$id", ("$id", task.TaskId));
                 }
                 else if (box is { State: "in_flight", LeaseUntil: not null } && box.LeaseUntil <= Now)
@@ -39,7 +41,11 @@ public sealed partial class RelayService
             }
             return tasks.Select(t => t.TaskId).ToArray();
         });
-        foreach (var id in ids) await DeliverPendingAsync(id, cancellationToken);
+        foreach (var id in ids)
+        {
+            await DeliverPendingAsync(id, cancellationToken);
+            await ProcessContinuationsAsync(id, cancellationToken: cancellationToken);
+        }
         return ids.Select(Status).ToList();
     }
 
@@ -73,6 +79,7 @@ public sealed partial class RelayService
                     s.Execute("UPDATE outbox SET state='settled',lease_until=NULL WHERE task_id=$id", ("$id", task.TaskId));
                     s.Event(task, "task.timed_out", "relay", Now, "artifact TTL elapsed");
                     s.Notify(task, "timed_out", "交接产物已过期，请检查任务并决定重新生成。", Now);
+                    QueueContinuation(s, task, "timed_out");
                 }
                 SaveArtifact(s, current with { State = "deleting" });
                 return true;

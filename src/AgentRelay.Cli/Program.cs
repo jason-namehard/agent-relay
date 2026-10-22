@@ -96,6 +96,9 @@ public static class RelayCli
         Add(agent, "verify-executor", "验证 Codex 原生 CLI 版本及非交互契约，不调用模型", ["id!"],
             async (s, v) => await s.VerifyExecutorAsync(v.Get("id"), v.CancellationToken));
         Sync(agent, "executors", "显示已验证的执行器", [], (s, _) => s.Executors());
+        Add(agent, "verify-resumer", "验证精确会话继续接口；exec-resume 会启动模型轮次", ["id!", "kind!"],
+            async (s, v) => await s.VerifyResumerAsync(v.Get("id"), v.Get("kind"), v.CancellationToken));
+        Sync(agent, "resumers", "显示已验证的会话继续适配器", [], (s, _) => s.Resumers());
 
         var permission = Group("permission", "有向通信权限，未配置默认拒绝");
         Sync(permission, "set", "只改变指定方向", ["from!", "to!", "decision!"], (s, v) => s.SetPermission(v.Get("from"), v.Get("to"), v.Get("decision")));
@@ -159,18 +162,26 @@ public static class RelayCli
         foreach (var failure in new[] { false, true })
         {
             var isFailure = failure;
-            Sync(task, failure ? "fail" : "complete", failure ? "提交失败报告" : "提交成功结果；文件更新本身不表示完成",
-                ["task!", "attempt!", "sender!", "idempotency-key!", "status!", "result!", "error-code", "message", "side-effects-possible?"], (s, v) =>
+            Add(task, failure ? "fail" : "complete", failure ? "提交失败报告" : "提交成功结果；文件更新本身不表示完成",
+                ["task!", "attempt!", "sender!", "idempotency-key!", "status!", "result!", "error-code", "message", "side-effects-possible?"], async (s, v) =>
                 {
                     if (v.Get("status") != (isFailure ? "failed" : "succeeded")) throw new RelayException("invalid_status", "status 与回调命令不一致。");
-                    return s.Complete(v.Get("task"), v.Get("attempt"), v.Get("sender"), v.Get("idempotency-key"), v.Get("result"),
+                    s.Complete(v.Get("task"), v.Get("attempt"), v.Get("sender"), v.Get("idempotency-key"), v.Get("result"),
                         isFailure, v.Optional("error-code"), v.Optional("message"), v.Flag("side-effects-possible") ? true : null);
+                    await s.ProcessContinuationsAsync(v.Get("task"), cancellationToken: v.CancellationToken);
+                    return s.Status(v.Get("task"));
                 });
         }
         Sync(task, "cancel", "停止 Relay 等待和后续投递，不终止宿主", ["task!", "reason!"], (s, v) => s.Cancel(v.Get("task"), v.Get("reason")));
         Add(task, "retry", "明确批准后创建新执行尝试；可能重复副作用", ["task!", "reason!", "approve?"],
             async (s, v) => await s.RetryAsync(v.Get("task"), v.Get("reason"), v.Flag("approve"), v.CancellationToken));
         Sync(task, "evidence", "只读显示运输凭据", ["task!"], (s, v) => (object?)s.DeliveryEvidence(v.Get("task")) ?? new { message = "无运输 outbox；可能为手工模式。" });
+        Sync(task, "continuations", "只读显示继续提交和桌面通知证据", ["task!"], (s, v) => s.Continuations(v.Get("task")));
+        Add(task, "continue", "处理尚未提交的继续消息；不会重发 submitted/unknown", ["task!", "timeout-seconds"], async (s, v) =>
+        {
+            await s.ProcessContinuationsAsync(v.Get("task"), timeoutSeconds: v.ExecutionTimeout("timeout-seconds"), cancellationToken: v.CancellationToken);
+            return s.Status(v.Get("task"));
+        });
 
         var artifact = Group("artifact", "登记受管产物；不会完成任务");
         Sync(artifact, "register", "把外部文件导入当前任务的受管目录", ["task!", "attempt!", "kind!", "path!"],
@@ -182,6 +193,30 @@ public static class RelayCli
         Sync(audit, "list", "按提交顺序显示事件", ["task"], (s, v) => s.Audit(v.Optional("task")));
         var prompt = Group("prompt", "手工交接和继续提示词");
         Sync(prompt, "show", "返回可复制提示词", ["task!"], (s, v) => new { text = s.Status(v.Get("task")).Prompt });
+        foreach (var operation in new[] { "copy", "open" })
+        {
+            var op = operation;
+            Add(prompt, op, op == "copy" ? "把继续提示词复制到 Windows 剪贴板" : "打开结果与继续提示词窗口", ["task!"], async (s, v) =>
+            {
+                var executable = s.DesktopExecutable() ?? throw new RelayException("desktop_unconfigured", "请先 desktop configure。", 3);
+                s.Status(v.Get("task"));
+                if (op == "open")
+                {
+                    var start = new ProcessStartInfo(executable) { UseShellExecute = true, WindowStyle = ProcessWindowStyle.Normal };
+                    foreach (var arg in new[] { "--open", "--home", s.Home, "--task", v.Get("task") }) start.ArgumentList.Add(arg);
+                    using var process = Process.Start(start)!;
+                    return new { status = "opened", task_id = v.Get("task") };
+                }
+                var result = await RelayProcess.RunAsync(executable, ["--copy", "--home", s.Home, "--task", v.Get("task")], null, TimeSpan.FromSeconds(15), v.CancellationToken);
+                if (result.TimedOut || result.ExitCode != 0) throw new RelayException("clipboard_failed", result.Error, 3);
+                return new { status = "copied", task_id = v.Get("task") };
+            });
+        }
+        var desktop = Group("desktop", "Windows 本地通知与继续窗口");
+        Add(desktop, "configure", "验证并登记通知程序；首次提醒时注册应用点击激活", ["executable!"],
+            async (s, v) => await s.ConfigureDesktopAsync(v.Get("executable"), v.CancellationToken));
+        Sync(desktop, "show", "显示通知程序路径", [], (s, _) => new { executable = s.DesktopExecutable() });
+        Sync(desktop, "disable", "停止此数据目录的后续桌面提醒", [], (s, _) => { s.DisableDesktop(); return new { status = "disabled" }; });
         Add(root, "recover", "处理超时和遗留 outbox；未知投递不自动重发", ["task"], async (s, v) => await s.RecoverAsync(v.Optional("task"), v.CancellationToken));
         Sync(root, "cleanup", "仅清理过期受管产物，默认预览", ["dry-run?", "apply?"], (s, v) =>
         {

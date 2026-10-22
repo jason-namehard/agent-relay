@@ -17,10 +17,13 @@ jobs:
         with:
           dotnet-version: '10.0.x'
       - run: dotnet restore --locked-mode
+      - name: Restore Windows notification helper
+        if: runner.os == 'Windows'
+        run: dotnet restore src/AgentRelay.Notify/AgentRelay.Notify.csproj --locked-mode
       - run: dotnet test --configuration Release --no-restore
       - name: Check direct and transitive package licenses
         shell: pwsh
-        run: ./scripts/check-licenses.ps1
+        run: ./scripts/check-licenses.ps1 -IncludeDesktop:($IsWindows)
       - name: Package CLI with license notices
         shell: pwsh
-        run: ./scripts/publish.ps1
+        run: ./scripts/publish.ps1 -IncludeDesktop:($IsWindows)

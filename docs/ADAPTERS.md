@@ -1,6 +1,6 @@
 # Agent Relay 适配器与迁移
 
-状态：AMQ 传输和 Codex 只读单次执行已实现；迁移与会话注入按后续阶段交付。适配器不得持有独立任务状态机；任务契约见 [PROTOCOL](PROTOCOL.md)。
+状态：AMQ 传输、Codex 只读单次执行、精确会话继续及 Windows 通知已实现；迁移按 Phase 4 交付。适配器不得持有独立任务状态机；任务契约见 [PROTOCOL](PROTOCOL.md)。
 
 ## 接口与能力
 
@@ -24,15 +24,16 @@
 | --- | --- | --- |
 | `manual` | 保存请求、复制给 B；完成后复制继续提示词给 A | 不需要会话能力；不得报告自动交付 |
 | `amq-cli` | 复用 `send` / `drain` / receipts / threads | Windows 版本固定，完成本机运输与并发认领测试；AMQ 队列根和会话显式绑定 |
-| `codex-exec` | 已实现新启动有界只读非交互任务；恢复既有会话属于 Phase 3 | 绑定原生 CLI 路径、版本和配置目录；验证结构化声明和 wrapper 回调；不等同于现有桌面窗口注入 |
-| `codex-queue` | 经 AMQ keepalive 向存在 active writer 的精确 Codex thread 提交消息 | 逐版本验证 `codex queue`、目标 writer、提交凭据与重复行为；仅凭上游测试不足以启用本机 auto |
+| `codex-exec` | 新启动有界只读非交互任务 | 绑定原生 CLI 路径、版本和配置目录；验证结构化声明和 wrapper 回调 |
+| `codex-queue` | 原生 CLI 向精确 Codex thread 提交继续消息 | 版本、配置、UUID、cwd 与会话元数据匹配；原生回执只记为 submitted，消费时机由宿主管理 |
+| `codex-exec-resume` | 在原 UUID 的既有 CLI 会话继续一次只读轮次 | 显式选择该模式；验证相同 UUID、turn.completed 和最终回复；不自动替代 queue |
 | `claude-print` | 经 keepalive 或原生 CLI 恢复明确 Claude session | 验证 session、cwd、已有 owner、stream-json 提交确认及回调能力；不并发写同一会话 |
 
 AMQ 队列传输和会话唤醒可组合，但能力分别计量：入队成功不意味着 B 正在执行。Phase 2 优先通过 Relay 启动的单次 CLI runner 调用已有 AMQ 命令取件，并在 runner 退出时报告结果；该 runner 只为当前任务存活，不建立常驻收件循环。宿主进程成功退出只能生成执行证据，Relay 终态仍须经过显式 `complete` / `fail` 命令。若没有合法结果文件，runner 提交失败报告。
 
 Phase 2 的 `--execute` 只在用户显式指定时启动一次 worker；`task run` 独立可用。执行唯一键为 `(task_id, attempt_id)`。Codex 返回结构化结果声明，worker 代理提交共享核心的 `complete/fail` 操作，不要求模型拼接 shell 命令。没有声明、声明不合法或缺少轮次完成证据不能算成功；超时保留未知执行状态，不重启 Agent。
 
-执行器把注册配置文件的目录绑定为 `CODEX_HOME`，以 `--ignore-user-config` 复用认证但不加载 config.toml 的 provider、模型与 MCP 设置；当前仅支持固定 `read-only`、`ephemeral` 模式。配置目录、CLI 路径或版本变化后需重新验证。此能力与未来的自定义配置档和交互 session 恢复分开登记。
+执行器把注册配置文件的目录绑定为 `CODEX_HOME`，以 `--ignore-user-config` 复用认证但不加载 config.toml 的 provider、模型与 MCP 设置；新任务使用固定 `read-only`、`ephemeral` 模式。配置目录、CLI 路径或版本变化后需重新验证。会话恢复单独登记为 `resumers`，在任务中保存快照；exec-resume 继续原 session，queue 交由宿主处理。用法和真实验证范围见 [Phase 3](PHASE3.md)。
 
 AMQ `internal/*` 不是可直接导入的公共库。首版复用公共 CLI，不 fork 队列；其 `launchapi` 是启动接口，不是全套消息库。是否增加其他公共库引用，须等首个真实闭环证明需要。
 

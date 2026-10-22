@@ -128,6 +128,7 @@ public sealed partial class RelayService
                 return Status(taskId);
             }
             UpdateExecution(taskId, attemptId, "finished", outcome.SessionId);
+            await ProcessContinuationsAsync(taskId, cancellationToken: cancellationToken);
             return Status(taskId);
         }
         catch (RelayException error)

@@ -65,12 +65,14 @@ public sealed class TaskRecord
     public string ResumeStatus { get; set; } = "manual_required";
     public string DeadlineDelivery { get; set; } = "on_next_command";
     public OriginSession? OriginSession { get; set; }
+    public ResumerRecord? ResumeAdapter { get; set; }
     public string? ErrorCode { get; set; }
     public string? ErrorMessage { get; set; }
     public bool? SideEffectsPossible { get; set; }
 }
 
-public sealed record TaskView(TaskRecord Task, bool DeadlineExceeded, string NextAction, string Prompt, ExecutionRecord? Execution = null);
+public sealed record TaskView(TaskRecord Task, bool DeadlineExceeded, string NextAction, string Prompt,
+    ExecutionRecord? Execution = null, ContinuationRecord? Continuation = null);
 public sealed record ArtifactRecord(string ArtifactId, string TaskId, string AttemptId, string Kind,
     string Path, DateTimeOffset CreatedAt, DateTimeOffset ExpiresAt, string State);
 public sealed record AuditEvent(long Sequence, string EventId, string TaskId, string AttemptId,
@@ -105,4 +107,20 @@ public interface IDeliveryAdapter
 {
     string Id { get; }
     Task<DeliveryResult> DeliverAsync(TaskRecord task, string home, TimeSpan timeout, CancellationToken cancellationToken);
+}
+
+public sealed record ResumerRecord(string AgentId, string Kind, string Executable, string Version,
+    string ConfigPath, DateTimeOffset VerifiedAt);
+public sealed record ContinuationRecord(string TaskId, string AttemptId, string Event, string State,
+    string DesktopState, DateTimeOffset? LeaseUntil, string? ErrorCode = null, string? Detail = null,
+    string? OutputPath = null);
+public sealed record ResumeInput(TaskRecord Task, string Prompt, string Directory, int TimeoutSeconds);
+public sealed record ResumeResult(string State, string? ErrorCode = null, string? Detail = null, string? OutputPath = null);
+public interface ISessionResumer
+{
+    Task<ResumeResult> ResumeAsync(ResumeInput input, CancellationToken cancellationToken);
+}
+public interface IDesktopNotifier
+{
+    Task<ResumeResult> NotifyAsync(string home, TaskRecord task, CancellationToken cancellationToken);
 }

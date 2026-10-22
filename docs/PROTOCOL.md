@@ -73,7 +73,11 @@ stateDiagram-v2
 
 补充转换规则：所有非终态可在截止时间后转为 `timed_out`，或由用户转为 `cancelled`。当前尝试的合法 `complete` / `fail` 可直接从 `dispatched`、`acknowledged`、`delivery_unknown` 或 `awaiting_manual` 提交，允许省略中间进度；完成回调本身提供执行发生的证据。晚到结果仅在无新尝试、未取消且产物有效时允许 `timed_out → succeeded/failed`，记录 `late_completion`；旧尝试回调一律不覆盖当前尝试。取消后的结果记录为晚到证据，用户检查后决定是否采纳。
 
-`succeeded` 不因恢复 A 失败改成 `failed`。恢复消息独立使用 `resume_status=pending|submitted|manual_required|unknown|failed`，用户可随时复制继续提示词。`submitted` 不代表 A 已阅读。
+`succeeded` 不因恢复 A 失败改成 `failed`。恢复消息独立使用 `resume_status=pending|submitted|completed|manual_required|unknown|failed`，用户可随时复制继续提示词。`submitted` 不代表 A 已阅读；`completed` 表示精确 UUID 的一次新轮次已返回完成证据。
+
+Phase 3 继续 outbox 唯一键为 `(task_id, attempt_id, event)`。领取状态为 `in_flight`；恢复时提交 lease 已过期则记为 `unknown` 并停止重发。结果过期、取消或新尝试不会自动唤醒旧任务。`desktop_state` 单独记录 `pending/in_flight/submitted/unavailable/failed/unknown/not_required`，通知失败不覆盖任务或会话状态。通知激活绑定 task 与 attempt，旧尝试的通知不能复制新尝试的提示词。
+
+本阶段 `origin_session.config_profile` 表示注册的 `config.toml` 绝对路径；Codex 命名 profile 尚未接入。恢复适配器在派发时保存快照。只读的 `status`、`task continuations` 和 Inbox 不触发继续；`complete/fail`、单次 worker 及 `recover` 在结果事务后处理待办，`task continue` 可显式处理尚未提交的记录。
 
 ## 幂等、重试与时限
 

@@ -10,7 +10,7 @@ public static class RelayProcess
 {
     public static async Task<ProcessResult> RunAsync(string executable, IEnumerable<string> arguments,
         string? input, TimeSpan timeout, CancellationToken cancellationToken = default,
-        IReadOnlyDictionary<string, string>? environment = null)
+        IReadOnlyDictionary<string, string>? environment = null, string? workingDirectory = null)
     {
         var start = new ProcessStartInfo(executable)
         {
@@ -18,6 +18,7 @@ public static class RelayProcess
             RedirectStandardOutput = true, RedirectStandardError = true, RedirectStandardInput = true
         };
         start.StandardInputEncoding = new System.Text.UTF8Encoding(false);
+        if (workingDirectory is not null) start.WorkingDirectory = workingDirectory;
         start.StandardOutputEncoding = new System.Text.UTF8Encoding(false);
         start.StandardErrorEncoding = new System.Text.UTF8Encoding(false);
         foreach (var arg in arguments) start.ArgumentList.Add(arg);

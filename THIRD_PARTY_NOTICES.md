@@ -19,7 +19,15 @@ Agent Relay 的应用代码按本仓库 MIT License 提供。研究对象不是�
 
 MSTest.TestFramework / MSTest.TestAdapter 4.0.2、Microsoft.NET.Test.Sdk 18.0.1 用于构建和测试，不随 CLI 应用分发。其传递依赖由许可检查脚本一并列出；本次恢复的全部开发包声明为 MIT 或 Apache-2.0。具体版本和内容记录在测试项目的 lockfile。
 
-.NET SDK 和运行时遵循 [.NET 许可](https://github.com/dotnet/runtime/blob/main/LICENSE.TXT) 及其第三方声明。本项目默认发布 framework-dependent 应用，不打包 .NET 运行时；改成 self-contained 分发时必须连同 runtime 的第三方声明一起核对和保留。
+.NET SDK 和运行时遵循 [.NET 许可](https://github.com/dotnet/runtime/blob/main/LICENSE.TXT) 及其第三方声明。CLI 默认为 framework-dependent；可选 Windows 通知程序为 self-contained，打包脚本把实际 .NET Core / Windows Desktop runtime pack 的许可和声明复制到发布包 `licenses/dotnet-runtime/`。
+
+## 可选 Windows 通知组件
+
+Windows 通知程序使用 [Windows App SDK .NET API](https://learn.microsoft.com/en-us/windows/apps/develop/notifications/app-notifications/app-notifications-dotnet)，没有复制上游应用源码。使用微软 NuGet 提供的 Foundation `1.8.260803002` 和 Runtime `1.8.260921001`；传递组件包括 Base `1.8.251216001`、InteractiveExperiences `1.8.260708001`，构建工具为 Windows SDK BuildTools `10.0.26100.4654` 与 BuildTools.MSIX `1.7.20250829.1`。
+
+这些 NuGet 二进制/工具使用各自微软软件许可条款，不能因上游仓库源码采用 MIT 就把已分发二进制标为 MIT。原始许可与 NOTICE 保存在 `licenses/nuget/<package>/<version>/`。Windows App SDK 原始条款第 3 节允许随应用分发包放置到输出目录的文件，并规定分发条件；使用和再分发 Windows 二进制须遵守 [分发条款](DISTRIBUTION_TERMS.md) 与原文。BuildTools 仅用于构建，不把 SDK 构建工具放入应用发布目录；其许可来源为包元数据中的 [Windows SDK License](https://aka.ms/WinSDKLicenseURL)。
+
+`check-licenses.ps1 -IncludeDesktop` 额外核对这些包的固定版本及随包许可文本与仓库保留文本一致；未登记的文件许可或版本变化要求重新审阅。微软组件没有被重新许可为本项目代码。
 
 ## 外部 AMQ
 

@@ -66,7 +66,7 @@ sequenceDiagram
 
 建议账本位置 `%LOCALAPPDATA%\AgentRelay\relay.db`；临时目录 `%LOCALAPPDATA%\AgentRelay\workspace\<task_id>\`；AMQ 根目录在受管 `transport\amq\`，与 Git 工作区分离。`RELAY_HOME` 可显式覆盖本项目数据根目录，迁移须验证，不静默寻找替代目录。
 
-Phase 1 SQLite 表为 `settings`、`agents`、`permissions`、`adapters`、`tasks`、`callbacks`、`events`、`artifacts`、`outbox`、`notifications`。当前尝试保存在任务聚合内，旧尝试通过产物、回调和事件关联；迁移备份表留在 Phase 4。事件和当前状态同事务提交，写事务串行化并递增 `revision`，不另建事件溯源框架。幂等键用唯一约束，原始请求字段直接比较，不增加摘要层。
+SQLite 表包括 `settings`、`agents`、`permissions`、`adapters`、`tasks`、`callbacks`、`events`、`artifacts`、`outbox`、`notifications`，Phase 2 增加 `executors/executions`，Phase 3 增加 `resumers/continuations/desktop`。当前尝试保存在任务聚合内，旧尝试通过产物、回调和事件关联；迁移备份表留在 Phase 4。事件和当前状态同事务提交，写事务串行化并递增 `revision`，不另建事件溯源框架。幂等键用唯一约束，原始请求字段直接比较，不增加摘要层。
 
 Phase 2 增加 `executors` 和 `executions`。后者以任务和尝试为唯一键，记录 worker、会话和领取租期，状态为 `scheduled → receiving → running → finished`；已证明启动失败为 `launch_failed`，无法确认结果为 `unknown`，旧结果不再适用为 `discarded`。后台 worker 不继承派发终端的输出管道，向受管报告文件输出；派发进程在启动后退出。
 
@@ -101,4 +101,4 @@ TTL、过期活动任务、保留元数据和清理路径规则见 [PROTOCOL](PR
 
 单用户本机协作模式下，CLI `--sender` 结合登记目标与当前尝试检查归属，不是操作系统级身份认证。能调用宿主原生命令的 Agent 仍可绕过 Relay；强制隔离需宿主沙箱或原生权限。
 
-Inbox 通知与任务同事务保存，Windows 通知仅是附加输出。后续复用 Windows App SDK `AppNotificationManager`，需要安装/注册及通知权限；关闭或免打扰不影响结果持久性。使用普通用户进程，微软当前不支持 elevated app notifications，见 [通知文档](https://learn.microsoft.com/en-us/windows/apps/develop/notifications/app-notifications/app-notifications-dotnet)。
+Inbox 通知与任务同事务保存，Windows 通知是附加输出。Phase 3 的独立 WPF 辅助程序复用 Windows App SDK `AppNotificationManager`，使用自包含运行库与当前用户注册；通知点击可在发送进程退出后激活。继续提交、桌面通知各有持久状态；关闭或免打扰不影响结果持久性。使用普通用户进程，微软当前不支持 elevated app notifications，见 [通知文档](https://learn.microsoft.com/en-us/windows/apps/develop/notifications/app-notifications/app-notifications-dotnet)。
