@@ -101,6 +101,21 @@ internal static class Program
         Check(before!="已读取事件更新","Cross-process window message refreshed Home without polling");
         Navigate("Connections");await SaveImage(window,Path.Combine(root,"Connections.png"));
         foreach(var page in new[]{"Home","Agents","Connections","Inbox","Adapters","Audit","Settings"}){Navigate(page);window.UpdateLayout();Check(((ContentControl)window.FindName("PageContent")).Content is not null,$"{page} accessible");}
+        var demoService=await DemoWorkspace.CreateAsync(Path.Combine(root,"demo"));
+        var demoWindow=new MainWindow(demoService,demo:true);demoWindow.Show();
+        await Wait(()=>((TextBlock)demoWindow.FindName("StatusText")).Text!="Working…");
+        demoWindow.UpdateLayout();
+        Check(demoWindow.Title.Contains("Demo") && ((TextBlock)demoWindow.FindName("ModeDescription")).Text.Contains("DEMO"),"Demo remains visibly labelled");
+        Check(((TextBlock)demoWindow.FindName("VersionLabel")).Text=="v"+RelayVersion.Current,"GUI shows source preview version");
+        Check(Find<DataGrid>(demoWindow,"TasksTable").Items.Count==2,"Demo Home shows ready and failed sample tasks");
+        await SaveImage(demoWindow,Path.Combine(root,"Demo.png"));demoWindow.Close();
+        var emptyService=new RelayService(Path.Combine(root,"empty"));emptyService.Initialize();
+        var emptyWindow=new MainWindow(emptyService);emptyWindow.Show();
+        await Wait(()=>((TextBlock)emptyWindow.FindName("StatusText")).Text!="Working…");emptyWindow.UpdateLayout();
+        Check(FindAll<Button>(emptyWindow).Any(b=>Equals(b.Content,"Open Demo")),"Empty registry offers isolated demo");
+        await Click(emptyWindow,"Register Agent");emptyWindow.UpdateLayout();
+        Check(((TextBlock)emptyWindow.FindName("PageTitle")).Text=="Agents","First-use registration action navigates to Agents");
+        Check(emptyService.Agents().Count==0,"First-use navigation does not auto-register agents");emptyWindow.Close();
     }
 
     private static void SelectTask(MainWindow window,string id)

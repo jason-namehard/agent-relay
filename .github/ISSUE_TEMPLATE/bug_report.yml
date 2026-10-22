@@ -1,0 +1,32 @@
+name: Bug report
+description: 报告可复现的错误；请勿附带认证、完整配置或私人日志。
+title: "[Bug] "
+body:
+  - type: input
+    id: version
+    attributes:
+      label: Agent Relay version
+      placeholder: 0.1.0-preview.1
+    validations:
+      required: true
+  - type: input
+    id: platform
+    attributes:
+      label: Platform and runtime
+      description: Windows/Linux 版本、x64/其他架构，以及使用 CLI/MCP 时的 dotnet --info 摘要。
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Steps to reproduce
+      description: 尽量使用演示数据或最小隔离配置，描述操作顺序。
+    validations:
+      required: true
+  - type: textarea
+    id: outcome
+    attributes:
+      label: Expected and actual behavior
+      description: 写明预期行为、实际结果和脱敏后的错误码。
+    validations:
+      required: true

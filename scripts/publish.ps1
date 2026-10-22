@@ -1,7 +1,7 @@
-param([string]$Dotnet = 'dotnet', [switch]$IncludeDesktop)
+param([string]$Dotnet = 'dotnet', [switch]$IncludeDesktop, [string]$OutputDirectory)
 $ErrorActionPreference = 'Stop'
 $projectRoot = Split-Path -Parent $PSScriptRoot
-$destination = Join-Path $projectRoot 'artifacts/relay'
+$destination = if ($OutputDirectory) { [IO.Path]::GetFullPath($OutputDirectory) } else { Join-Path $projectRoot 'artifacts/relay' }
 & $Dotnet publish (Join-Path $projectRoot 'src/AgentRelay.Cli/AgentRelay.Cli.csproj') -c Release --no-restore -o $destination
 if ($LASTEXITCODE -ne 0) { throw 'Publish failed' }
 & $Dotnet publish (Join-Path $projectRoot 'src/AgentRelay.Mcp/AgentRelay.Mcp.csproj') -c Release --no-restore -o (Join-Path $destination 'mcp')
@@ -34,4 +34,6 @@ if ($IncludeDesktop) {
 Copy-Item -LiteralPath (Join-Path $projectRoot 'LICENSE'), (Join-Path $projectRoot 'THIRD_PARTY_NOTICES.md'), (Join-Path $projectRoot 'DISTRIBUTION_TERMS.md') -Destination $destination
 Copy-Item -LiteralPath (Join-Path $projectRoot 'licenses') -Destination $destination -Recurse -Force
 Copy-Item -LiteralPath (Join-Path $projectRoot 'docs/PACKAGE_USAGE.md') -Destination (Join-Path $destination 'README.md')
+Copy-Item -LiteralPath (Join-Path $projectRoot 'docs/GETTING_STARTED.md') -Destination (Join-Path $destination 'GETTING_STARTED.md')
+if ($IncludeDesktop) { Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'TryDemo.cmd') -Destination $destination }
 Write-Output $destination

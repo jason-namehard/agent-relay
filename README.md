@@ -2,6 +2,12 @@
 
 Windows-first local task handoffs for coding agents.
 
+[![CI](https://github.com/jason-namehard/agent-relay/actions/workflows/ci.yml/badge.svg)](https://github.com/jason-namehard/agent-relay/actions/workflows/ci.yml)
+
+**公开预览版：** [下载 v0.1.0-preview.1](https://github.com/jason-namehard/agent-relay/releases/tag/v0.1.0-preview.1) · [上手指南](docs/GETTING_STARTED.md) · [更新记录](CHANGELOG.md) · [参与贡献](CONTRIBUTING.md)
+
+Windows 包解压后双击 **`TryDemo.cmd`** 即可体验隔离演示，无需模型账号；结果是明确标注的本地样本。正式接入先登记路径、验证并授权，CLI/MCP 另需 .NET 10 runtime。
+
 Agent Relay 把任务交接变成可追踪的本机工作流：明确谁可以向谁派发，保存 Markdown 请求，等待显式完成事件，失败后可以检查证据并恢复。请求方和接收方负责推理，Relay 负责传递和记账。
 
 ```mermaid
@@ -27,7 +33,7 @@ flowchart LR
 - stdio MCP 的七个任务工具，启动时绑定 Agent 身份，与 CLI 共用方向权限和完成契约。
 - JSON/TOML 配置迁移的精确预览、来源版本登记、备份、明确批准、验证、独立停旧和回滚。
 
-阶段为 **Phase 5 — Windows GUI**。原生 WPF 界面提供 Agent 登记、方向连接图、Inbox、任务证据、适配器验证、迁移审阅和设置。核心 82 项自动回归及 Windows 窗口交互测试通过；CLI、MCP 与 GUI 共用同一个账本，无常驻服务或轮询依赖。
+当前为 **0.1.0-preview.1**，覆盖 CLI、MCP 和 Windows GUI。原生 WPF 界面提供 Agent 登记、方向连接图、Inbox、任务证据、适配器验证、迁移审阅和设置；首次使用可直接体验隔离 Demo。核心 83 项自动回归及 Windows 窗口交互测试通过；各入口共用同一个账本，无常驻服务或轮询依赖。
 
 ## Windows 桌面界面
 

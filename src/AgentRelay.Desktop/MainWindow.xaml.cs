@@ -37,11 +37,17 @@ public partial class MainWindow : Window
         UnmappedMemberHandling = JsonUnmappedMemberHandling.Disallow
     };
 
-    public MainWindow(RelayService service)
+    public MainWindow(RelayService service, bool demo = false)
     {
         this.service = service;
         InitializeComponent();
         HomePath.Text = service.Home;
+        VersionLabel.Text = "v" + RelayVersion.Current;
+        if (demo)
+        {
+            Title = "Agent Relay — Demo";
+            ModeDescription.Text = "DEMO · 虚构 Agent 与预设结果 · 未调用模型，未读取现用配置";
+        }
         SourceInitialized += (_, _) =>
         {
             ledgerMessage = WindowsLedgerSignal.Register();
@@ -125,6 +131,17 @@ public partial class MainWindow : Window
     private StackPanel HomePage()
     {
         var page = Page(); var summary = service.Summary();
+        if (summary.RegisteredAgents == 0)
+        {
+            Heading(page, "Start your first handoff", "先用隔离演示查看连接与结果；正式接入从 Agents 登记和验证真实路径开始。" );
+            var actions = Row(page);
+            Add(actions, "Open Demo", async () =>
+            {
+                var demoService = await DemoWorkspace.CreateAsync(Program.NewDemoHome());
+                new MainWindow(demoService, demo: true).Show();
+            }, false);
+            Add(actions, "Register Agent", () => { Navigation.SelectedIndex = 1; return Task.CompletedTask; });
+        }
         var cards = new UniformGrid { Columns = 4, Margin = new(0,0,0,18) };
         foreach (var (label,value) in new[] { ("Registered Agents", summary.RegisteredAgents.ToString()),
             ("Pending Tasks", summary.PendingTasks.ToString()), ("Needs Attention", summary.NeedsAttention.ToString()),

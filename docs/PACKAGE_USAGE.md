@@ -1,5 +1,7 @@
 # Agent Relay 发布包
 
+首次使用见 `GETTING_STARTED.md`。Windows 完整包双击 `TryDemo.cmd` 可启动隔离演示，无需模型账号；DEMO 使用预设结果，不代表真实 Agent 执行。正式模式直接运行 `gui/AgentRelay.Desktop.exe`。
+
 CLI 与 `mcp/relay-mcp.dll` 需要 .NET 10 runtime；Windows x64 的 `gui/AgentRelay.Desktop.exe` 和 `desktop/AgentRelay.Notify.exe` 自带所需运行库。AMQ 与 Codex CLI 由使用者单独安装并登记，不包含在包内。
 
 在解压目录运行 PowerShell：

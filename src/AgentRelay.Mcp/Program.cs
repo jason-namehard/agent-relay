@@ -39,7 +39,7 @@ try
     builder.Services.AddSingleton(new McpIdentity(agent, values.GetValueOrDefault("--route-id") ?? "direct"));
     builder.Services.AddMcpServer(options =>
     {
-        options.ServerInfo = new Implementation { Name = "agent-relay", Version = "0.4.0" };
+        options.ServerInfo = new Implementation { Name = "agent-relay", Version = RelayVersion.Current };
         options.ServerInstructions = "派发后结束当前轮，等待继续消息或用户提示。不要循环查询结果。完成必须显式 complete/fail。服务器身份固定，权限与 CLI 共用。";
     }).WithStdioServerTransport().WithTools<RelayTools>(serializerOptions: RelayJson.Options);
     await builder.Build().RunAsync();

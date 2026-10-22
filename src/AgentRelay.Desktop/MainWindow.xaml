@@ -32,7 +32,7 @@
      <TextBlock Text="LOCAL COORDINATION" Foreground="#89B9B0" FontSize="9" Margin="0,6,0,0"/>
     </StackPanel>
     <StackPanel DockPanel.Dock="Bottom" Margin="6,20,0,0">
-     <TextBlock Text="LOCAL FIRST" Foreground="#89B9B0" FontSize="10"/>
+     <TextBlock x:Name="VersionLabel" Foreground="#89B9B0" FontSize="10"/>
      <TextBlock Text="Explicit handoffs.&#x0a;Durable results." Foreground="#C2D3D7" FontSize="11" Margin="0,6,0,0"/>
     </StackPanel>
     <ListBox x:Name="Navigation" Background="Transparent" BorderThickness="0" Foreground="White" SelectionChanged="Navigate">
@@ -47,7 +47,7 @@
    <DockPanel Margin="0,0,0,18">
     <Button x:Name="RefreshButton" DockPanel.Dock="Right" Content="Refresh" Click="RefreshClick"/>
     <StackPanel><TextBlock x:Name="PageTitle" FontSize="27" FontWeight="SemiBold"/>
-     <TextBlock Text="本机协作 · 明确授权 · 事件驱动" Foreground="#657B85" Margin="0,5,0,0"/>
+     <TextBlock x:Name="ModeDescription" Text="本机协作 · 明确授权 · 事件驱动" Foreground="#657B85" Margin="0,5,0,0"/>
     </StackPanel>
    </DockPanel>
    <Border x:Name="ErrorBanner" Grid.Row="1" Background="#FDEBE9" BorderBrush="#D98780" BorderThickness="1" Padding="12" Margin="0,0,0,12" Visibility="Collapsed">
