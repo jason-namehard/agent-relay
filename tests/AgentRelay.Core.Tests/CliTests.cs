@@ -72,4 +72,19 @@ public sealed class CliTests
         }
         finally { Console.SetOut(original); }
     }
+
+    [TestMethod]
+    public async Task InvalidExecutionTimeoutIsRejectedBeforeCreatingATask()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "AgentRelay.Tests", Guid.NewGuid().ToString());
+        await Invoke("--home", root, "init");
+        var request = Path.Combine(root, "request.md"); File.WriteAllText(request, "Do work");
+        var result = await Invoke("--home", root, "task", "dispatch", "--from", "agent-a", "--to", "agent-b", "--request", request,
+            "--idempotency-key", "invalid-timeout", "--execute", "--execution-timeout-seconds", "0");
+        Assert.AreEqual(2, result.Code);
+        Assert.AreEqual("invalid_execution_timeout", result.Json.GetProperty("error").GetProperty("code").GetString());
+        var tasks = await Invoke("--home", root, "task", "list");
+        Assert.AreEqual(0, tasks.Json.GetProperty("data").GetArrayLength());
+        Directory.Delete(root, recursive: true);
+    }
 }

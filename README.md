@@ -18,11 +18,12 @@ flowchart LR
 - A→B 有向权限；B 的完成回调不自动获得 B→A 派发权。
 - `auto`、`confirm`、`manual` 派发，持久任务、尝试、幂等和审计。
 - AMQ 公共 CLI 适配器；显式验证后自动入队，不建立常驻收件服务。
+- `codex-exec` 单次执行器：领取 AMQ 消息、启动独立只读 CLI、验证结构化声明并提交完成/失败。
 - 显式 `ack`、`start`、`complete`、`fail`；写文件不会自动完成任务。
 - 最多三次可证明未提交的运输重试；投递未知时停止自动重发。
 - 默认三天的受管 Markdown 文件 TTL、预览清理、重启恢复与持久 Inbox。
 
-阶段为 **Phase 1 — CLI Core**。本机 Windows 已完成 AMQ 0.104.0 收发及显式回调冒烟验证；两个真实 AI Agent 的自动执行闭环属于 Phase 2。精确交互会话恢复和桌面通知属于 Phase 3，MCP/迁移和 GUI 分别在 Phase 4/5。
+阶段为 **Phase 2 — First Real CLI Dispatch**。本机 Windows 已完成两个独立 Codex CLI 的真实交接，以及明确失败、漏回调和去重验证。精确交互会话恢复和桌面通知属于 Phase 3，MCP/迁移和 GUI 分别在 Phase 4/5。
 
 ## 构建与验证
 
@@ -84,6 +85,39 @@ dotnet $relay --home $dataRoot task dispatch --from agent-a --to agent-b --reque
 
 `dispatched` 表示 AMQ 已接受消息。B 仍需通过宿主集成或手工命令取件、执行并回调；此阶段不会假装已唤醒原会话。适配器不可用时保存为 `awaiting_manual`。AMQ 版本变化后必须重新验证。
 
+## 自动运行一次 Codex Agent
+
+已有 Phase 1 数据目录升级后先运行一次 `init`，以创建执行记录表；已有任务、权限和配置保留。指定原生 `codex.exe`，不用 npm 的 `.cmd`/`.ps1` 启动脚本。
+
+```powershell
+dotnet $relay --home $dataRoot init
+dotnet $relay --home $dataRoot agent register --id agent-b --host codex --config-path C:/Users/you/.codex/config.toml --cli-path C:/tools/codex.exe
+dotnet $relay --home $dataRoot agent validate --id agent-b
+dotnet $relay --home $dataRoot agent verify-executor --id agent-b
+
+$handoff = dotnet $relay --home $dataRoot task dispatch --from agent-a --to agent-b --request ./request.md --mode auto --adapter amq-cli --idempotency-key review-3 --execute --execution-timeout-seconds 300 | ConvertFrom-Json
+$task = $handoff.data.task
+```
+
+派发立即返回等待响应，A 结束当前轮。单次 worker 根据运输凭据领取精确消息，确认当前尝试并启动 B，收到 B 的结构化 `succeeded/failed` 声明后显式调用已有完成/失败操作。worker 在任务处理后退出；退出码 `0`、文件变化或 AMQ 收件回执都不能单独表示任务成功。
+
+执行器使用注册配置文件所在目录作为 `CODEX_HOME`，复用该目录的已有登录态。固定以 `--ignore-user-config --ephemeral --sandbox read-only` 调用：不加载用户 config.toml 的模型/provider/MCP 设置，不修改原配置，不向原桌面会话注入。本阶段适用于已登录 Codex 的只读分析和文本结果任务；自定义 provider/profile 及写入代码的执行模式尚未接入。
+
+需要人工确认时使用 `task dispatch --mode confirm`，再显式 `task approve --task <id> --execute`。也可独立运行单次 worker：
+
+```powershell
+dotnet $relay --home $dataRoot task run --task $task.task_id --attempt $task.attempt_id --sender agent-b --timeout-seconds 300
+dotnet $relay --home $dataRoot task execution --task $task.task_id
+```
+
+同一任务尝试只有一个执行领取者；重复 `run` 或重复派发不会再启动模型。执行结果未知时只展示证据；经明确批准的 `task retry` 产生新尝试，再显式运行 worker。日志、结果声明和后台 worker 报告位于该尝试的受管目录，按文件 TTL 清理。
+
+两个真实 CLI 的可复现验证脚本需要本机已有认证，会消耗账户模型额度；普通 CI 不调用模型或读取登录凭据：
+
+```powershell
+pwsh ./scripts/verify-real-agents.ps1 -Dotnet dotnet -Codex C:/tools/codex.exe -Amq C:/tools/amq/amq.exe -ConfigPath C:/Users/you/.codex/config.toml
+```
+
 ## 超时、重试与清理
 
 ```powershell
@@ -100,12 +134,14 @@ dotnet $relay --home $dataRoot cleanup --apply
 ## 已知边界
 
 - 路径验证只证明文件存在、可读及登记关系，不声称宿主配置语法、认证和会话控制已通过验证。
-- Phase 1 使用持久 Inbox 和复制提示词；尚未注册 Windows Task Scheduler、发送桌面通知或接入交互 session。
+- 当前使用持久 Inbox 和复制提示词；尚未注册 Windows Task Scheduler、发送桌面通知或接入交互 session。
 - `delivery_unknown` 保留凭据供人工核对；当前不自动对账或重发。取消只停止 Relay 后续动作，不终止已经启动的宿主。
 - 清理覆盖登记产物；异常退出留下的未登记 workspace 文件按文件系统创建时间和当前 TTL 处理，不跟随目录链接。
 
 ## 文档与许可
 
 [项目概要](docs/PROJECT_BRIEF.md) · [架构](docs/ARCHITECTURE.md) · [协议](docs/PROTOCOL.md) · [适配器](docs/ADAPTERS.md) · [UI 规格](docs/UI_SPEC.md) · [研究与路线图](docs/ROADMAP_AND_RESEARCH.md)
+
+[Phase 1 验收](docs/PHASE1.md) · [Phase 2 验收](docs/PHASE2.md)
 
 应用代码采用 [MIT License](LICENSE)。依赖和外部工具的来源、许可及分发说明见 [Third-party notices](THIRD_PARTY_NOTICES.md)。

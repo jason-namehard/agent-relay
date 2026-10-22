@@ -211,7 +211,11 @@ public sealed partial class RelayService
         return Status(taskId);
     }
 
-    public TaskView Status(string id) => store.Read(s => View(s.Task(id)));
+    public TaskView Status(string id) => store.Read(s =>
+    {
+        var task = s.Task(id);
+        return View(task) with { Execution = Execution(s, id, task.AttemptId) };
+    });
     public List<TaskView> Tasks() => store.Read(s => s.Query("SELECT json FROM tasks ORDER BY rowid DESC", r => View(RelayJson.Read<TaskRecord>(r.GetString(0)))));
     public List<InboxItem> Inbox() => store.Read(s => s.Query("SELECT id,task_id,event,message,created_at,is_read FROM notifications ORDER BY id DESC",
         r => new InboxItem(r.GetInt64(0), r.GetString(1), r.GetString(2), r.GetString(3), DateTimeOffset.Parse(r.GetString(4)), r.GetBoolean(5))));
@@ -245,6 +249,11 @@ public sealed partial class RelayService
                 : $"任务 {task.TaskId} 已保存，状态 {task.State}，正在等待结果文件 {task.ResultPath}。请结束当前轮；收到继续消息或用户粘贴提示词后再处理。截止时间：{task.DeadlineAt:O}。";
         if (overdue || task.State == TaskState.TimedOut) prompt = $"任务 {task.TaskId} 已超过截止时间，未获得有效完成结果。请运行 recover 或检查证据；不要自动重复派发。";
         if (task.State == TaskState.DeliveryUnknown) prompt = $"任务 {task.TaskId} 的投递状态未知，可能已被接收。请检查运输证据，禁止自动重发。";
+        if (!Terminal(task.State) && task.ErrorCode == "execution_unknown")
+        {
+            action = "inspect_execution_evidence";
+            prompt = $"任务 {task.TaskId} 的执行结果未知。请检查 task execution 证据；不能自动再次启动 Agent。";
+        }
         return new TaskView(task, overdue, action, prompt);
     }
 

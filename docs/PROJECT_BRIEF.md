@@ -1,6 +1,6 @@
 # Agent Relay 项目概要
 
-状态：架构已获批准，Phase 1 CLI Core 已实现。研究日期：2026-10-22。当前用法与边界见 [README](../README.md)，验收记录见 [PHASE1](PHASE1.md)。
+状态：架构已获批准，Phase 2 真实 CLI 派发已实现。研究日期：2026-10-22。当前用法与边界见 [README](../README.md)，验收记录见 [PHASE1](PHASE1.md) 和 [PHASE2](PHASE2.md)。
 
 ## 目标与边界
 

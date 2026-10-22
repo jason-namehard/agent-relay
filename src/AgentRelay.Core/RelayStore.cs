@@ -40,6 +40,9 @@ public sealed class RelayStore
                 task_id TEXT NOT NULL, event TEXT NOT NULL, message TEXT NOT NULL,
                 created_at TEXT NOT NULL, is_read INTEGER NOT NULL DEFAULT 0,
                 UNIQUE(task_id,event));
+            CREATE TABLE IF NOT EXISTS executors (agent_id TEXT PRIMARY KEY, json TEXT NOT NULL);
+            CREATE TABLE IF NOT EXISTS executions (task_id TEXT NOT NULL, attempt_id TEXT NOT NULL,
+                json TEXT NOT NULL, PRIMARY KEY(task_id,attempt_id));
             """;
         command.ExecuteNonQuery();
         using var insert = connection.CreateCommand();

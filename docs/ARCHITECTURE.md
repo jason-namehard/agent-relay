@@ -1,6 +1,6 @@
 # Agent Relay 架构
 
-状态：已批准架构；Phase 1 核心落地。后续组件按阶段实现；实际能力见 [PHASE1](PHASE1.md)。协议字段和状态以 [PROTOCOL](PROTOCOL.md) 为准。
+状态：已批准架构；Phase 2 单次真实 CLI 执行落地。实际能力见 [PHASE1](PHASE1.md) 和 [PHASE2](PHASE2.md)。协议字段和状态以 [PROTOCOL](PROTOCOL.md) 为准。
 
 ## 组件与依赖方向
 
@@ -17,6 +17,8 @@ flowchart LR
     Core --> Files[Managed Markdown Workspace]
     Core --> Transport[AMQ CLI Adapter]
     Transport --> B[Agent B]
+    Worker[Optional One-shot Worker] -->|drain exact task / codex exec| B
+    Core -->|explicit execute| Worker
     B -->|ack / complete / fail| CLI
     Core --> Resume[Session Adapter]
     Resume --> A
@@ -65,6 +67,10 @@ sequenceDiagram
 建议账本位置 `%LOCALAPPDATA%\AgentRelay\relay.db`；临时目录 `%LOCALAPPDATA%\AgentRelay\workspace\<task_id>\`；AMQ 根目录在受管 `transport\amq\`，与 Git 工作区分离。`RELAY_HOME` 可显式覆盖本项目数据根目录，迁移须验证，不静默寻找替代目录。
 
 Phase 1 SQLite 表为 `settings`、`agents`、`permissions`、`adapters`、`tasks`、`callbacks`、`events`、`artifacts`、`outbox`、`notifications`。当前尝试保存在任务聚合内，旧尝试通过产物、回调和事件关联；迁移备份表留在 Phase 4。事件和当前状态同事务提交，写事务串行化并递增 `revision`，不另建事件溯源框架。幂等键用唯一约束，原始请求字段直接比较，不增加摘要层。
+
+Phase 2 增加 `executors` 和 `executions`。后者以任务和尝试为唯一键，记录 worker、会话和领取租期，状态为 `scheduled → receiving → running → finished`；已证明启动失败为 `launch_failed`，无法确认结果为 `unknown`，旧结果不再适用为 `discarded`。后台 worker 不继承派发终端的输出管道，向受管报告文件输出；派发进程在启动后退出。
+
+执行领取提交后崩溃，或执行时限内没有最终声明，恢复时保留未知状态并通知用户，不重启模型。任务整体截止时间仍由 `recover` 持久化为 `timed_out`。执行器代理已有显式回调操作，不从进程退出、产物更新或收件自动推断成功。
 
 SQLite 事务中只做本地账本写入，不等待模型或外部 CLI。并发遇到锁超时时有限重试短事务，耗尽后明确报错。Microsoft 文档确认 SQLite 同时仅允许一个待提交写事务，见 [事务文档](https://learn.microsoft.com/en-us/dotnet/standard/data/sqlite/transactions)。
 

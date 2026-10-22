@@ -70,7 +70,7 @@ public sealed class TaskRecord
     public bool? SideEffectsPossible { get; set; }
 }
 
-public sealed record TaskView(TaskRecord Task, bool DeadlineExceeded, string NextAction, string Prompt);
+public sealed record TaskView(TaskRecord Task, bool DeadlineExceeded, string NextAction, string Prompt, ExecutionRecord? Execution = null);
 public sealed record ArtifactRecord(string ArtifactId, string TaskId, string AttemptId, string Kind,
     string Path, DateTimeOffset CreatedAt, DateTimeOffset ExpiresAt, string State);
 public sealed record AuditEvent(long Sequence, string EventId, string TaskId, string AttemptId,
@@ -81,6 +81,25 @@ public sealed record OutboxItem(string TaskId, string AttemptId, string State, i
     DateTimeOffset? LeaseUntil, string? Receipt);
 public sealed record DeliveryResult(string Status, string? Receipt, string? Error, bool Retryable = false);
 public sealed record CleanupResult(int Eligible, int Deleted, string[] Paths);
+
+public sealed record ExecutorRecord(string AgentId, string Kind, string Executable, string Version,
+    string VerificationStatus, DateTimeOffset VerifiedAt, string ConfigDirectory,
+    string ConfigurationMode = "ignore_user_config_read_only");
+public sealed record ExecutionRecord(string TaskId, string AttemptId, string AgentId, string State,
+    DateTimeOffset CreatedAt, DateTimeOffset LeaseUntil, string? SessionId, string? ErrorCode, int? WorkerPid = null);
+public sealed record ExecutionInput(TaskRecord Task, string RequestMarkdown, string Directory, int TimeoutSeconds);
+public sealed record AgentOutcome(string Status, string ResultMarkdown, string ErrorCode, string Message,
+    string? SessionId = null);
+
+public interface IAgentExecutor
+{
+    Task<AgentOutcome> ExecuteAsync(ExecutionInput input, CancellationToken cancellationToken);
+}
+
+public interface IMessageReceiver
+{
+    Task ReceiveAsync(TaskRecord task, string home, OutboxItem evidence, TimeSpan timeout, CancellationToken cancellationToken);
+}
 
 public interface IDeliveryAdapter
 {

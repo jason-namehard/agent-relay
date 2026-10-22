@@ -4,6 +4,9 @@ using System.Globalization;
 using System.Text.Json;
 using AgentRelay.Core;
 using Microsoft.Data.Sqlite;
+using System.Diagnostics;
+using System.ComponentModel;
+using System.Reflection;
 
 return await RelayCli.RunAsync(args);
 
@@ -36,6 +39,12 @@ public static class RelayCli
             }
             command.SetAction(async (parse, cancellationToken) =>
             {
+                void Emit(object value)
+                {
+                    if (options.TryGetValue("report-path", out var reportOption) && parse.GetValue(reportOption) is { } path)
+                        File.WriteAllText(path, RelayJson.Write(value), new System.Text.UTF8Encoding(false));
+                    else Print(value);
+                }
                 try
                 {
                     var directory = parse.GetValue(home) ?? Environment.GetEnvironmentVariable("RELAY_HOME")
@@ -44,6 +53,7 @@ public static class RelayCli
                     var result = await action(service, new Values(parse, options, flags, cancellationToken));
                     var code = result switch
                     {
+                        TaskView { Task.ErrorCode: "execution_unknown" } when name is "run" or "dispatch" => 6,
                         TaskView { Task.State: TaskState.DeliveryUnknown } when name is "dispatch" or "approve" or "retry" => 6,
                         TaskView { Task.State: TaskState.AwaitingManual or TaskState.AwaitingConfirmation } when name is "dispatch" or "approve" or "retry" => 4,
                         TaskView { Task.State: TaskState.Failed } when name is "dispatch" or "approve" or "retry" => 1,
@@ -53,16 +63,17 @@ public static class RelayCli
                     var view = result as TaskView;
                     object? operationError = code == 1 && view is not null
                         ? new { code = view.Task.ErrorCode, message = view.Task.ErrorMessage } : null;
-                    Print(new { relay_version = 1, ok = code is 0 or 4 or 6, task_id = view?.Task.TaskId,
+                    Emit(new { relay_version = 1, ok = code is 0 or 4 or 6, task_id = view?.Task.TaskId,
                         state = view?.Task.State, next_action = view?.NextAction, data = result, error = operationError });
                     return code;
                 }
-                catch (RelayException error) { return Error(error.Code, error.Message, error.ExitCode); }
-                catch (IOException error) { return Error("file_error", error.Message, 1); }
-                catch (UnauthorizedAccessException error) { return Error("access_denied", error.Message, 3); }
-                catch (JsonException error) { return Error("invalid_json", error.Message, 2); }
-                catch (ArgumentException error) { return Error("invalid_argument", error.Message, 2); }
-                catch (SqliteException error) { return Error("database_error", error.Message, 1); }
+                catch (RelayException error) { return Error(error.Code, error.Message, error.ExitCode, Emit); }
+                catch (IOException error) { return Error("file_error", error.Message, 1, Emit); }
+                catch (UnauthorizedAccessException error) { return Error("access_denied", error.Message, 3, Emit); }
+                catch (JsonException error) { return Error("invalid_json", error.Message, 2, Emit); }
+                catch (ArgumentException error) { return Error("invalid_argument", error.Message, 2, Emit); }
+                catch (SqliteException error) { return Error("database_error", error.Message, 1, Emit); }
+                catch (Win32Exception error) { return Error("process_start_failed", error.Message, 3, Emit); }
             });
             parent.Subcommands.Add(command);
         }
@@ -82,6 +93,9 @@ public static class RelayCli
             (s, v) => s.Register(v.Get("id"), v.Optional("host") ?? "manual", v.Get("config-path"),
                 v.Optional("cli-path"), v.Optional("host-version"), v.Optional("instruction-path") is { } path ? [path] : []));
         Sync(agent, "validate", "验证已登记路径存在、可读；不启动宿主", ["id!"], (s, v) => s.ValidateAgent(v.Get("id")));
+        Add(agent, "verify-executor", "验证 Codex 原生 CLI 版本及非交互契约，不调用模型", ["id!"],
+            async (s, v) => await s.VerifyExecutorAsync(v.Get("id"), v.CancellationToken));
+        Sync(agent, "executors", "显示已验证的执行器", [], (s, _) => s.Executors());
 
         var permission = Group("permission", "有向通信权限，未配置默认拒绝");
         Sync(permission, "set", "只改变指定方向", ["from!", "to!", "decision!"], (s, v) => s.SetPermission(v.Get("from"), v.Get("to"), v.Get("decision")));
@@ -106,15 +120,38 @@ public static class RelayCli
         });
 
         var task = Group("task", "任务派发、显式回调与恢复");
-        Add(task, "dispatch", "保存交接并立即返回；不要循环查询等待", ["from!", "to!", "request!", "mode", "adapter", "idempotency-key!", "deadline-at", "origin-session"], async (s, v) =>
+        Add(task, "dispatch", "保存交接并立即返回；execute 启动有界单次 worker", ["from!", "to!", "request!", "mode", "adapter", "idempotency-key!", "deadline-at", "origin-session", "execute?", "execution-timeout-seconds"], async (s, v) =>
         {
             OriginSession? origin = v.Optional("origin-session") is { } path ? RelayJson.Read<OriginSession>(File.ReadAllText(path)) : null;
-            return await s.DispatchAsync(new DispatchRequest(v.Get("from"), v.Get("to"), File.ReadAllText(v.Get("request")),
+            var executionTimeout = v.ExecutionTimeout("execution-timeout-seconds");
+            if (v.Flag("execute"))
+            {
+                if (v.Optional("mode") is { } mode && mode != "auto")
+                    throw new RelayException("invalid_execution_mode", "dispatch --execute 仅用于 auto；confirm 模式请在 approve 时显式使用 --execute。");
+                s.RequireExecutorReady(v.Get("to"));
+            }
+            var dispatched = await s.DispatchAsync(new DispatchRequest(v.Get("from"), v.Get("to"), File.ReadAllText(v.Get("request")),
                 v.Optional("mode") ?? "auto", v.Optional("adapter") ?? "amq-cli", v.Get("idempotency-key"), v.Timestamp("deadline-at"), origin), v.CancellationToken);
+            if (v.Flag("execute") && dispatched.Task.State == TaskState.Dispatched)
+                LaunchExecution(s, dispatched.Task, executionTimeout);
+            return s.Status(dispatched.Task.TaskId);
         });
+        Add(task, "run", "领取一次 AMQ 任务并运行已验证 Codex；不轮询", ["task!", "attempt!", "sender!", "timeout-seconds", "report-path"],
+            async (s, v) => await s.RunTaskAsync(v.Get("task"), v.Get("attempt"), v.Get("sender"),
+                v.ExecutionTimeout("timeout-seconds"), cancellationToken: v.CancellationToken));
+        Sync(task, "execution", "只读显示执行、会话和 worker 证据", ["task!", "attempt"],
+            (s, v) => (object?)s.ExecutionEvidence(v.Get("task"), v.Optional("attempt")) ?? new { message = "尚无执行记录。" });
         Sync(task, "status", "只读状态，不触发投递或时限处理", ["task!"], (s, v) => s.Status(v.Get("task")));
         Sync(task, "list", "只读列出任务", [], (s, _) => s.Tasks());
-        Add(task, "approve", "批准待确认任务", ["task!"], async (s, v) => await s.ApproveAsync(v.Get("task"), v.CancellationToken));
+        Add(task, "approve", "批准待确认任务；可显式启动 worker", ["task!", "execute?", "execution-timeout-seconds"], async (s, v) =>
+        {
+            var executionTimeout = v.ExecutionTimeout("execution-timeout-seconds");
+            if (v.Flag("execute")) s.RequireExecutorReady(s.Status(v.Get("task")).Task.RecipientId);
+            var approved = await s.ApproveAsync(v.Get("task"), v.CancellationToken);
+            if (v.Flag("execute") && approved.Task.State == TaskState.Dispatched)
+                LaunchExecution(s, approved.Task, executionTimeout);
+            return s.Status(approved.Task.TaskId);
+        });
         Sync(task, "ack", "接收方确认当前尝试", ["task!", "attempt!", "sender!", "idempotency-key!"],
             (s, v) => s.Acknowledge(v.Get("task"), v.Get("attempt"), v.Get("sender"), v.Get("idempotency-key")));
         Sync(task, "start", "接收方报告开始执行", ["task!", "attempt!", "sender!", "idempotency-key!"],
@@ -158,11 +195,41 @@ public static class RelayCli
     }
 
     private static void Print(object value) => Console.WriteLine(RelayJson.Write(value));
-    private static int Error(string code, string message, int exitCode)
+    private static int Error(string code, string message, int exitCode, Action<object>? emit = null)
     {
-        Print(new { relay_version = 1, ok = false, task_id = (string?)null, state = (string?)null,
+        (emit ?? Print)(new { relay_version = 1, ok = false, task_id = (string?)null, state = (string?)null,
             next_action = (string?)null, data = (object?)null, error = new { code, message } });
         return exitCode;
+    }
+
+    private static void LaunchExecution(RelayService service, TaskRecord task, int timeoutSeconds)
+    {
+        if (!service.ScheduleExecution(task.TaskId, task.AttemptId, task.RecipientId, timeoutSeconds)) return;
+        // ShellExecute starts a separate Windows process without retaining the dispatch console pipes.
+        var shellLaunch = OperatingSystem.IsWindows();
+        var start = new ProcessStartInfo(Environment.ProcessPath!)
+        {
+            UseShellExecute = shellLaunch, CreateNoWindow = true,
+            RedirectStandardInput = !shellLaunch, RedirectStandardOutput = !shellLaunch, RedirectStandardError = !shellLaunch
+        };
+        if (shellLaunch) start.WindowStyle = ProcessWindowStyle.Hidden;
+        if (string.Equals(Path.GetFileNameWithoutExtension(start.FileName), "dotnet", StringComparison.OrdinalIgnoreCase))
+            start.ArgumentList.Add(Assembly.GetEntryAssembly()!.Location);
+        var report = Path.Combine(Path.GetDirectoryName(task.RequestPath)!, "worker-report.json");
+        foreach (var arg in new[] { "--home", service.Home, "task", "run", "--task", task.TaskId, "--attempt", task.AttemptId,
+                     "--sender", task.RecipientId, "--timeout-seconds", timeoutSeconds.ToString(CultureInfo.InvariantCulture), "--report-path", report })
+            start.ArgumentList.Add(arg);
+        try
+        {
+            using var process = Process.Start(start)!;
+            if (!shellLaunch) process.StandardInput.Close();
+            service.RecordExecutionWorker(task.TaskId, task.AttemptId, process.Id);
+        }
+        catch (Win32Exception error)
+        {
+            service.ExecutionLaunchFailed(task.TaskId, task.AttemptId, error.Message);
+            throw new RelayException("worker_launch_failed", error.Message, 3);
+        }
     }
 
     private sealed record Values(ParseResult Parse, Dictionary<string, Option<string>> Options,
@@ -177,6 +244,12 @@ public static class RelayCli
             if (!int.TryParse(value, NumberStyles.None, CultureInfo.InvariantCulture, out var number))
                 throw new RelayException("invalid_number", $"{key} 必须为正整数。");
             return number;
+        }
+        public int ExecutionTimeout(string key)
+        {
+            var seconds = Number(key, 180);
+            if (seconds is < 1 or > 1800) throw new RelayException("invalid_execution_timeout", "执行时限必须为 1–1800 秒。");
+            return seconds;
         }
         public DateTimeOffset? Timestamp(string key)
         {

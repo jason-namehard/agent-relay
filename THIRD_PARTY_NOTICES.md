@@ -26,3 +26,7 @@ MSTest.TestFramework / MSTest.TestAdapter 4.0.2、Microsoft.NET.Test.Sdk 18.0.1 
 AMQ 作为用户指定的独立可执行文件，通过公开 CLI 调用，不随本项目发布包捆绑。测试基线为 [AMQ 0.104.0](https://github.com/avivsinai/agent-message-queue/releases/tag/v0.104.0)，上游 MIT，Copyright (c) 2025 Aviv Sinai。若今后捆绑 AMQ，应保留其 LICENSE 并核对其二进制包含的第三方组件声明；当前不把外部 AMQ 的许可误计为本项目独立实现的版权。
 
 新贡献不得复制无明确许可的源码。引入或改写上游代码时，应在变更中记录来源、版本、许可和修改内容，并保留所需声明。仅通过改名或改写语句不能消除原代码的许可义务。
+
+## 外部 Codex CLI
+
+Phase 2 调用用户指定的独立 Codex CLI，通过官方 `exec`、结构化输出和只读沙箱接口集成，不捆绑 CLI、模型权重或账户凭据。Codex 的授权及依赖声明以 [openai/codex](https://github.com/openai/codex) 的对应分发版本为准；本项目没有复制其应用源码。真实 Agent 验证脚本只在开发者显式运行时使用本机已有认证，公共 CI 不读取认证文件或调用模型。

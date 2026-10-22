@@ -1,6 +1,6 @@
 # Agent Relay 协议提案
 
-状态：`relay_version: 1`，Phase 1 CLI 已实现；MCP 与自动会话恢复按后续阶段交付。跨进程 JSON 使用 UTF-8，时间使用带 `Z` 的 UTC RFC 3339；GUI 按用户时区显示。实际命令见 [README](../README.md)。
+状态：`relay_version: 1`，Phase 2 单次执行已实现；MCP 与自动会话恢复按后续阶段交付。跨进程 JSON 使用 UTF-8，时间使用带 `Z` 的 UTC RFC 3339；GUI 按用户时区显示。实际命令见 [README](../README.md)。
 
 ## 任务与事件
 
@@ -40,6 +40,8 @@ Relay 另写 `recorded_at` 和事务序号，不按客户端时钟决定事件�
 | `task.timed_out` | Relay 检查到截止时间，结果未知 |
 | `task.cancelled` | 用户停止等待/后续派发，不代表已终止宿主执行 |
 | `task.retry_requested` | 用户确认新执行尝试及其重复副作用风险 |
+| `execution.scheduled` / `execution.claimed` | 显式启动和领取一次执行，唯一键为任务与尝试 |
+| `execution.unknown` / `execution.launch_failed` | 结果未知或已证明 worker 启动失败；不当作执行成功 |
 | `session.resume_submitted` / `session.resume_failed` / `session.resume_unknown` | 继续消息提交结果，独立于任务执行结果 |
 
 ## 状态机
@@ -96,9 +98,14 @@ Phase 1 命令（需要先构建 CLI）：
 relay agent discover
 relay agent register --id agent-a --config-path <absolute-path>
 relay agent validate --id agent-a
+relay agent verify-executor --id agent-b
+relay agent executors
 relay permission set --from agent-a --to agent-b --decision allow
 relay task dispatch --from agent-a --to agent-b --request <path> --mode auto --idempotency-key <key>
 relay task approve --task <id>
+relay task dispatch --from agent-a --to agent-b --request <path> --mode auto --idempotency-key <key> --execute
+relay task run --task <id> --attempt <id> --sender agent-b --timeout-seconds 300
+relay task execution --task <id>
 relay task ack --task <id> --attempt <id> --sender agent-b --idempotency-key <key>
 relay task start --task <id> --attempt <id> --sender agent-b --idempotency-key <key>
 relay artifact register --task <id> --attempt <id> --kind result --path <path>
@@ -115,6 +122,10 @@ relay cleanup --apply
 ```
 
 `dispatch` 接受可选 `--deadline-at` 和 `--origin-session <json-file>`；默认截止见上节。`retry` 交互展示当前尝试及副作用风险，非交互须提供明确批准的确认输入；不能从 `unknown` 静默改成可重试。未知投递若经用户批准重新执行，必须创建新尝试并拒绝旧尝试的后续终态覆盖；若已证明未提交，可继续原尝试的剩余运输预算。缺失批准返回待用户操作。`complete` / `fail` 对尚未登记的有效受管结果文件，在同一完成事务中登记产物；`artifact register` 用于提前登记。
+
+`dispatch --execute` 仅用于 `auto`，要求目标执行器已经验证；`confirm` 在 `approve --execute` 时启动。单次 worker 默认执行上限 180 秒，允许显式设为 1–1800 秒。它从 AMQ 领取与运输凭据一致的消息，再触发 `ack/start`。Codex 声明包含 `status`、`result_markdown`、`error_code`、`message`；成功需要非空 Markdown、空错误码、有效会话及 `turn.completed` 证据，随后由 worker 代理提交既有显式完成操作。失败需要错误码、说明和失败报告。stdout/stderr 使用明确的 UTF-8。
+
+执行超时没有有效最终声明时，保存 `execution.state=unknown`，任务仍等待有效结果或整体 deadline。`recover` 对过期 worker 租期同样只标未知，不能重新运行模型。`task retry --approve` 才能创建新尝试，再由用户显式启动新的 worker。`--report-path` 用于单次 worker 将 CLI 响应写入受管报告文件，使父派发命令可立即退出。
 
 JSON 统一返回 `{relay_version, ok, task_id, state, next_action, data, error}`；不适用字段为 `null`。退出码：`0` 操作已持久接受，`2` 参数/格式错误，`3` 权限或验证拒绝，`4` 需要人工操作，`5` 状态/幂等冲突，`6` 投递未知，`1` 其他执行错误。`ok=true` 只代表命令本身完成，不代表任务执行成功；`state` 才表示任务状态。
 

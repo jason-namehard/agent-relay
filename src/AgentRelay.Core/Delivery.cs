@@ -9,22 +9,28 @@ public sealed record ProcessResult(int ExitCode, string Output, string Error, bo
 public static class RelayProcess
 {
     public static async Task<ProcessResult> RunAsync(string executable, IEnumerable<string> arguments,
-        string? input, TimeSpan timeout, CancellationToken cancellationToken = default)
+        string? input, TimeSpan timeout, CancellationToken cancellationToken = default,
+        IReadOnlyDictionary<string, string>? environment = null)
     {
         var start = new ProcessStartInfo(executable)
         {
             UseShellExecute = false, CreateNoWindow = true,
             RedirectStandardOutput = true, RedirectStandardError = true, RedirectStandardInput = true
         };
+        start.StandardInputEncoding = new System.Text.UTF8Encoding(false);
+        start.StandardOutputEncoding = new System.Text.UTF8Encoding(false);
+        start.StandardErrorEncoding = new System.Text.UTF8Encoding(false);
         foreach (var arg in arguments) start.ArgumentList.Add(arg);
         start.Environment["AMQ_NO_UPDATE_CHECK"] = "1";
         // Relay always supplies its own root and identity, independent of a parent agent shell.
         foreach (var key in start.Environment.Keys.Where(k => k.StartsWith("AM_", StringComparison.Ordinal)).ToArray())
             start.Environment.Remove(key);
+        if (environment is not null)
+            foreach (var (key, value) in environment) start.Environment[key] = value;
         using var process = new Process { StartInfo = start };
         process.Start();
-        var output = process.StandardOutput.ReadToEndAsync(cancellationToken);
-        var error = process.StandardError.ReadToEndAsync(cancellationToken);
+        var output = process.StandardOutput.ReadToEndAsync();
+        var error = process.StandardError.ReadToEndAsync();
         using var deadline = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         deadline.CancelAfter(timeout);
         try
@@ -97,7 +103,7 @@ public sealed class AmqCliAdapter(string executable, string? expectedVersion = n
             throw new RelayException("adapter_verification_failed", "无法确认 AMQ 版本。", 3);
         var root = Path.Combine(home, "validation", Guid.NewGuid().ToString());
         var init = await RelayProcess.RunAsync(full, ["init", "--root", root, "--agents", "relay-a,relay-b"], null, timeout, cancellationToken);
-        var marker = "relay-verification-" + Guid.NewGuid();
+        var marker = "relay-verification-中文-" + Guid.NewGuid();
         var send = init.ExitCode == 0 && !init.TimedOut
             ? await RelayProcess.RunAsync(full, ["send", "--root", root, "--me", "relay-a", "--to", "relay-b", "--body", "-", "--json"], marker, timeout, cancellationToken)
             : throw new RelayException("adapter_verification_failed", "AMQ init 验证失败：" + init.Error, 3);

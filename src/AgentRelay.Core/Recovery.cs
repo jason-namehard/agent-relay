@@ -12,6 +12,15 @@ public sealed partial class RelayService
             foreach (var task in tasks)
             {
                 if (Terminal(task.State)) continue;
+                var execution = Execution(s, task.TaskId, task.AttemptId);
+                if (execution is { State: "scheduled" or "receiving" or "running" } && execution.LeaseUntil <= Now)
+                {
+                    SaveExecution(s, execution with { State = "unknown", ErrorCode = "execution_lease_expired" });
+                    task.ErrorCode = "execution_unknown";
+                    task.ErrorMessage = "单次 worker 未在时限内留下最终声明。";
+                    s.Save(task); s.Event(task, "execution.unknown", "relay", Now, "execution_lease_expired");
+                    s.Notify(task, "execution_attention", "执行结果未知，不会自动重新启动 Agent。", Now);
+                }
                 var box = Outbox(s, task.TaskId);
                 if (task.DeadlineAt <= Now)
                 {
