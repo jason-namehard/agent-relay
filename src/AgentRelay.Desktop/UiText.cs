@@ -27,7 +27,7 @@ public static class UiText
         }
 
         Add("Home", "首页", "首頁", "ホーム", "홈", "Inicio");
-        Add("Agents", "Agent 管理", "Agent 管理", "Agent管理", "Agent 관리", "Agentes");
+        Add("Agents", "Agent 管理", "Agent 管理", "Agent 管理", "Agent 관리", "Agentes");
         Add("Connections", "连接", "連線", "接続", "연결", "Conexiones");
         Add("Inbox", "收件箱", "收件匣", "受信箱", "받은 편지함", "Bandeja de entrada");
         Add("Adapters", "适配器", "配接器", "アダプター", "어댑터", "Adaptadores");
@@ -257,6 +257,7 @@ public static class UiText
         Add("Timed out", "已超时", "已逾時", "タイムアウト", "시간 초과", "Tiempo agotado", "TimedOut");
         Add("Delivery unknown", "投递状态未知", "投遞狀態未知", "配信状態不明", "전달 상태 불명", "Entrega de estado desconocido", "DeliveryUnknown");
         Add("Cancelled", "已取消", "已取消", "キャンセル済み", "취소됨", "Cancelado");
+        Add("Action cancelled · No changes", "已取消操作 · 未做更改", "已取消操作 · 未做變更", "操作をキャンセルしました · 変更なし", "작업 취소됨 · 변경 사항 없음", "Acción cancelada · Sin cambios");
         Add("Copy request prompt", "复制请求提示词", "複製請求提示詞", "リクエスト用プロンプトをコピー", "요청 프롬프트 복사", "Copiar prompt de solicitud", "copy_request_prompt");
         Add("Inspect delivery evidence", "检查投递证据", "檢查投遞證據", "配信の証跡を確認", "전달 증거 확인", "Revisar evidencia de entrega", "inspect_delivery_evidence");
         Add("Inspect or retry", "检查或重试", "檢查或重試", "確認または再試行", "확인 또는 재시도", "Revisar o reintentar", "inspect_or_retry");

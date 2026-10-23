@@ -24,6 +24,7 @@ public partial class MainWindow : Window
     private bool languageReady;
     private readonly Dictionary<string, TextBox> fields = new(StringComparer.Ordinal);
     private bool busy;
+    private bool reviewCancelled;
     private bool refreshPending;
     private uint ledgerMessage;
     private HwndSource? source;
@@ -102,14 +103,16 @@ public partial class MainWindow : Window
     private async Task Run(Func<Task> action, string success, bool refresh = true, bool clearError = true, bool reportStatus = true)
     {
         if (busy) return;
+        reviewCancelled = false;
         busy = true; PageContent.IsEnabled = false; Navigation.IsEnabled = false; RefreshButton.IsEnabled = false; QuickLanguage.IsEnabled = false;
         if (clearError) ErrorBanner.Visibility = Visibility.Collapsed;
         if (reportStatus) StatusText.Text = T("Working…");
         try
         {
             await action();
-            if (refresh) { RenderPage(); LedgerHint.Text = ""; }
-            if (reportStatus) StatusText.Text = ErrorBanner.Visibility == Visibility.Visible ? T("Action failed") : T(success);
+            if (refresh && !reviewCancelled) { RenderPage(); LedgerHint.Text = ""; }
+            if (reportStatus) StatusText.Text = ErrorBanner.Visibility == Visibility.Visible ? T("Action failed") :
+                reviewCancelled ? T("Action cancelled · No changes") : T(success);
         }
         // Expected external input, filesystem, host-command and clipboard failures stay visible at the UI boundary.
         catch (Exception error) when (error is RelayException or IOException or UnauthorizedAccessException or
@@ -390,7 +393,9 @@ public partial class MainWindow : Window
 
     private string? Review(string title,string preview)
     {
-        var dialog=new ReviewDialog(this,T(title),preview,preferences.Language);return dialog.ShowDialog()==true ? dialog.Reason : null;
+        var dialog=new ReviewDialog(this,T(title),preview,preferences.Language);
+        reviewCancelled=dialog.ShowDialog()!=true;
+        return reviewCancelled ? null : dialog.Reason;
     }
     private Button Add(Panel row,string label,Func<Task> action,bool refresh=true)
     {

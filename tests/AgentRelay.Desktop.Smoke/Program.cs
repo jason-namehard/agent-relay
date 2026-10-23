@@ -60,6 +60,8 @@ internal static class Program
         Navigate("Agents");var agents=Find<DataGrid>(window,"AgentsTable");agents.SelectedIndex=0;
         Check(Find<TextBox>(window,"AgentConfig").Text==config,"Agent selection retains exact path");
         Find<TextBox>(window,"AgentConfig").Text=Path.Combine(root,"missing.toml");
+        await ClickWithApproval(window,"Register / Correct Path",approve:false);
+        Check(service.Agents().Single(a=>a.AgentId=="agent-a").ConfigPath==config && Find<TextBox>(window,"AgentConfig").Text==Path.Combine(root,"missing.toml"),"Cancelled registry correction preserves both the saved path and input draft");
         await ClickWithApproval(window,"Register / Correct Path");
         await Click(window,"Validate");
         Check(((Border)window.FindName("ErrorBanner")).Visibility==Visibility.Visible,"Invalid path is visible");
@@ -166,6 +168,11 @@ internal static class Program
         {
             ((ComboBox)window.FindName("QuickLanguage")).SelectedValue=option.Id;
             await Wait(()=>Appearance.Load(service.Home).Language==option.Id);
+            Navigate("Connections");Find<TextBox>(window,"ConnectionFrom").Text="agent-a";Find<TextBox>(window,"ConnectionTo").Text="agent-b";
+            await ClickWithApproval(window,"Deny A → B",approve:false);
+            Check(service.Connections().Single(e=>e.From=="agent-a" && e.To=="agent-b").Permission=="allow",$"Cancelled permission review leaves the direction unchanged in {option.Id}");
+            if(option.Id=="ja")
+                Check(FindAll<TextBlock>(((ListBox)window.FindName("Navigation")).Items.Cast<ListBoxItem>().Single(i=>(string)i.Tag=="Agents")).Any(t=>t.Text=="Agent 管理"),"Japanese Agent navigation includes the separating space");
             Navigate("Inbox");
             var noticeTable=Find<DataGrid>(window,"NotificationsTable");var notice=noticeTable.Items[0];
             var read=(string)notice.GetType().GetProperty("IsRead")!.GetValue(notice)!;
@@ -249,6 +256,7 @@ internal static class Program
             Find<Button>(dialog,"ApproveButton").RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
         }));
         await Click(window,content);
+        if(!approve)Check(((TextBlock)window.FindName("StatusText")).Text==UiText.Translate("Action cancelled · No changes",(string)((ComboBox)window.FindName("QuickLanguage")).SelectedValue),"Cancelled review reports no changes: "+content);
     }
     private static async Task Wait(Func<bool> predicate)
     {for(var i=0;i<100;i++){if(predicate())return;await Task.Delay(50);}throw new TimeoutException("UI condition not reached.");}
