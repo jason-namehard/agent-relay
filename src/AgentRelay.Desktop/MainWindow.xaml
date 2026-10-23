@@ -26,23 +26,29 @@
   </Border>
   <Grid Grid.Column="1" Margin="28,22,28,18">
    <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
-   <DockPanel Margin="0,0,0,18">
-    <Button x:Name="RefreshButton" DockPanel.Dock="Right" Content="Refresh" Click="RefreshClick"/>
-    <ComboBox x:Name="QuickLanguage" DockPanel.Dock="Right" Width="126" Margin="0,0,12,8" SelectionChanged="QuickLanguageChanged" ToolTip="Language / 语言"/>
-    <StackPanel><TextBlock x:Name="PageTitle" FontSize="27" FontWeight="SemiBold"/>
-     <TextBlock x:Name="ModeDescription" Text="本机协作 · 明确授权 · 事件驱动" Foreground="{DynamicResource MutedBrush}" Margin="0,5,0,0"/>
+   <Grid Margin="0,0,0,18">
+    <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+    <StackPanel Margin="0,0,20,0"><TextBlock x:Name="PageTitle" FontSize="27" FontWeight="SemiBold" TextTrimming="CharacterEllipsis"/>
+     <TextBlock x:Name="ModeDescription" Text="本机协作 · 明确授权 · 事件驱动" Foreground="{DynamicResource MutedBrush}" Margin="0,5,0,0" TextWrapping="Wrap"/>
     </StackPanel>
-   </DockPanel>
+    <ComboBox x:Name="QuickLanguage" Grid.Column="1" Width="126" Height="34" VerticalAlignment="Center" Margin="0,0,12,0" SelectionChanged="QuickLanguageChanged" ToolTip="Language / 语言"/>
+    <Button x:Name="RefreshButton" Grid.Column="2" Height="34" VerticalAlignment="Center" Margin="0" Content="Refresh" Click="RefreshClick"/>
+   </Grid>
    <Border x:Name="ErrorBanner" Grid.Row="1" Background="#FDEBE9" BorderBrush="#D98780" BorderThickness="1" Padding="12" Margin="0,0,0,12" Visibility="Collapsed">
-    <TextBox x:Name="ErrorText" IsReadOnly="True" TextWrapping="Wrap" Background="Transparent" BorderThickness="0" Margin="0"/>
+    <TextBox x:Name="ErrorText" IsReadOnly="True" TextWrapping="Wrap" Height="Auto" VerticalAlignment="Stretch" Background="Transparent" BorderThickness="0" Margin="0"/>
    </Border>
    <ScrollViewer Grid.Row="2" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
     <ContentControl x:Name="PageContent" HorizontalContentAlignment="Stretch"/>
    </ScrollViewer>
-   <DockPanel Grid.Row="3" Margin="0,16,0,0">
-    <TextBlock x:Name="StatusText" DockPanel.Dock="Right" Foreground="{DynamicResource AccentBrush}" TextTrimming="CharacterEllipsis" MaxWidth="300"/>
-    <TextBlock x:Name="HomePath" Foreground="{DynamicResource MutedBrush}" TextTrimming="CharacterEllipsis" ToolTip="Relay data directory"/>
-   </DockPanel>
+   <Grid Grid.Row="3" Margin="0,16,0,0">
+    <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+    <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+    <TextBlock x:Name="HomePath" Margin="0,0,12,0" Foreground="{DynamicResource MutedBrush}" TextTrimming="CharacterEllipsis" ToolTip="Relay data directory"/>
+    <TextBlock x:Name="StatusText" Grid.Column="1" Foreground="{DynamicResource AccentBrush}" TextTrimming="CharacterEllipsis" MaxWidth="300" ToolTip="{Binding Text, RelativeSource={RelativeSource Self}}"/>
+    <TextBlock x:Name="LedgerHint" Grid.Row="1" Grid.ColumnSpan="2" Margin="0,4,0,0" Foreground="{DynamicResource MutedBrush}" TextTrimming="CharacterEllipsis" ToolTip="{Binding Text, RelativeSource={RelativeSource Self}}">
+     <TextBlock.Style><Style TargetType="TextBlock"><Style.Triggers><Trigger Property="Text" Value=""><Setter Property="Visibility" Value="Collapsed"/></Trigger></Style.Triggers></Style></TextBlock.Style>
+    </TextBlock>
+   </Grid>
   </Grid>
  </Grid>
 </Window>

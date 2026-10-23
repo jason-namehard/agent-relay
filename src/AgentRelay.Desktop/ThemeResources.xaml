@@ -1,23 +1,24 @@
 <ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
                     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
- <SolidColorBrush x:Key="PageBrush" Color="#F1F2EC"/>
- <SolidColorBrush x:Key="SurfaceBrush" Color="#FDFCF9"/>
- <SolidColorBrush x:Key="SurfaceAltBrush" Color="#E7EBE1"/>
- <SolidColorBrush x:Key="TextBrush" Color="#292E2B"/>
- <SolidColorBrush x:Key="MutedBrush" Color="#5B645F"/>
- <SolidColorBrush x:Key="BorderBrush" Color="#BFC5BD"/>
- <SolidColorBrush x:Key="AccentBrush" Color="#516654"/>
- <SolidColorBrush x:Key="AccentSoftBrush" Color="#DFE7DB"/>
- <SolidColorBrush x:Key="NavBrush" Color="#303E36"/>
- <SolidColorBrush x:Key="NavTextBrush" Color="#F4F3ED"/>
- <SolidColorBrush x:Key="AllowedBrush" Color="#47694F"/>
- <SolidColorBrush x:Key="DeniedBrush" Color="#9B4B4B"/>
- <SolidColorBrush x:Key="UnavailableBrush" Color="#71736F"/>
+ <SolidColorBrush x:Key="PageBrush" Color="#FAFAF9"/>
+ <SolidColorBrush x:Key="SurfaceBrush" Color="#FFFFFF"/>
+ <SolidColorBrush x:Key="SurfaceAltBrush" Color="#F4F4F2"/>
+ <SolidColorBrush x:Key="TextBrush" Color="#262626"/>
+ <SolidColorBrush x:Key="MutedBrush" Color="#6B6B6B"/>
+ <SolidColorBrush x:Key="BorderBrush" Color="#E6E3DE"/>
+ <SolidColorBrush x:Key="AccentBrush" Color="#637383"/>
+ <SolidColorBrush x:Key="AccentSoftBrush" Color="#E6EBEF"/>
+ <SolidColorBrush x:Key="NavBrush" Color="#2C3742"/>
+ <SolidColorBrush x:Key="NavTextBrush" Color="#F6F6F4"/>
+ <SolidColorBrush x:Key="AllowedBrush" Color="#4C7A5A"/>
+ <SolidColorBrush x:Key="DeniedBrush" Color="#A6473F"/>
+ <SolidColorBrush x:Key="UnavailableBrush" Color="#8A8A8A"/>
 
  <Style TargetType="Button">
-  <Setter Property="Padding" Value="14,8"/>
+  <Setter Property="Padding" Value="14,5"/>
   <Setter Property="Margin" Value="0,0,8,8"/>
-  <Setter Property="MinHeight" Value="36"/>
+  <Setter Property="Height" Value="34"/>
+  <Setter Property="VerticalAlignment" Value="Center"/>
   <Setter Property="Background" Value="{DynamicResource SurfaceBrush}"/>
   <Setter Property="Foreground" Value="{DynamicResource TextBrush}"/>
   <Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}"/>
@@ -50,7 +51,8 @@
  </Style>
 
  <Style TargetType="TextBox">
-  <Setter Property="Padding" Value="10,8"/><Setter Property="Margin" Value="0,3,0,10"/>
+  <Setter Property="Padding" Value="10,5"/><Setter Property="Margin" Value="0,3,0,10"/>
+  <Setter Property="Height" Value="34"/><Setter Property="VerticalAlignment" Value="Center"/>
   <Setter Property="Background" Value="{DynamicResource SurfaceBrush}"/>
   <Setter Property="Foreground" Value="{DynamicResource TextBrush}"/>
   <Setter Property="CaretBrush" Value="{DynamicResource TextBrush}"/>
@@ -70,12 +72,19 @@
     <Trigger Property="IsEnabled" Value="False"><Setter TargetName="Frame" Property="Opacity" Value="0.45"/></Trigger>
    </ControlTemplate.Triggers>
   </ControlTemplate></Setter.Value></Setter>
+  <Style.Triggers>
+   <Trigger Property="AcceptsReturn" Value="True">
+    <Setter Property="Height" Value="Auto"/><Setter Property="VerticalAlignment" Value="Stretch"/>
+    <Setter Property="VerticalContentAlignment" Value="Top"/>
+   </Trigger>
+  </Style.Triggers>
  </Style>
 
  <Style TargetType="ComboBox">
   <Style.Resources><Style TargetType="Border"><Setter Property="CornerRadius" Value="7"/></Style></Style.Resources>
-  <Setter Property="Padding" Value="10,7"/><Setter Property="Margin" Value="0,3,0,10"/>
-  <Setter Property="MinHeight" Value="36"/>
+  <Setter Property="Padding" Value="10,5"/><Setter Property="Margin" Value="0,3,0,10"/>
+  <Setter Property="Height" Value="34"/><Setter Property="VerticalAlignment" Value="Center"/>
+  <Setter Property="VerticalContentAlignment" Value="Center"/>
   <Setter Property="Background" Value="{DynamicResource SurfaceBrush}"/>
   <Setter Property="Foreground" Value="{DynamicResource TextBrush}"/>
   <Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}"/>
@@ -139,17 +148,20 @@
   </ControlTemplate></Setter.Value></Setter>
  </Style>
  <Style x:Key="NavigationItemStyle" TargetType="ListBoxItem">
-  <Setter Property="Padding" Value="12,11"/><Setter Property="Margin" Value="0,3"/>
+  <Setter Property="Padding" Value="12,10"/><Setter Property="Margin" Value="0,3"/>
   <Setter Property="Foreground" Value="{DynamicResource NavTextBrush}"/>
   <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
   <Setter Property="Cursor" Value="Hand"/>
   <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="ListBoxItem">
-   <Border x:Name="Frame" CornerRadius="8" Background="Transparent" BorderThickness="1" BorderBrush="Transparent" Padding="{TemplateBinding Padding}">
-    <ContentPresenter HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}" VerticalAlignment="Center"/>
+   <Border x:Name="Frame" CornerRadius="7" Background="Transparent" BorderThickness="1" BorderBrush="Transparent">
+    <Grid>
+     <Border x:Name="SelectionStripe" Background="{DynamicResource AccentBrush}" Width="3" Height="22" CornerRadius="2" HorizontalAlignment="Left" VerticalAlignment="Center" Visibility="Collapsed"/>
+     <ContentPresenter Margin="{TemplateBinding Padding}" HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}" VerticalAlignment="Center"/>
+    </Grid>
    </Border>
    <ControlTemplate.Triggers>
-    <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="Frame" Property="Background" Value="#20FFFFFF"/></Trigger>
-    <Trigger Property="IsSelected" Value="True"><Setter TargetName="Frame" Property="Background" Value="{DynamicResource AccentBrush}"/><Setter Property="FontWeight" Value="SemiBold"/></Trigger>
+    <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="Frame" Property="Background" Value="#14FFFFFF"/></Trigger>
+    <Trigger Property="IsSelected" Value="True"><Setter TargetName="Frame" Property="Background" Value="#24FFFFFF"/><Setter TargetName="SelectionStripe" Property="Visibility" Value="Visible"/><Setter Property="FontWeight" Value="SemiBold"/></Trigger>
     <Trigger Property="IsKeyboardFocused" Value="True"><Setter TargetName="Frame" Property="BorderBrush" Value="{DynamicResource NavTextBrush}"/></Trigger>
     <Trigger Property="IsEnabled" Value="False"><Setter TargetName="Frame" Property="Opacity" Value="0.45"/></Trigger>
    </ControlTemplate.Triggers>
@@ -165,9 +177,15 @@
   <Setter Property="Foreground" Value="{DynamicResource TextBrush}"/>
   <Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}"/>
   <Setter Property="HorizontalGridLinesBrush" Value="{DynamicResource SurfaceAltBrush}"/>
-  <Setter Property="AlternatingRowBackground" Value="{DynamicResource PageBrush}"/>
   <Setter Property="RowBackground" Value="{DynamicResource SurfaceBrush}"/>
   <Setter Property="RowHeaderWidth" Value="0"/>
+ </Style>
+ <Style x:Key="TableTextStyle" TargetType="TextBlock">
+  <Setter Property="TextTrimming" Value="CharacterEllipsis"/>
+  <Setter Property="TextWrapping" Value="NoWrap"/>
+  <Setter Property="VerticalAlignment" Value="Center"/>
+  <Setter Property="Margin" Value="2,0"/>
+  <Setter Property="ToolTip" Value="{Binding Text, RelativeSource={RelativeSource Self}}"/>
  </Style>
  <Style TargetType="DataGridColumnHeader">
   <Setter Property="Background" Value="{DynamicResource SurfaceAltBrush}"/>

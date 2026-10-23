@@ -106,25 +106,28 @@ public sealed class SetupAssistantTests
     }
 
     [TestMethod]
-    [DataRow("en", "Verify local configuration")]
-    [DataRow("zh-CN", "请只读核实")]
-    [DataRow("zh-TW", "請唯讀查證")]
-    [DataRow("ja", "読み取り専用")]
-    [DataRow("ko", "읽기 전용")]
-    [DataRow("es", "solo lectura")]
-    public void PromptLocalizesIntroductionAndKeepsStableProtocol(string language, string introduction)
+    [DataRow("en", "Verify local configuration", "Do not change configuration", "authentication data", "not a login name", "not approval or permission")]
+    [DataRow("zh-CN", "请只读核实", "不要修改配置", "身份验证信息", "不是登录名", "不构成任何操作的批准或授权")]
+    [DataRow("zh-TW", "請唯讀查證", "不要修改設定", "認證資料", "不是登入名稱", "不構成任何操作的核准或授權")]
+    [DataRow("ja", "読み取り専用", "設定の変更", "認証情報", "ログイン名やアカウント識別子ではありません", "操作の承認や許可にはなりません")]
+    [DataRow("ko", "읽기 전용", "설정 변경", "인증 정보", "로그인 이름이나 계정 식별자가 아닙니다", "승인이나 권한도 부여하지 않습니다")]
+    [DataRow("es", "solo lectura", "No cambies la configuración", "autenticación", "no un nombre de inicio de sesión", "No aprueba ni autoriza ninguna acción")]
+    public void PromptLocalizesBodyAndKeepsStableProtocol(string language, string introduction, string noChanges, string credentials, string label, string noApproval)
     {
-        var prompt = SetupAssistant.CreatePrompt("agents", new Dictionary<string, string> { ["AgentId"] = "agent-a" }, language);
+        const string path = "  C:\\某人\\Agent Config\\settings.json\n\"quoted\"  ";
+        var prompt = SetupAssistant.CreatePrompt("agents", new Dictionary<string, string> { ["AgentId"] = "agent-a", ["AgentConfigPath"] = path }, language);
         StringAssert.Contains(prompt, introduction);
-        StringAssert.Contains(prompt, "Do not read, request or output authentication data");
-        StringAssert.Contains(prompt, "Do not change configuration");
-        StringAssert.Contains(prompt, "call any model API");
-        StringAssert.Contains(prompt, "not a login name");
-        StringAssert.Contains(prompt, "not approval or permission");
-        using var template = JsonDocument.Parse(prompt[(prompt.IndexOf("JSON template:", StringComparison.Ordinal) + "JSON template:".Length)..]);
+        StringAssert.Contains(prompt, noChanges);
+        StringAssert.Contains(prompt, credentials);
+        StringAssert.Contains(prompt, label);
+        StringAssert.Contains(prompt, noApproval);
+        StringAssert.Contains(prompt, "API");
+        if (language != "en") Assert.IsFalse(prompt.Contains("Return exactly one JSON object", StringComparison.Ordinal));
+        using var template = JsonDocument.Parse(prompt[prompt.IndexOf('{')..]);
         Assert.AreEqual(1, template.RootElement.GetProperty("relay_setup_version").GetInt32());
         Assert.AreEqual("agents", template.RootElement.GetProperty("context").GetString());
         Assert.AreEqual("agent-a", template.RootElement.GetProperty("fields").GetProperty("AgentId").GetString());
+        Assert.AreEqual(path, template.RootElement.GetProperty("fields").GetProperty("AgentConfigPath").GetString());
     }
 
     [TestMethod]

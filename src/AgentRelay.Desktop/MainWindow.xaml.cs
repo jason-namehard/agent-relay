@@ -76,7 +76,8 @@ public partial class MainWindow : Window
 
     private nint ReceiveLedgerMessage(nint hwnd, int message, nint wParam, nint lParam, ref bool handled)
     {
-        if (message == ledgerMessage) QueueRefresh();
+        // Local actions already render their committed changes and keep their own success message.
+        if (message == ledgerMessage && wParam != Environment.ProcessId) QueueRefresh();
         return 0;
     }
 
@@ -90,30 +91,31 @@ public partial class MainWindow : Window
             refreshPending = false;
             if (Navigation.SelectedItem is ListBoxItem item && (string)item.Tag is not ("Home" or "Inbox"))
             {
-                StatusText.Text = T("Ledger changed · Refresh");
+                LedgerHint.Text = T("Ledger changed · Refresh");
                 return; // Preserve edits and migration previews until the user explicitly refreshes.
             }
-            await Run(() => Task.CompletedTask, "已读取事件更新", clearError: false);
+            await Run(() => Task.CompletedTask, "已读取事件更新", clearError: false, reportStatus: false);
+            LedgerHint.Text = T("已读取事件更新");
         }));
     }
 
-    private async Task Run(Func<Task> action, string success, bool refresh = true, bool clearError = true)
+    private async Task Run(Func<Task> action, string success, bool refresh = true, bool clearError = true, bool reportStatus = true)
     {
         if (busy) return;
         busy = true; PageContent.IsEnabled = false; Navigation.IsEnabled = false; RefreshButton.IsEnabled = false; QuickLanguage.IsEnabled = false;
         if (clearError) ErrorBanner.Visibility = Visibility.Collapsed;
-        StatusText.Text = T("Working…");
+        if (reportStatus) StatusText.Text = T("Working…");
         try
         {
             await action();
-            if (refresh) RenderPage();
-            StatusText.Text = ErrorBanner.Visibility == Visibility.Visible ? T("Action failed") : T(success);
+            if (refresh) { RenderPage(); LedgerHint.Text = ""; }
+            if (reportStatus) StatusText.Text = ErrorBanner.Visibility == Visibility.Visible ? T("Action failed") : T(success);
         }
         // Expected external input, filesystem, host-command and clipboard failures stay visible at the UI boundary.
         catch (Exception error) when (error is RelayException or IOException or UnauthorizedAccessException or
             JsonException or Microsoft.Data.Sqlite.SqliteException or ArgumentException or Win32Exception or ExternalException)
         {
-            ErrorText.Text = error is RelayException relay ? $"{relay.Code}: {T(relay.Message)}" : error.Message;
+            ErrorText.Text = error is RelayException relay ? DesktopLocalizedContent.SetupError(relay, preferences.Language) : error.Message;
             if (error is RelayException setup && setup.Code.StartsWith("setup_", StringComparison.Ordinal))
                 ErrorText.Text = T("The Agent reply format is invalid. Check version, context and requested fields.") + "\n" + ErrorText.Text;
             ErrorBanner.Visibility = Visibility.Visible; StatusText.Text = T("Action failed");
@@ -130,11 +132,18 @@ public partial class MainWindow : Window
     private async void QuickLanguageChanged(object sender, SelectionChangedEventArgs e)
     {
         if (!languageReady || QuickLanguage.SelectedValue is not string language || language == preferences.Language) return;
+        await ChangeLanguage(language);
+    }
+
+    private async Task ChangeLanguage(string language)
+        => await ChangeAppearance(preferences with { Language = language });
+
+    private async Task ChangeAppearance(DesktopPreferences next)
+    {
         var drafts=CaptureInputs();
         await Run(() =>
         {
-            var next = preferences with { Language = language };
-            Appearance.Save(service.Home, next); preferences = next; UpdateChrome();
+            Appearance.Save(service.Home, next); preferences = next; Appearance.Apply(this,next); UpdateChrome();
             return Task.CompletedTask;
         }, "Language and appearance saved");
         RestoreInputs(drafts);
@@ -237,13 +246,21 @@ public partial class MainWindow : Window
     }
 
     private sealed record TaskRow(string TaskId,string Route,string State,string NextAction,DateTimeOffset Deadline);
+    private sealed record NotificationRow(InboxItem Source,string Event,string Message,string IsRead,DateTimeOffset CreatedAt)
+    {
+        public string Detail => RelayJson.Write(Source);
+    }
     private StackPanel InboxPage()
     {
         var page=Page(); Heading(page,"Tasks & Inbox",LedgerHelp); TaskPane(page,service.Tasks());
         Heading(page,"Notifications","已读只改变 Inbox，不改变任务状态。" );
         var table=Table("NotificationsTable",("Event","Event"),("Message","Message"),("Created","CreatedAt"),("Read","IsRead"));
-        table.ItemsSource=service.Inbox(); page.Children.Add(table); var actions=Row(page);
-        Add(actions,"Mark Read",()=>{if(table.SelectedItem is not InboxItem n) throw new RelayException("selection_required","请选择通知。"); service.MarkNotificationRead(n.NotificationId);return Task.CompletedTask;});
+        table.ItemsSource=service.Inbox().Select(n=>new NotificationRow(n,DesktopLocalizedContent.NotificationEvent(n.Event,preferences.Language),
+            DesktopLocalizedContent.NotificationMessage(n,preferences.Language),T(n.IsRead ? "Read" : "Unread"),n.CreatedAt)).ToArray();
+        ((DataGridTextColumn)table.Columns[0]).ElementStyle=new Style(typeof(TextBlock),(Style)FindResource("TableTextStyle")){Setters={new Setter(ToolTipProperty,new Binding("Detail"))}};
+        table.RowStyle=new Style(typeof(DataGridRow)){Setters={new Setter(ToolTipProperty,new Binding("Detail"))}};
+        page.Children.Add(table); var actions=Row(page);
+        Add(actions,"Mark Read",()=>{if(table.SelectedItem is not NotificationRow n) throw new RelayException("selection_required","请选择通知。"); service.MarkNotificationRead(n.Source.NotificationId);return Task.CompletedTask;});
         return page;
     }
 
@@ -253,7 +270,7 @@ public partial class MainWindow : Window
         var table=Table("TasksTable",("Route","Route"),("State","State"),("Next action","NextAction"),("Deadline (UTC)","Deadline")); table.ItemsSource=rows; page.Children.Add(table);
         var actions=Row(page); var detail=Output("TaskDetail",215);
         string Selected()=> table.SelectedItem is TaskRow row ? row.TaskId : throw new RelayException("selection_required","请选择任务。");
-        Add(actions,"Copy Prompt",()=>{Clipboard.SetText(service.Status(Selected()).Prompt); StatusText.Text="Copied";return Task.CompletedTask;},false);
+        Add(actions,"Copy Prompt",()=>{var view=service.Status(Selected());Clipboard.SetText(DesktopLocalizedContent.TaskPrompt(view,service.Artifacts(view.Task.TaskId),preferences.Language));return Task.CompletedTask;},false);
         Add(actions,"Open Request",()=>{OpenFile(service.Status(Selected()).Task.RequestPath);return Task.CompletedTask;},false);
         Add(actions,"Open Result",()=>{var v=service.Status(Selected()); var result=service.Artifacts(v.Task.TaskId).SingleOrDefault(a=>a.Path==v.Task.ResultPath && a.State=="available" && a.ExpiresAt>DateTimeOffset.UtcNow);
             if(result is null) throw new RelayException("artifact_unavailable","结果尚未登记、已过期或缺失，请检查任务证据。"); OpenFile(result.Path); return Task.CompletedTask;},false);
@@ -262,7 +279,7 @@ public partial class MainWindow : Window
         Add(actions,"Retry",async()=>{var v=service.Status(Selected()); var reason=Review("Retry task",RelayJson.Write(v)+"\n将创建新尝试，可能重复副作用；不会自动启动执行 worker。"); if(reason is not null) await service.RetryAsync(v.Task.TaskId,reason,true);});
         Add(actions,"Cancel",()=>{var v=service.Status(Selected());var reason=Review("Cancel Relay task",RelayJson.Write(v)+"\n停止 Relay 后续派发，不终止宿主中正在运行的 Agent。"); if(reason is not null)service.Cancel(v.Task.TaskId,reason);return Task.CompletedTask;});
         page.Children.Add(detail);
-        table.SelectionChanged+=(_,_)=>{if(table.SelectedItem is TaskRow r){taskId=r.TaskId;var v=service.Status(taskId);detail.Text=$"{v.Prompt}\n\n{RelayJson.Write(v)}\n\nDelivery evidence:\n{RelayJson.Write(service.DeliveryEvidence(taskId))}\n\nAudit:\n{RelayJson.Write(service.Audit(taskId))}";}};
+        table.SelectionChanged+=(_,_)=>{if(table.SelectedItem is TaskRow r){taskId=r.TaskId;var v=service.Status(taskId);detail.Text=$"{DesktopLocalizedContent.TaskPrompt(v,service.Artifacts(taskId),preferences.Language)}\n\n{RelayJson.Write(v)}\n\nDelivery evidence:\n{RelayJson.Write(service.DeliveryEvidence(taskId))}\n\nAudit:\n{RelayJson.Write(service.Audit(taskId))}";}};
         table.SelectedItem=rows.SingleOrDefault(r=>r.TaskId==taskId) ?? rows.FirstOrDefault();
     }
 
@@ -325,13 +342,35 @@ public partial class MainWindow : Window
         var language = Choice(appearanceForm, "Language", "LanguageChoice", Appearance.Languages, preferences.Language);
         var palette = Choice(appearanceForm, "Color palette", "PaletteChoice", Appearance.Palettes, preferences.Palette);
         var accent = Field(appearanceForm, "Custom accent (#RRGGBB)", "CustomAccent", 230); accent.Text = preferences.Accent ?? "";
+        var accentPanel=(StackPanel)accent.Parent; accentPanel.Width=268;
+        accentPanel.Children.Remove(accent);
+        var accentRow=new DockPanel(); accentPanel.Children.Add(accentRow);
+        var swatch=new Border{Name="AccentPreview",Width=24,Height=24,CornerRadius=new(6),BorderThickness=new(1),BorderBrush=Theme("BorderBrush"),Margin=new(8,3,0,10),VerticalAlignment=VerticalAlignment.Center,ToolTip=T("Accent preview")};
+        DockPanel.SetDock(swatch,Dock.Right);accentRow.Children.Add(swatch);accentRow.Children.Add(accent);
+        var accentError=new TextBlock{Name="AccentError",Foreground=Theme("DeniedBrush"),TextWrapping=TextWrapping.Wrap,Visibility=Visibility.Collapsed};accentPanel.Children.Add(accentError);
         var appearanceActions = Row(page);
-        Add(appearanceActions,"Apply Appearance",() =>
+        var saveAccent=Add(appearanceActions,"Save Accent",() =>
         {
-            var next = new DesktopPreferences((string)language.SelectedValue,(string)palette.SelectedValue,Optional(accent));
+            var next = preferences with { Accent = Optional(accent) };
             Appearance.Save(service.Home,next); preferences=next; Appearance.Apply(this,next); UpdateChrome();
             return Task.CompletedTask;
         });
+        void PreviewAccent()
+        {
+            saveAccent.IsEnabled=Optional(accent)!=preferences.Accent;
+            try
+            {
+                swatch.Background=string.IsNullOrWhiteSpace(accent.Text) ? Theme("AccentBrush") : new SolidColorBrush(Appearance.ParseAccent(accent.Text.Trim()));
+                accentError.Text="";accentError.Visibility=Visibility.Collapsed;
+            }
+            catch(RelayException error)
+            {
+                swatch.Background=Brushes.Transparent;accentError.Text=T(error.Message);accentError.Visibility=Visibility.Visible;
+            }
+        }
+        accent.TextChanged+=(_,_)=>PreviewAccent();PreviewAccent();
+        language.SelectionChanged+=async(_,_)=>{if(language.SelectedValue is string selected && selected!=preferences.Language)await ChangeLanguage(selected);};
+        palette.SelectionChanged+=async(_,_)=>{if(palette.SelectedValue is string selected && selected!=preferences.Palette)await ChangeAppearance(preferences with{Palette=selected});};
         Heading(page,"Local Settings","Deadline Handling: On Next Command · 无计划任务、文件 watcher 或常驻服务。" );
         var settings=service.Settings();var form=new WrapPanel();page.Children.Add(form);
         var ttl=Field(form,"Artifact TTL (days)","TtlDays",180);ttl.Text=settings.ArtifactTtlDays.ToString(CultureInfo.InvariantCulture);
@@ -346,24 +385,25 @@ public partial class MainWindow : Window
         var notificationForm=new WrapPanel();page.Children.Add(notificationForm);var executable=Field(notificationForm,"Notification helper path","NotificationPath",620);executable.Text=service.DesktopExecutable() ?? "";
         var notificationActions=Row(page);
         Add(notificationActions,"Enable Notifications",async()=>{var path=Required(executable,"Notification helper");if(Review("Enable Relay notifications",$"将探测并登记通知程序：\n{path}\n后续完成事件可启动该程序显示 Windows 通知。") is not null)await service.ConfigureDesktopAsync(path);});
-        Add(notificationActions,"Disable Notifications",()=>{service.DisableDesktop();return Task.CompletedTask;});AddAssistant(page,"settings");return page;
+        Add(notificationActions,"Disable Notifications",()=>{service.DisableDesktop();return Task.CompletedTask;});AddAssistant(page,"settings",page.Children.Count);return page;
     }
 
     private string? Review(string title,string preview)
     {
         var dialog=new ReviewDialog(this,T(title),preview,preferences.Language);return dialog.ShowDialog()==true ? dialog.Reason : null;
     }
-    private void Add(Panel row,string label,Func<Task> action,bool refresh=true)
+    private Button Add(Panel row,string label,Func<Task> action,bool refresh=true)
     {
         var button=new Button{Content=T(label),Tag=label,Name=label.Replace(" ","").Replace("/","").Replace("→","To")};
-        if(label is "Apply Appearance" or "Save Settings" or "Register / Correct Path")button.Style=(Style)FindResource("PrimaryButtonStyle");
+        if(label is "Save Accent" or "Save Settings" or "Register / Correct Path")button.Style=(Style)FindResource("PrimaryButtonStyle");
         AutomationProperties.SetAutomationId(button,button.Name);row.Children.Add(button);
         button.Click+=async(_,_)=>
         {
-            var drafts=label=="Apply Appearance" ? CaptureInputs() : null;
+            var drafts=label=="Save Accent" ? CaptureInputs() : null;
             await Run(action,T(label)+": "+T("Ready"),refresh);
             if(drafts is not null)RestoreInputs(drafts);
         };
+        return button;
     }
     private static StackPanel Page()=>new(){Margin=new Thickness(0,0,0,8)};
     private void Heading(Panel page,string title,string subtitle)
@@ -386,7 +426,7 @@ public partial class MainWindow : Window
     private DataGrid Table(string name,params(string Label,string Path)[] columns)
     {var table=new DataGrid{Name=name,Height=200};AutomationProperties.SetAutomationId(table,name);foreach(var c in columns){var binding=new Binding(c.Path);
         if(c.Path is "State" or "Display" or "Permission" or "Capability" or "ValidationStatus" or "VerificationStatus" or "NextAction" or "Request.Purpose")binding.Converter=new UiValueConverter(preferences.Language);
-        table.Columns.Add(new DataGridTextColumn{Header=T(c.Label),Binding=binding,Width=new DataGridLength(1,DataGridLengthUnitType.Star)});}return table;}
+        table.Columns.Add(new DataGridTextColumn{Header=T(c.Label),Binding=binding,ElementStyle=(Style)FindResource("TableTextStyle"),Width=new DataGridLength(1,DataGridLengthUnitType.Star)});}return table;}
     private string Required(TextBox box,string label)=>!string.IsNullOrWhiteSpace(box.Text) ? box.Text.Trim() : throw new RelayException("input_required",string.Format(CultureInfo.CurrentUICulture,T("Please fill in {0}."),T(label)));
     private static string? Optional(TextBox box)=>string.IsNullOrWhiteSpace(box.Text) ? null : box.Text.Trim();
     private int Number(TextBox box)=>int.TryParse(box.Text,NumberStyles.Integer,CultureInfo.InvariantCulture,out var value) ? value : throw new RelayException("invalid_number",T("Settings must be integers."));
@@ -414,15 +454,15 @@ public partial class MainWindow : Window
         "CustomAccent" or "TtlDays" or "TaskTimeout" or "DeliveryTimeout" or "DeliveryAttempts" or "NotificationPath"=>"settings",
         _=>throw new InvalidOperationException("Unknown configuration field: "+name)
     };
-    private void AddAssistant(StackPanel page,string context)
+    private void AddAssistant(StackPanel page,string context,int index=0)
     {
         var group=fields.Where(f=>FieldContext(f.Key)==context).ToDictionary(f=>f.Key,f=>f.Value);
-        if(group.Count>0)page.Children.Insert(0,new FormAssistant(context,group,preferences.Language,(action,message)=>Run(action,message,false)));
+        if(group.Count>0)page.Children.Insert(index,new FormAssistant(context,group,preferences.Language,(action,message)=>Run(action,message,false)));
     }
     private ComboBox Choice(Panel parent,string label,string name,IReadOnlyList<AppearanceOption> options,string selected)
     {
-        var panel=new StackPanel{Width=200,Margin=new(0,10,12,10)};parent.Children.Add(panel);
-        panel.Children.Add(new TextBlock{Text=T(label),Foreground=Theme("MutedBrush")});
+        var panel=new StackPanel{Width=200,Margin=new(0,10,12,0)};parent.Children.Add(panel);
+        var header=new Grid{Height=36};header.Children.Add(new TextBlock{Text=T(label),Foreground=Theme("MutedBrush"),VerticalAlignment=VerticalAlignment.Center,TextWrapping=TextWrapping.Wrap});panel.Children.Add(header);
         var choice=new ComboBox{Name=name,ItemsSource=options.Select(o=>new AppearanceOption(o.Id,T(o.Label))).ToArray(),DisplayMemberPath="Label",SelectedValuePath="Id",SelectedValue=selected,Margin=new(0,3,0,10)};
         AutomationProperties.SetAutomationId(choice,name);panel.Children.Add(choice);return choice;
     }
@@ -434,9 +474,10 @@ public partial class MainWindow : Window
         foreach(ListBoxItem item in Navigation.Items)
         {
             var page=(string)item.Tag;
-            var row=new StackPanel{Orientation=Orientation.Horizontal};
+            var row=new Grid();row.ColumnDefinitions.Add(new ColumnDefinition{Width=new(20)});row.ColumnDefinitions.Add(new ColumnDefinition{Width=new(1,GridUnitType.Star)});
             row.Children.Add(NavigationIcon.Create(page,Theme("NavTextBrush")));
-            row.Children.Add(new TextBlock{Text=T(page),Margin=new(10,0,0,0),VerticalAlignment=VerticalAlignment.Center});item.Content=row;
+            var label=new TextBlock{Text=T(page),Margin=new(10,0,0,0),VerticalAlignment=VerticalAlignment.Center,TextTrimming=TextTrimming.CharacterEllipsis,ToolTip=T(page)};
+            Grid.SetColumn(label,1);row.Children.Add(label);item.Content=row;item.ToolTip=T(page);
             AutomationProperties.SetName(item,T(page));AutomationProperties.SetAutomationId(item,page);
         }
         Localize(ModeDescription);

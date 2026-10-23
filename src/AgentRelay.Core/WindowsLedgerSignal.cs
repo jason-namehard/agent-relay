@@ -17,7 +17,7 @@ public static class WindowsLedgerSignal
         if (!OperatingSystem.IsWindows()) return;
         var message = Register();
         // A failed UI hint must not turn an already committed operation into a retryable failure.
-        if (message == 0 || !PostMessage(new nint(0xffff), message, 0, 0))
+        if (message == 0 || !PostMessage(new nint(0xffff), message, Environment.ProcessId, 0))
             Trace.TraceWarning("Ledger committed; desktop refresh hint failed: {0}", Marshal.GetLastWin32Error());
     }
 

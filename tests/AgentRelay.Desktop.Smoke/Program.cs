@@ -2,6 +2,8 @@ using System.Diagnostics;
 using System.IO;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Automation;
+using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using System.Windows.Threading;
@@ -64,6 +66,8 @@ internal static class Program
         Find<TextBox>(window,"AgentConfig").Text=config;
         await ClickWithApproval(window,"Register / Correct Path");await Click(window,"Validate");
         Check(service.Agents().Single(a=>a.AgentId=="agent-a").ValidationStatus=="path_verified","Corrected path requires explicit revalidation");
+        await window.Dispatcher.InvokeAsync(()=>{},DispatcherPriority.ApplicationIdle);
+        Check(((TextBlock)window.FindName("StatusText")).Text=="Validate: Ready" && ((TextBlock)window.FindName("LedgerHint")).Text=="","Own ledger writes preserve action success without a refresh warning");
         Navigate("Inbox");SelectTask(window,task.TaskId);await Click(window,"Copy Prompt");
         Check(Clipboard.GetText().Contains(task.TaskId) && Clipboard.GetText().Contains(service.Status(task.TaskId).Task.ResultPath),"Prompt copied from current task");
         var notifications=Find<DataGrid>(window,"NotificationsTable");notifications.SelectedIndex=0;await Click(window,"Mark Read");
@@ -98,8 +102,19 @@ internal static class Program
         await process.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(10));
         if(process.ExitCode!=0)throw new InvalidOperationException(await stderr);
         Check(process.ExitCode==0,"External CLI updated ledger");await stdout;
-        await Wait(()=>((TextBlock)window.FindName("StatusText")).Text==UiText.Translate("已读取事件更新","en"));
-        Check(before!=UiText.Translate("已读取事件更新","en"),"Cross-process window message refreshed Home without polling");
+        await Wait(()=>((TextBlock)window.FindName("LedgerHint")).Text==UiText.Translate("已读取事件更新","en"));
+        Check(((TextBlock)window.FindName("StatusText")).Text==before,"External refresh uses a separate hint and preserves the action status");
+        Navigate("Agents");Find<TextBox>(window,"AgentId").Text="draft-agent";Find<TextBox>(window,"AgentConfig").Text="E:/draft/config.toml";
+        var editStatus=((TextBlock)window.FindName("StatusText")).Text;
+        using(var update=Process.Start(start)!)
+        {
+            var updateOut=update.StandardOutput.ReadToEndAsync();var updateError=update.StandardError.ReadToEndAsync();
+            await update.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(10));
+            if(update.ExitCode!=0)throw new InvalidOperationException(await updateError);
+            await updateOut;
+        }
+        await Wait(()=>((TextBlock)window.FindName("LedgerHint")).Text==UiText.Translate("Ledger changed · Refresh","en"));
+        Check(Find<TextBox>(window,"AgentId").Text=="draft-agent" && Find<TextBox>(window,"AgentConfig").Text=="E:/draft/config.toml" && ((TextBlock)window.FindName("StatusText")).Text==editStatus,"External writes keep editor drafts and show only a separate refresh hint");
         Navigate("Connections");await SaveImage(window,Path.Combine(root,"Connections.png"));
         foreach(var page in new[]{"Home","Agents","Connections","Inbox","Adapters","Audit","Settings"}){Navigate(page);window.UpdateLayout();Check(((ContentControl)window.FindName("PageContent")).Content is not null,$"{page} accessible");}
         var demoService=await DemoWorkspace.CreateAsync(Path.Combine(root,"demo"));
@@ -151,32 +166,65 @@ internal static class Program
         {
             ((ComboBox)window.FindName("QuickLanguage")).SelectedValue=option.Id;
             await Wait(()=>Appearance.Load(service.Home).Language==option.Id);
+            Navigate("Inbox");
+            var noticeTable=Find<DataGrid>(window,"NotificationsTable");var notice=noticeTable.Items[0];
+            var read=(string)notice.GetType().GetProperty("IsRead")!.GetValue(notice)!;
+            var label=(string)notice.GetType().GetProperty("Event")!.GetValue(notice)!;
+            Check(read==UiText.Translate("Read",option.Id) || read==UiText.Translate("Unread",option.Id),$"Notification read state is human readable in {option.Id}");
+            Check(!label.Contains(service.Inbox()[0].Event.Split(':')[0],StringComparison.Ordinal),$"Notification event hides its attempt ID in {option.Id}");
+            var completed=service.Status(service.Tasks().First(v=>v.Task.State==TaskState.Succeeded).Task.TaskId);
+            var localizedPrompt=DesktopLocalizedContent.TaskPrompt(completed,service.Artifacts(completed.Task.TaskId),option.Id);
+            Check(localizedPrompt.Contains(completed.Task.ResultPath,StringComparison.Ordinal),$"Localized continuation retains the exact managed result path in {option.Id}");
+            if(option.Id=="en")Check(localizedPrompt.StartsWith("Continue Agent Relay",StringComparison.Ordinal),"English continuation uses English instructions");
+            if(option.Id=="ja")Check(!localizedPrompt.StartsWith("继续处理",StringComparison.Ordinal),"Japanese continuation no longer uses Chinese instructions");
             Navigate("Settings");
             Check(((TextBlock)window.FindName("PageTitle")).Text==UiText.Translate("Settings",option.Id),$"Navigation localizes in {option.Id}");
-            Check(FindAll<Button>(window).Any(b=>Equals(b.Content,UiText.Translate("Apply Appearance",option.Id))),$"Settings actions localize in {option.Id}");
+            Check(FindAll<Button>(window).Any(b=>Equals(b.Content,UiText.Translate("Save Accent",option.Id))),$"Settings actions localize in {option.Id}");
             Check(Find<TextBox>(window,"TtlDays").Text=="5",$"Language switch preserves stored settings in {option.Id}");
         }
         ((ComboBox)window.FindName("QuickLanguage")).SelectedValue="zh-CN";Navigate("Settings");
         var accents=new HashSet<string>();
         foreach(var palette in Appearance.Palettes)
         {
-            Find<ComboBox>(window,"PaletteChoice").SelectedValue=palette.Id;await Click(window,"Apply Appearance");
+            Find<ComboBox>(window,"PaletteChoice").SelectedValue=palette.Id;window.UpdateLayout();
             accents.Add(((SolidColorBrush)window.FindResource("AccentBrush")).Color.ToString());
             Check(Appearance.Load(service.Home).Palette==palette.Id,$"Palette {palette.Id} persists");
         }
         Check(accents.Count==4,"Morandi palettes visibly differ");
         Find<TextBox>(window,"TtlDays").Text="7";
-        Find<TextBox>(window,"CustomAccent").Text="#637A68";await Click(window,"Apply Appearance");
+        Find<TextBox>(window,"CustomAccent").Text="#637A68";await Click(window,"Save Accent");
         Check(Appearance.Load(service.Home).Accent=="#637A68","Custom accent persists");
         Check(Find<TextBox>(window,"TtlDays").Text=="7" && service.Settings().ArtifactTtlDays==5,"Appearance changes preserve drafts without saving business settings");
         var approvedColor=((SolidColorBrush)window.FindResource("AccentBrush")).Color;
-        Find<TextBox>(window,"CustomAccent").Text="#NOTHEX";await Click(window,"Apply Appearance");
+        Find<TextBox>(window,"CustomAccent").Text="#NOTHEX";
+        Check(Find<TextBlock>(window,"AccentError").Visibility==Visibility.Visible,"Invalid accent has an inline error beside the field");
+        await Click(window,"Save Accent");
         Check(Appearance.Load(service.Home).Accent=="#637A68" && ((SolidColorBrush)window.FindResource("AccentBrush")).Color==approvedColor,"Invalid color does not replace valid appearance");
-        Find<TextBox>(window,"CustomAccent").Clear();Find<ComboBox>(window,"PaletteChoice").SelectedValue="sage";await Click(window,"Apply Appearance");
+        Find<TextBox>(window,"CustomAccent").Clear();await Click(window,"Save Accent");
+        Find<ComboBox>(window,"PaletteChoice").SelectedValue="mist";window.UpdateLayout();
+        Find<ComboBox>(window,"LanguageChoice").SelectedValue="en";window.UpdateLayout();
+        Check(Appearance.Load(service.Home).Language=="en" && ((ComboBox)window.FindName("QuickLanguage")).SelectedValue!.Equals("en"),"Settings language applies immediately and synchronizes the top selector");
+        Check(Find<TextBox>(window,"TtlDays").Text=="7" && service.Settings().ArtifactTtlDays==5,"Immediate choices preserve unsaved business input");
+        Find<ComboBox>(window,"LanguageChoice").SelectedValue="zh-CN";window.UpdateLayout();
+        var paletteChoice=Find<ComboBox>(window,"PaletteChoice");var customAccent=Find<TextBox>(window,"CustomAccent");
+        Check(new FrameworkElement[]{(ComboBox)window.FindName("QuickLanguage"),(Button)window.FindName("RefreshButton"),Find<ComboBox>(window,"LanguageChoice"),paletteChoice,customAccent,Find<TextBox>(window,"TtlDays")}.All(c=>Math.Abs(c.ActualHeight-34)<0.1),"Top bar and single-line form controls measure 34 pixels");
+        Check(Math.Abs(paletteChoice.TranslatePoint(new Point(),window).Y-customAccent.TranslatePoint(new Point(),window).Y)<0.1,"Accent field and palette selector share a baseline");
         await SaveImage(window,Path.Combine(root,"Settings-zh-CN.png"));
         Navigate("Agents");FindAll<FormAssistant>(window).Single().IsExpanded=true;window.UpdateLayout();
         await SaveImage(window,Path.Combine(root,"Assistant-zh-CN.png"));
-        Navigate("Connections");await SaveImage(window,Path.Combine(root,"Connections-zh-CN.png"));
+        service.Register("agent-d","fixture",config);Navigate("Connections");
+        var connections=Find<DataGrid>(window,"ConnectionsTable");
+        var graphEdges=FindAll<System.Windows.Shapes.Path>(window).Where(p=>AutomationProperties.GetAutomationId(p).StartsWith("ConnectionEdge:",StringComparison.Ordinal)).ToArray();
+        Check(connections.Items.Count==20 && graphEdges.Length==service.Connections().Count(e=>e.Permission!="default_deny"),"Five-agent graph collapses default deny while the table retains all 20 directions");
+        var reverse=graphEdges.Single(p=>p.Tag is ConnectionView{From:"agent-b",To:"agent-a"});
+        reverse.RaiseEvent(new MouseButtonEventArgs(Mouse.PrimaryDevice,Environment.TickCount,MouseButton.Left){RoutedEvent=UIElement.MouseLeftButtonDownEvent});
+        Check(connections.SelectedItem==reverse.Tag && Find<TextBox>(window,"ConnectionFrom").Text=="agent-b" && Find<TextBox>(window,"ConnectionTo").Text=="agent-a","Clicking the reverse graph edge selects its exact directed permission");
+        await SaveImage(window,Path.Combine(root,"Connections-zh-CN.png"));
+        ((ComboBox)window.FindName("QuickLanguage")).SelectedValue="es";window.UpdateLayout();
+        var inboxNav=((ListBox)window.FindName("Navigation")).Items.Cast<ListBoxItem>().Single(i=>(string)i.Tag=="Inbox");
+        Check((string)inboxNav.ToolTip==UiText.Translate("Inbox","es") && FindAll<TextBlock>(inboxNav).Any(t=>t.TextTrimming==TextTrimming.CharacterEllipsis && Equals(t.ToolTip,t.Text)),"Long Spanish navigation has ellipsis and its full translated tooltip");
+        Navigate("Settings");await SaveImage(window,Path.Combine(root,"Settings-es.png"));
+        ((ComboBox)window.FindName("QuickLanguage")).SelectedValue="zh-CN";
         var reopened=new MainWindow(new RelayService(service.Home));reopened.Show();await Task.Delay(100);reopened.UpdateLayout();
         Check(((ComboBox)reopened.FindName("QuickLanguage")).SelectedValue!.Equals("zh-CN") && ((TextBlock)reopened.FindName("PageTitle")).Text=="首页","Language preference survives reopening");
         reopened.Close();

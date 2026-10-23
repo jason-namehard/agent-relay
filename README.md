@@ -4,11 +4,11 @@ Windows-first local task handoffs for coding agents.
 
 [![CI](https://github.com/jason-namehard/agent-relay/actions/workflows/ci.yml/badge.svg)](https://github.com/jason-namehard/agent-relay/actions/workflows/ci.yml)
 
-**公开预览版：** [下载 v0.1.0-preview.2](https://github.com/jason-namehard/agent-relay/releases/tag/v0.1.0-preview.2) · [上手指南](docs/GETTING_STARTED.md) · [更新记录](CHANGELOG.md) · [参与贡献](CONTRIBUTING.md)
+**公开预览版：** [下载 v0.1.0-preview.3](https://github.com/jason-namehard/agent-relay/releases/tag/v0.1.0-preview.3) · [上手指南](docs/GETTING_STARTED.md) · [更新记录](CHANGELOG.md) · [参与贡献](CONTRIBUTING.md)
 
 Windows 包解压后双击 **`TryDemo.cmd`** 即可体验隔离演示，无需模型账号；结果是明确标注的本地样本。正式接入先登记路径、验证并授权，CLI/MCP 另需 .NET 10 runtime。
 
-桌面支持英语、简体中文、繁体中文、日语、韩语和西班牙语；右上角可直接切换。设置提供四套莫兰迪配色及自定义强调色。每个配置输入旁可复制提示词，让目标 Agent 以固定 JSON 回复，再粘贴解析代填；登记、验证与批准各自独立。见 [配置助手与外观](docs/CONFIGURATION_ASSISTANT.md)。
+桌面支持英语、简体中文、繁体中文、日语、韩语和西班牙语，覆盖配置提示词、任务提示词、通知与配置解析错误。右上角和设置页均可即时切换语言；设置页提供四套莫兰迪配色，选择即保存，强调色可预览后单独保存。每个配置输入旁可复制提示词，让目标 Agent 以固定 JSON 回复，再粘贴解析代填；登记、验证与批准各自独立。见 [配置助手与外观](docs/CONFIGURATION_ASSISTANT.md)。
 
 Agent Relay 把任务交接变成可追踪的本机工作流：明确谁可以向谁派发，保存 Markdown 请求，等待显式完成事件，失败后可以检查证据并恢复。请求方和接收方负责推理，Relay 负责传递和记账。
 
@@ -35,7 +35,7 @@ flowchart LR
 - stdio MCP 的七个任务工具，启动时绑定 Agent 身份，与 CLI 共用方向权限和完成契约。
 - JSON/TOML 配置迁移的精确预览、来源版本登记、备份、明确批准、验证、独立停旧和回滚。
 
-当前为 **0.1.0-preview.2**，覆盖 CLI、MCP 和 Windows GUI。原生 WPF 界面提供 Agent 登记、方向连接图、Inbox、任务证据、适配器验证、迁移审阅和设置；首次使用可直接体验隔离 Demo。核心 131 项自动回归及 Windows 窗口交互测试通过；各入口共用同一个账本，无常驻服务或轮询依赖。
+当前为 **0.1.0-preview.3**，覆盖 CLI、MCP 和 Windows GUI。原生 WPF 界面提供 Agent 登记、方向连接图、Inbox、任务证据、适配器验证、迁移审阅和设置；首次使用可直接体验隔离 Demo。核心 131 项自动回归与 Windows 102 项窗口交互验证通过；各入口共用同一个账本，无常驻服务或轮询依赖。
 
 ## Windows 桌面界面
 
@@ -45,9 +45,9 @@ Windows 分发包中运行 `gui/AgentRelay.Desktop.exe`。默认数据目录与 
 ./gui/AgentRelay.Desktop.exe --home C:/relay-data
 ```
 
-界面启动做一次恢复；Home/Inbox 接到本机账本提交事件后刷新，编辑页面保留输入并提示 `Refresh`。有向连接图以 Green/Red/Gray 区分允许、明确拒绝和不可用，默认拒绝用虚线及文字。配置迁移显示精确片段，应用与回滚均需审阅、填写理由和明确批准。完整操作见 [Phase 5](docs/PHASE5.md)。
+界面启动做一次恢复；外部进程更新账本时，Home/Inbox 自动读取，编辑页面保留草稿并在独立底栏提示刷新，不覆盖刚完成操作的结果。连接图以绿色、红色、灰色区分允许、明确拒绝和不可用；4 个及以上 Agent 只绘制明确设置的权限，完整方向与默认拒绝仍可在下方表格查看。配置迁移显示精确片段，应用与回滚均需审阅、填写理由和明确批准。桌面交互见 [UI 规格](docs/UI_SPEC.md)，任务操作见 [Phase 5](docs/PHASE5.md)。
 
-![简体中文连接管理页面，使用独立测试登记数据](docs/images/preview2-connections-zh-CN.png)
+![简体中文连接管理页面，使用独立测试登记数据](docs/images/preview3-connections-zh-CN.png)
 
 从源码构建 Windows 组件：
 

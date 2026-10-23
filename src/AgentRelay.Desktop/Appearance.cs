@@ -10,7 +10,7 @@ namespace AgentRelay.Desktop;
 
 public sealed record DesktopPreferences(
     [property: JsonRequired] string Language = "zh-CN",
-    [property: JsonRequired] string Palette = "sage",
+    [property: JsonRequired] string Palette = "mist",
     string? Accent = null);
 
 public sealed record AppearanceOption(string Id, string Label);
@@ -26,8 +26,8 @@ public static class Appearance
 
     public static IReadOnlyList<AppearanceOption> Palettes { get; } = Array.AsReadOnly(new[]
     {
-        new AppearanceOption("sage", "Sage"), new AppearanceOption("clay", "Clay"),
-        new AppearanceOption("mist", "Mist"), new AppearanceOption("rose", "Rose")
+        new AppearanceOption("mist", "Mist"), new AppearanceOption("sage", "Sage"),
+        new AppearanceOption("clay", "Clay"), new AppearanceOption("rose", "Rose")
     });
 
     public static DesktopPreferences Load(string home)
@@ -66,27 +66,27 @@ public static class Appearance
         Validate(preferences);
         var colors = preferences.Palette switch
         {
-            "sage" => new[] { "#F1F2EC", "#E7EBE1", "#516654", "#DFE7DB", "#303E36" },
-            "clay" => new[] { "#F4EFE9", "#EEE3D9", "#855C48", "#EFDFD1", "#493B34" },
-            "mist" => new[] { "#EEF1F3", "#E2E9ED", "#526B7E", "#DDE7EE", "#303E49" },
-            "rose" => new[] { "#F5EFF0", "#EFE2E5", "#865C69", "#EFDEE3", "#48363D" },
+            "sage" => new[] { "#E8EDEA", "#7C8F86", "#2E3A35" },
+            "clay" => new[] { "#F1E7DC", "#A9825F", "#3A2F27" },
+            "mist" => new[] { "#E6EBEF", "#6E8092", "#2C3742" },
+            "rose" => new[] { "#F2E7E9", "#A8858C", "#38292D" },
             _ => throw new InvalidOperationException("Validated palette was not found.")
         };
-        var accent = ParseColor(preferences.Accent ?? colors[2]);
+        var accent = ParseColor(preferences.Accent ?? colors[1]);
         var accentText = ReadableAccent(accent);
-        Set("PageBrush", ParseColor(colors[0]));
-        Set("SurfaceBrush", ParseColor("#FDFCF9"));
-        Set("SurfaceAltBrush", ParseColor(colors[1]));
-        Set("TextBrush", ParseColor("#292E2B"));
-        Set("MutedBrush", ParseColor("#5B645F"));
-        Set("BorderBrush", ParseColor("#BFC5BD"));
+        Set("PageBrush", ParseColor("#FAFAF9"));
+        Set("SurfaceBrush", Colors.White);
+        Set("SurfaceAltBrush", ParseColor("#F4F4F2"));
+        Set("TextBrush", ParseColor("#262626"));
+        Set("MutedBrush", ParseColor("#6B6B6B"));
+        Set("BorderBrush", ParseColor("#E6E3DE"));
         Set("AccentBrush", accentText);
-        Set("AccentSoftBrush", preferences.Accent is null ? ParseColor(colors[3]) : Blend(accent, ParseColor("#FDFCF9"), 0.16));
-        Set("NavBrush", ParseColor(colors[4]));
-        Set("NavTextBrush", ParseColor("#F4F3ED"));
-        Set("AllowedBrush", ParseColor("#47694F"));
-        Set("DeniedBrush", ParseColor("#9B4B4B"));
-        Set("UnavailableBrush", ParseColor("#71736F"));
+        Set("AccentSoftBrush", preferences.Accent is null ? ParseColor(colors[0]) : Blend(accent, Colors.White, 0.16));
+        Set("NavBrush", ParseColor(colors[2]));
+        Set("NavTextBrush", ParseColor("#F6F6F4"));
+        Set("AllowedBrush", ParseColor("#4C7A5A"));
+        Set("DeniedBrush", ParseColor("#A6473F"));
+        Set("UnavailableBrush", ParseColor("#8A8A8A"));
 
         void Set(string key, Color color)
         {
@@ -96,6 +96,14 @@ public static class Appearance
         }
     }
 
+    public static Color ParseAccent(string accent)
+    {
+        // The accent can be entered or pasted by the user; reject invalid color text at this boundary.
+        if (accent.Length != 7 || accent[0] != '#' || !accent.Skip(1).All(Uri.IsHexDigit))
+            throw new RelayException("invalid_desktop_accent", "Desktop accent must use #RRGGBB, for example #637A68.");
+        return ParseColor(accent);
+    }
+
     private static void Validate(DesktopPreferences preferences)
     {
         // Preferences are editable user input; invalid values must produce an actionable error.
@@ -103,9 +111,7 @@ public static class Appearance
             throw new RelayException("invalid_desktop_language", $"Unknown desktop language: {preferences.Language}. Supported: en, zh-CN, zh-TW, ja, ko, es.");
         if (!Palettes.Any(option => option.Id == preferences.Palette))
             throw new RelayException("invalid_desktop_palette", $"Unknown desktop palette: {preferences.Palette}. Supported: sage, clay, mist, rose.");
-        if (preferences.Accent is not null && (preferences.Accent.Length != 7 || preferences.Accent[0] != '#' ||
-            !preferences.Accent.Skip(1).All(Uri.IsHexDigit)))
-            throw new RelayException("invalid_desktop_accent", "Desktop accent must use #RRGGBB, for example #637A68.");
+        if (preferences.Accent is not null) ParseAccent(preferences.Accent);
     }
 
     private static string SystemLanguage()

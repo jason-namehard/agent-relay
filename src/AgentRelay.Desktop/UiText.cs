@@ -277,6 +277,96 @@ public static class UiText
         Add("Rolled back", "已回滚", "已還原", "ロールバック済み", "롤백됨", "Revertido", "rolled_back");
         Add("Install", "安装", "安裝", "インストール", "설치", "Instalar", "install");
         Add("Disable old entry", "停用旧入口", "停用舊入口", "旧エントリを無効化", "기존 진입점 비활성화", "Desactivar entrada anterior", "disable_old");
+        Add("Unread", "未读", "未讀", "未読", "읽지 않음", "Sin leer");
+        Add("Save Accent", "保存强调色", "儲存強調色", "アクセント色を保存", "강조색 저장", "Guardar acento");
+        Add("Accent preview", "强调色预览", "強調色預覽", "アクセント色のプレビュー", "강조색 미리 보기", "Vista previa del acento");
+        Add("Accent must use #RRGGBB, for example #637A68.", "强调色须使用 #RRGGBB 格式，例如 #637A68。", "強調色須使用 #RRGGBB 格式，例如 #637A68。", "アクセント色は #RRGGBB 形式で指定してください（例：#637A68）。", "강조색은 #RRGGBB 형식이어야 합니다. 예: #637A68.", "El acento debe usar #RRGGBB, por ejemplo #637A68.", "Desktop accent must use #RRGGBB, for example #637A68.");
+
+        Add("Waiting for handoff", "等待交接", "等待交接", "引き継ぎ待ち", "인계 대기", "Esperando traspaso");
+        Add("Result ready", "结果就绪", "結果就緒", "結果準備完了", "결과 준비됨", "Resultado listo");
+        Add("Task failed", "任务失败", "任務失敗", "タスク失敗", "작업 실패", "Tarea fallida");
+        Add("Late result received", "收到晚到结果", "收到延遲結果", "遅延した結果を受信", "늦은 결과 수신", "Resultado tardío recibido");
+        Add("Task cancelled", "任务已取消", "任務已取消", "タスク取消済み", "작업 취소됨", "Tarea cancelada");
+        Add("Execution needs attention", "执行需要关注", "執行需要關注", "実行の確認が必要", "실행 확인 필요", "La ejecución requiere atención");
+        Add("Delivery needs attention", "投递需要关注", "投遞需要關注", "配信の確認が必要", "전달 확인 필요", "La entrega requiere atención");
+        Add("Continuation needs attention", "继续需要关注", "繼續需要關注", "続行の確認が必要", "계속 확인 필요", "La continuación requiere atención");
+        Add("Task timed out", "任务已超时", "任務已逾時", "タスクがタイムアウト", "작업 시간 초과", "Tiempo de tarea agotado");
+
+        Add("Task {0} awaits manual submission to {1}. Request: {2}; attempt: {3}; write the result to: {4}. Explicitly ack after receiving, then complete/fail when finished.",
+            "任务 {0} 尚待手工提交给 {1}。请求：{2}；尝试：{3}；结果应写入：{4}。接收后显式 ack，完成后显式 complete/fail。",
+            "任務 {0} 尚待手動提交給 {1}。請求：{2}；嘗試：{3}；結果應寫入：{4}。接收後明確 ack，完成後明確 complete/fail。",
+            "タスク {0} は {1} への手動送信待ちです。リクエスト：{2}、試行：{3}、結果の書き込み先：{4}。受信後は明示的に ack、完了後は complete/fail を実行してください。",
+            "작업 {0}을(를) {1}에 수동으로 제출해야 합니다. 요청: {2}; 시도: {3}; 결과 저장 위치: {4}. 수신 후 명시적으로 ack하고 완료 후 complete/fail하세요.",
+            "La tarea {0} espera su envío manual a {1}. Solicitud: {2}; intento: {3}; escribe el resultado en: {4}. Confirma explícitamente con ack al recibir y con complete/fail al terminar.");
+        Add("Continue Agent Relay task {0}, state {1}. Request: {2}; result: {3}. Read the result and verification details, then continue the original task; no repeated dispatch is needed.",
+            "继续处理 Agent Relay 任务 {0}，状态 {1}。请求：{2}；结果：{3}。请读取结果和验证信息，再继续原任务；无需重复派发。",
+            "繼續處理 Agent Relay 任務 {0}，狀態 {1}。請求：{2}；結果：{3}。請讀取結果與驗證資訊，再繼續原任務；無須重複派發。",
+            "Agent Relay タスク {0}（状態：{1}）を続行してください。リクエスト：{2}、結果：{3}。結果と検証情報を読んでから元のタスクを続行してください。再送信は不要です。",
+            "Agent Relay 작업 {0}, 상태 {1}을(를) 계속하세요. 요청: {2}; 결과: {3}. 결과와 검증 정보를 읽은 후 원래 작업을 계속하세요. 다시 전달할 필요는 없습니다.",
+            "Continúa la tarea {0} de Agent Relay, estado {1}. Solicitud: {2}; resultado: {3}. Lee el resultado y la verificación y continúa la tarea original; no hace falta enviarla otra vez.");
+        Add("The result file for task {0} has expired or is missing. Inspect the task record and decide whether to regenerate it.",
+            "任务 {0} 的结果文件已过期或缺失，请检查任务记录并决定重新生成。", "任務 {0} 的結果檔案已到期或遺失，請檢查任務記錄並決定是否重新產生。",
+            "タスク {0} の結果ファイルは期限切れか見つかりません。タスクの記録を確認し、再生成するか判断してください。", "작업 {0}의 결과 파일이 만료되었거나 없습니다. 작업 기록을 확인하고 다시 생성할지 결정하세요.",
+            "El resultado de la tarea {0} ha caducado o falta. Revisa su registro y decide si debes regenerarlo.");
+        Add("Task {0} is saved, state {1}, awaiting result file {2}. End this turn and wait for a continuation message or a prompt pasted by the user. Deadline: {3}.",
+            "任务 {0} 已保存，状态 {1}，正在等待结果文件 {2}。请结束当前轮；收到继续消息或用户粘贴提示词后再处理。截止时间：{3}。",
+            "任務 {0} 已儲存，狀態 {1}，正在等待結果檔案 {2}。請結束目前回合；收到繼續訊息或使用者貼上提示詞後再處理。截止時間：{3}。",
+            "タスク {0} は保存済みで、状態 {1}、結果ファイル {2} を待っています。このターンを終了し、続行メッセージまたは利用者が貼り付けるプロンプトを待ってください。期限：{3}。",
+            "작업 {0}이(가) 저장되었으며 상태는 {1}이고 결과 파일 {2}을(를) 기다립니다. 이번 턴을 끝내고 계속 메시지나 사용자가 붙여넣는 프롬프트를 기다리세요. 마감: {3}.",
+            "La tarea {0} está guardada, estado {1}, a la espera del resultado {2}. Finaliza este turno y espera un mensaje de continuación o un prompt pegado por el usuario. Plazo: {3}.");
+        Add("Task {0} exceeded its deadline without a valid completion result. Run recover or inspect the evidence; do not dispatch again automatically.",
+            "任务 {0} 已超过截止时间，未获得有效完成结果。请运行 recover 或检查证据；不要自动重复派发。", "任務 {0} 已超過截止時間，未取得有效完成結果。請執行 recover 或檢查證據；不要自動重複派發。",
+            "タスク {0} は有効な完了結果がないまま期限を過ぎました。recover を実行するか証跡を確認し、自動で再送信しないでください。", "작업 {0}이(가) 유효한 완료 결과 없이 마감 시간을 지났습니다. recover를 실행하거나 증거를 확인하고 자동으로 다시 전달하지 마세요.",
+            "La tarea {0} superó el plazo sin un resultado de finalización válido. Ejecuta recover o revisa las evidencias; no la envíes otra vez automáticamente.");
+        Add("Task {0} has an unknown delivery outcome and may have been received. Inspect delivery evidence; do not resend automatically.",
+            "任务 {0} 的投递状态未知，可能已被接收。请检查运输证据，禁止自动重发。", "任務 {0} 的投遞狀態不明，可能已被接收。請檢查傳輸證據，禁止自動重送。",
+            "タスク {0} の配信結果は不明で、受信済みの可能性があります。配信の証跡を確認し、自動で再送しないでください。", "작업 {0}의 전달 결과를 알 수 없으며 이미 수신되었을 수 있습니다. 전달 증거를 확인하고 자동으로 다시 보내지 마세요.",
+            "El resultado de entrega de la tarea {0} es desconocido y puede haberse recibido. Revisa las evidencias; no la reenvíes automáticamente.");
+        Add("Task {0} was cancelled. Inspect its audit and any late results; do not continue or dispatch again automatically.",
+            "任务 {0} 已取消。请检查审计与可能的晚到结果，不要自动继续或重复派发。", "任務 {0} 已取消。請檢查稽核與可能延遲抵達的結果，不要自動繼續或重複派發。",
+            "タスク {0} は取消済みです。監査と遅延した結果を確認し、自動で続行や再送信をしないでください。", "작업 {0}이(가) 취소되었습니다. 감사 기록과 늦은 결과를 확인하고 자동으로 계속하거나 다시 전달하지 마세요.",
+            "La tarea {0} fue cancelada. Revisa su auditoría y los resultados tardíos; no continúes ni la envíes otra vez automáticamente.");
+        Add("Task {0} has an unknown execution outcome. Inspect task execution evidence; do not start the Agent again automatically.",
+            "任务 {0} 的执行结果未知。请检查 task execution 证据；不能自动再次启动 Agent。", "任務 {0} 的執行結果不明。請檢查 task execution 證據；不可自動再次啟動 Agent。",
+            "タスク {0} の実行結果は不明です。task execution の証跡を確認し、Agent を自動で再起動しないでください。", "작업 {0}의 실행 결과를 알 수 없습니다. task execution 증거를 확인하고 Agent를 자동으로 다시 시작하지 마세요.",
+            "El resultado de ejecución de la tarea {0} es desconocido. Revisa las evidencias de task execution; no inicies el Agent otra vez automáticamente.");
+
+        Add("The setup response exceeds {0} UTF-8 bytes.", "接入回复超过 {0} 个 UTF-8 字节。", "接入回覆超過 {0} 個 UTF-8 位元組。", "設定の返信が {0} UTF-8 バイトを超えています。", "설정 응답이 UTF-8 {0}바이트를 초과합니다.", "La respuesta de configuración supera {0} bytes UTF-8.");
+        Add("Return one complete JSON object, optionally inside one json code fence, without surrounding text.", "请返回一个完整 JSON 对象，可放在一个 json 代码围栏内，不要附带其他文字。", "請回傳一個完整 JSON 物件，可放在一個 json 程式碼圍欄內，不要附帶其他文字。", "完全な JSON オブジェクトを一つ返してください。一つの json コードフェンスで囲めますが、前後に文章を付けないでください。", "완전한 JSON 객체 하나를 반환하세요. json 코드 울타리 하나로 감쌀 수 있지만 앞뒤에 다른 문장을 넣지 마세요.", "Devuelve un objeto JSON completo, opcionalmente en un único bloque json, sin texto alrededor.");
+        Add("The setup response must be a JSON object.", "接入回复必须是 JSON 对象。", "接入回覆必須是 JSON 物件。", "設定の返信は JSON オブジェクトである必要があります。", "설정 응답은 JSON 객체여야 합니다.", "La respuesta de configuración debe ser un objeto JSON.");
+        Add("The setup response requires relay_setup_version, context and fields.", "接入回复须包含 relay_setup_version、context 和 fields。", "接入回覆須包含 relay_setup_version、context 和 fields。", "設定の返信には relay_setup_version、context、fields が必要です。", "설정 응답에는 relay_setup_version, context, fields가 필요합니다.", "La respuesta requiere relay_setup_version, context y fields.");
+        Add("The setup response requires relay_setup_version 1.", "接入回复的 relay_setup_version 必须为 1。", "接入回覆的 relay_setup_version 必須為 1。", "設定の返信の relay_setup_version は 1 にしてください。", "설정 응답의 relay_setup_version은 1이어야 합니다.", "La respuesta requiere relay_setup_version 1.");
+        Add("The setup response fields must be an object of string values.", "接入回复的 fields 必须是值均为字符串的对象。", "接入回覆的 fields 必須是值皆為字串的物件。", "設定の返信の fields は文字列の値を持つオブジェクトにしてください。", "설정 응답의 fields는 문자열 값으로 구성된 객체여야 합니다.", "fields debe ser un objeto con valores de cadena.");
+        Add("Use one complete json code fence with no surrounding text.", "请使用一个完整的 json 代码围栏，不要附带其他文字。", "請使用一個完整的 json 程式碼圍欄，不要附帶其他文字。", "完全な json コードフェンスを一つ使い、前後に文章を付けないでください。", "완전한 json 코드 울타리 하나를 사용하고 앞뒤에 다른 문장을 넣지 마세요.", "Usa un único bloque json completo, sin texto alrededor.");
+        Add("Unknown setup response property: {0}.", "接入回复包含未知属性：{0}。", "接入回覆包含未知屬性：{0}。", "設定の返信に不明なプロパティがあります：{0}。", "설정 응답에 알 수 없는 속성이 있습니다: {0}.", "Propiedad desconocida en la respuesta: {0}.");
+        Add("The setup response must use context '{0}'.", "接入回复的 context 必须为 '{0}'。", "接入回覆的 context 必須為 '{0}'。", "設定の返信の context は '{0}' にしてください。", "설정 응답의 context는 '{0}'이어야 합니다.", "La respuesta debe usar context '{0}'.");
+        Add("The setup response contains an unrequested field: {0}.", "接入回复包含未请求的字段：{0}。", "接入回覆包含未要求的欄位：{0}。", "設定の返信に要求していないフィールドがあります：{0}。", "설정 응답에 요청하지 않은 필드가 있습니다: {0}.", "La respuesta contiene un campo no solicitado: {0}.");
+        Add("Setup field '{0}' must contain a JSON string.", "接入字段 '{0}' 必须包含 JSON 字符串。", "接入欄位 '{0}' 必須包含 JSON 字串。", "設定フィールド '{0}' は JSON 文字列にしてください。", "설정 필드 '{0}'은 JSON 문자열이어야 합니다.", "El campo '{0}' debe contener una cadena JSON.");
+        Add("Unsupported setup context: {0}.", "不支持的接入上下文：{0}。", "不支援的接入情境：{0}。", "未対応の設定コンテキストです：{0}。", "지원하지 않는 설정 컨텍스트입니다: {0}.", "Contexto de configuración no compatible: {0}.");
+        Add("Duplicate setup response property: {0}.", "接入回复包含重复属性：{0}。", "接入回覆包含重複屬性：{0}。", "設定の返信に重複したプロパティがあります：{0}。", "설정 응답에 중복 속성이 있습니다: {0}.", "Propiedad duplicada en la respuesta: {0}.");
+
+        Add("Awaiting manual submission to the recipient.", "待手工提交给接收方。", "待手動提交給接收方。", "受信先への手動送信待ちです。", "수신자에게 수동으로 제출해야 합니다.", "Pendiente de envío manual al destinatario.");
+        Add("Task saved and awaiting processing.", "任务已保存，正在等待处理。", "任務已儲存，正在等待處理。", "タスクを保存し、処理を待っています。", "작업이 저장되었으며 처리를 기다립니다.", "Tarea guardada y pendiente de procesamiento.");
+        Add("A new execution attempt was created.", "新执行尝试已创建。", "已建立新的執行嘗試。", "新しい実行試行を作成しました。", "새 실행 시도가 생성되었습니다.", "Se ha creado un nuevo intento de ejecución.");
+        Add("The recipient reported failure. Inspect the failure file.", "接收方报告失败，请查看失败文件。", "接收方回報失敗，請查看失敗檔案。", "受信先が失敗を報告しました。失敗ファイルを確認してください。", "수신자가 실패를 보고했습니다. 실패 파일을 확인하세요.", "El destinatario informó de un fallo. Revisa el archivo de error.");
+        Add("The result is ready. Copy the continuation prompt.", "结果已就绪，可复制继续提示词。", "結果已就緒，可複製繼續提示詞。", "結果の準備ができました。続行用プロンプトをコピーしてください。", "결과가 준비되었습니다. 계속 프롬프트를 복사하세요.", "El resultado está listo. Copia el prompt de continuación.");
+        Add("A cancelled task received a late result; it remains cancelled.", "已取消任务收到晚到结果；任务仍保持取消。", "已取消任務收到延遲結果；任務仍維持取消。", "取消済みタスクに遅延した結果が届きました。取消状態は維持されます。", "취소된 작업에 늦은 결과가 도착했습니다. 취소 상태는 유지됩니다.", "Una tarea cancelada recibió un resultado tardío; sigue cancelada.");
+        Add("Further Relay dispatches have stopped; host execution was not terminated.", "已停止 Relay 后续派发；宿主执行未被终止。", "已停止 Relay 後續派發；宿主執行未被終止。", "Relay の以後の送信を停止しました。ホストの実行は終了していません。", "Relay의 후속 전달이 중지되었습니다. 호스트 실행은 종료되지 않았습니다.", "Se han detenido los siguientes envíos de Relay; la ejecución del host no se terminó.");
+        Add("The one-shot worker did not start. You can explicitly run task run.", "单次 worker 未能启动，可显式运行 task run。", "單次 worker 未能啟動，可明確執行 task run。", "単発 worker を起動できませんでした。task run を明示的に実行できます。", "일회성 worker가 시작되지 않았습니다. 명시적으로 task run을 실행할 수 있습니다.", "El worker de una ejecución no se inició. Puedes ejecutar task run explícitamente.");
+        Add("The execution outcome is unknown. The Agent will not restart automatically.", "执行结果未知，不会自动重新启动 Agent。", "執行結果不明，不會自動重新啟動 Agent。", "実行結果は不明です。Agent を自動で再起動しません。", "실행 결과를 알 수 없습니다. Agent는 자동으로 다시 시작되지 않습니다.", "El resultado de ejecución es desconocido. El Agent no se reiniciará automáticamente.");
+        Add("The deadline passed without a valid completion result; the host may still be running.", "截止时间已过，未收到有效完成结果；宿主可能仍在执行。", "截止時間已過，未收到有效完成結果；宿主可能仍在執行。", "有効な完了結果がないまま期限を過ぎました。ホストはまだ実行中の可能性があります。", "유효한 완료 결과 없이 마감이 지났습니다. 호스트는 아직 실행 중일 수 있습니다.", "El plazo pasó sin un resultado válido; el host puede seguir ejecutándose.");
+        Add("Delivery left no confirmed outcome. Do not resend automatically.", "运输进程未留下确定结果，禁止自动重发。", "傳輸程序未留下確定結果，禁止自動重送。", "配信の確定結果がありません。自動で再送しないでください。", "전달 결과가 확인되지 않았습니다. 자동으로 다시 보내지 마세요.", "La entrega no dejó un resultado confirmado. No reenvíes automáticamente.");
+        Add("Handoff artifacts have expired. Inspect the task and decide whether to regenerate them.", "交接产物已过期，请检查任务并决定重新生成。", "交接產物已到期，請檢查任務並決定是否重新產生。", "引き継ぎ成果物の期限が切れています。タスクを確認し、再生成するか判断してください。", "인계 산출물이 만료되었습니다. 작업을 확인하고 다시 생성할지 결정하세요.", "Los artefactos del traspaso caducaron. Revisa la tarea y decide si debes regenerarlos.");
+        Add("Delivery retries are exhausted.", "运输重试次数已耗尽。", "傳輸重試次數已用盡。", "配信の再試行回数を使い切りました。", "전달 재시도 횟수를 모두 사용했습니다.", "Se agotaron los reintentos de entrega.");
+        Add("This task has no available binding to its exact original session.", "此任务没有可用的精确会话恢复绑定。", "此任務沒有可用的精確工作階段復原綁定。", "このタスクには元の正確なセッションへの有効なバインドがありません。", "이 작업에는 정확한 원래 세션으로 돌아갈 수 있는 연결 정보가 없습니다.", "Esta tarea no tiene un vínculo disponible con su sesión original exacta.");
+        Add("The process stopped during submission. Do not wake the session again automatically; inspect the original session or copy the prompt.", "提交期间进程中断，禁止自动重复唤醒；请检查原会话或复制提示词。", "提交期間程序中斷，禁止自動重複喚醒；請檢查原工作階段或複製提示詞。", "送信中にプロセスが停止しました。セッションを自動で再度起動せず、元のセッションを確認するかプロンプトをコピーしてください。", "제출 중 프로세스가 중단되었습니다. 세션을 자동으로 다시 깨우지 말고 원래 세션을 확인하거나 프롬프트를 복사하세요.", "El proceso se detuvo durante el envío. No reactives la sesión automáticamente; revisa la sesión original o copia el prompt.");
+        Add("The Codex version changed. Verify it again before using it for new tasks.", "Codex 版本已改变，请重新验证后用于新任务。", "Codex 版本已變更，請重新驗證後再用於新任務。", "Codex のバージョンが変わりました。新しいタスクに使う前に再検証してください。", "Codex 버전이 변경되었습니다. 새 작업에 사용하기 전에 다시 검증하세요.", "La versión de Codex cambió. Vuelve a verificarla antes de usarla en nuevas tareas.");
+        Add("The continuation call timed out and may have been submitted. Do not wake the session again automatically.", "会话继续调用超时，可能已提交，禁止自动重复唤醒。", "工作階段繼續呼叫逾時，可能已提交，禁止自動重複喚醒。", "続行の呼び出しがタイムアウトしましたが、送信済みの可能性があります。セッションを自動で再度起動しないでください。", "계속 호출 시간이 초과되었지만 이미 제출되었을 수 있습니다. 세션을 자동으로 다시 깨우지 마세요.", "La llamada de continuación agotó el tiempo y puede haberse enviado. No reactives la sesión automáticamente.");
+        Add("A matching UUID, turn.completed event or final reply is missing. Completion of the continuation turn is unconfirmed.", "缺少匹配 UUID、turn.completed 或最终回复，不能确认继续轮次完成。", "缺少符合的 UUID、turn.completed 或最終回覆，無法確認繼續回合完成。", "一致する UUID、turn.completed イベント、または最終返信がありません。続行ターンの完了を確認できません。", "일치하는 UUID, turn.completed 이벤트 또는 최종 응답이 없어 계속 턴의 완료를 확인할 수 없습니다.", "Falta un UUID coincidente, un evento turn.completed o una respuesta final. La finalización del turno de continuación no está confirmada.");
+        Add("Automatic continuation is unavailable. Copy the prompt. ", "自动继续不可用，请复制提示词。", "自動繼續無法使用，請複製提示詞。", "自動続行は利用できません。プロンプトをコピーしてください。", "자동 계속을 사용할 수 없습니다. 프롬프트를 복사하세요. ", "La continuación automática no está disponible. Copia el prompt. ");
+        Add("The execution outcome is unknown. Do not start the Agent again automatically. ", "执行结果未知，禁止自动再次启动 Agent。", "執行結果不明，禁止自動再次啟動 Agent。", "実行結果は不明です。Agent を自動で再起動しないでください。", "실행 결과를 알 수 없습니다. Agent를 자동으로 다시 시작하지 마세요. ", "El resultado de ejecución es desconocido. No inicies el Agent otra vez automáticamente. ");
+        Add("Delivery needs manual inspection: ", "运输需要人工检查：", "傳輸需要人工檢查：", "配信の手動確認が必要です：", "전달을 수동으로 확인해야 합니다: ", "La entrega requiere revisión manual: ");
+
         entries.Add("approve", entries["Approve"]);
         entries.Add("recover", entries["Recover"]);
         entries.Add("allow", entries["Allow"]);

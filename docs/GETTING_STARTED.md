@@ -2,12 +2,12 @@
 
 ## 先选择下载包
 
-从 [GitHub Releases](https://github.com/jason-namehard/agent-relay/releases) 下载 `v0.1.0-preview.2`：
+从 [GitHub Releases](https://github.com/jason-namehard/agent-relay/releases) 下载 `v0.1.0-preview.3`：
 
 | 包 | 适用场景 | 运行要求 |
 | --- | --- | --- |
-| `AgentRelay-v0.1.0-preview.2-windows-x64.zip` | Windows 桌面 GUI、演示、CLI、MCP、通知 | GUI/演示/通知自带运行库；CLI/MCP 需要 .NET 10 runtime |
-| `AgentRelay-v0.1.0-preview.2-cli-mcp.zip` | Windows/Linux 的命令行或 stdio MCP | .NET 10 runtime；不包含桌面组件 |
+| `AgentRelay-v0.1.0-preview.3-windows-x64.zip` | Windows 桌面 GUI、演示、CLI、MCP、通知 | GUI/演示/通知自带运行库；CLI/MCP 需要 .NET 10 runtime |
+| `AgentRelay-v0.1.0-preview.3-cli-mcp.zip` | Windows/Linux 的命令行或 stdio MCP | .NET 10 runtime；不包含桌面组件 |
 
 `Source code.zip` 是源码，不是应用分发包。Windows 完整解压到固定目录，不在 ZIP 浏览器里运行 exe。桌面包含微软运行库与通知组件，请保留 `licenses/` 并阅读 `DISTRIBUTION_TERMS.md`。尚未提供安装器和代码签名。
 
@@ -32,7 +32,7 @@ Windows 包双击 `TryDemo.cmd`，或运行：
 
 ## 接入自己的 Agent
 
-窗口右上角可直接选择简体中文等六种语言。在设置中选择莫兰迪配色和强调色。若不清楚字段值，点击输入框旁复制图标，把提示词交给目标 Agent；将它的固定 JSON 回复粘贴到页面顶部“配置助手”，点击解析代填，再审阅和登记。Agent ID 是本机 Relay 标签，不需要登录账号。详细格式见 [配置助手与外观](https://github.com/jason-namehard/agent-relay/blob/v0.1.0-preview.2/docs/CONFIGURATION_ASSISTANT.md)。
+窗口右上角可直接选择简体中文等六种语言；设置页的语言和莫兰迪配色也在选择后立即保存。新数据目录默认雾蓝。强调色输入时可看预览，确认后点击“保存强调色”。若不清楚字段值，点击输入框旁复制图标，把当前语言的提示词交给目标 Agent；将它的固定 JSON 回复粘贴到页面中的“配置助手”，点击解析代填，再审阅和登记。Agent ID 是本机 Relay 标签，不需要登录账号。详细格式见 [配置助手与外观](https://github.com/jason-namehard/agent-relay/blob/v0.1.0-preview.3/docs/CONFIGURATION_ASSISTANT.md)。
 
 直接运行 `gui/AgentRelay.Desktop.exe`，不加 `--demo`，进入正式账本。默认 `%LOCALAPPDATA%/AgentRelay`；CLI/MCP 必须使用相同的 `--home` 或 `RELAY_HOME`。
 
@@ -55,7 +55,7 @@ dotnet $relay --home $dataRoot task ack --task $task.task_id --attempt $task.att
 dotnet $relay --home $dataRoot task complete --task $task.task_id --attempt $task.attempt_id --sender agent-b --status succeeded --result $task.result_path --idempotency-key first-done
 ```
 
-回到 GUI 的 Inbox，查看 `Succeeded`、结果和继续提示词。如果宿主不支持自动继续，就复制提示词交回 A；不要重复派发。同一次请求重试命令时保持原幂等键。
+回到 GUI 的 Inbox，查看成功状态、结果和当前界面语言的继续提示词。如果宿主不支持自动继续，就复制提示词交回 A；不要重复派发。同一次请求重试命令时保持原幂等键。通知列表显示易读事件和已读/未读状态，悬停可查看原始信息。
 
 ## 自动化接入与排错
 
@@ -68,6 +68,6 @@ dotnet $relay --home $dataRoot task complete --task $task.task_id --attempt $tas
 | `awaiting_manual` / 退出码 4 | 复制请求给 B，等待显式完成，不重新派发 |
 | `delivery_unknown` / 退出码 6 | 查看运输证据，不自动重发 |
 | 结果已过期 | 查看任务记录和审计，决定是否重新生成 |
-| GUI 状态看似未更新 | 使用 Refresh；它只读，不调用模型或重新投递 |
+| 编辑页面提示账本有变化 | 外部进程更新会在独立底栏提示；草稿保留，审阅后使用“刷新”。它只读，不调用模型或重新投递 |
 
 当前没有常驻服务或系统调度器。所有进程关闭后的截止时间在下次 Recover 处理；取消 Relay 任务不终止已运行的宿主。提问与缺陷报告请附应用版本、Windows/.NET 版本、复现步骤和已脱敏的错误码，不上传认证文件、完整宿主配置或迁移备份。
