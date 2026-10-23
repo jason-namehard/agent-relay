@@ -20,6 +20,9 @@ namespace AgentRelay.Desktop;
 public partial class MainWindow : Window
 {
     private readonly RelayService service;
+    private DesktopPreferences preferences;
+    private bool languageReady;
+    private readonly Dictionary<string, TextBox> fields = new(StringComparer.Ordinal);
     private bool busy;
     private bool refreshPending;
     private uint ledgerMessage;
@@ -40,13 +43,21 @@ public partial class MainWindow : Window
     public MainWindow(RelayService service, bool demo = false)
     {
         this.service = service;
+        preferences = Appearance.Load(service.Home);
         InitializeComponent();
+        Appearance.Apply(this, preferences);
+        QuickLanguage.ItemsSource = Appearance.Languages;
+        QuickLanguage.DisplayMemberPath = "Label"; QuickLanguage.SelectedValuePath = "Id";
+        QuickLanguage.SelectedValue = preferences.Language;
+        languageReady = true;
+        UpdateChrome();
         HomePath.Text = service.Home;
         VersionLabel.Text = "v" + RelayVersion.Current;
         if (demo)
         {
             Title = "Agent Relay — Demo";
-            ModeDescription.Text = "DEMO · 虚构 Agent 与预设结果 · 未调用模型，未读取现用配置";
+            ModeDescription.Tag = "DEMO · 虚构 Agent 与预设结果 · 未调用模型，未读取现用配置";
+            ModeDescription.Text = T((string)ModeDescription.Tag);
         }
         SourceInitialized += (_, _) =>
         {
@@ -77,9 +88,9 @@ public partial class MainWindow : Window
         {
             if (busy) return; // Run drains a queued hint after its operation completes.
             refreshPending = false;
-            if (Navigation.SelectedItem is ListBoxItem item && (string)item.Content is not ("Home" or "Inbox"))
+            if (Navigation.SelectedItem is ListBoxItem item && (string)item.Tag is not ("Home" or "Inbox"))
             {
-                StatusText.Text = "Ledger changed · Refresh";
+                StatusText.Text = T("Ledger changed · Refresh");
                 return; // Preserve edits and migration previews until the user explicitly refreshes.
             }
             await Run(() => Task.CompletedTask, "已读取事件更新", clearError: false);
@@ -89,43 +100,60 @@ public partial class MainWindow : Window
     private async Task Run(Func<Task> action, string success, bool refresh = true, bool clearError = true)
     {
         if (busy) return;
-        busy = true; PageContent.IsEnabled = false; Navigation.IsEnabled = false; RefreshButton.IsEnabled = false;
+        busy = true; PageContent.IsEnabled = false; Navigation.IsEnabled = false; RefreshButton.IsEnabled = false; QuickLanguage.IsEnabled = false;
         if (clearError) ErrorBanner.Visibility = Visibility.Collapsed;
-        StatusText.Text = "Working…";
+        StatusText.Text = T("Working…");
         try
         {
             await action();
             if (refresh) RenderPage();
-            StatusText.Text = ErrorBanner.Visibility == Visibility.Visible ? "Action failed" : success;
+            StatusText.Text = ErrorBanner.Visibility == Visibility.Visible ? T("Action failed") : T(success);
         }
         // Expected external input, filesystem, host-command and clipboard failures stay visible at the UI boundary.
         catch (Exception error) when (error is RelayException or IOException or UnauthorizedAccessException or
             JsonException or Microsoft.Data.Sqlite.SqliteException or ArgumentException or Win32Exception or ExternalException)
         {
-            ErrorText.Text = error is RelayException relay ? $"{relay.Code}: {relay.Message}" : error.Message;
-            ErrorBanner.Visibility = Visibility.Visible; StatusText.Text = "Action failed";
+            ErrorText.Text = error is RelayException relay ? $"{relay.Code}: {T(relay.Message)}" : error.Message;
+            if (error is RelayException setup && setup.Code.StartsWith("setup_", StringComparison.Ordinal))
+                ErrorText.Text = T("The Agent reply format is invalid. Check version, context and requested fields.") + "\n" + ErrorText.Text;
+            ErrorBanner.Visibility = Visibility.Visible; StatusText.Text = T("Action failed");
         }
         finally
         {
-            busy = false; PageContent.IsEnabled = true; Navigation.IsEnabled = true; RefreshButton.IsEnabled = true;
+            busy = false; PageContent.IsEnabled = true; Navigation.IsEnabled = true; RefreshButton.IsEnabled = true; QuickLanguage.IsEnabled = true;
             if (refreshPending) { refreshPending = false; QueueRefresh(); }
         }
     }
 
     private async void Navigate(object sender, SelectionChangedEventArgs e) => await Run(() => Task.CompletedTask, "Ready");
     private async void RefreshClick(object sender, RoutedEventArgs e) => await Run(() => Task.CompletedTask, "已刷新");
+    private async void QuickLanguageChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (!languageReady || QuickLanguage.SelectedValue is not string language || language == preferences.Language) return;
+        var drafts=CaptureInputs();
+        await Run(() =>
+        {
+            var next = preferences with { Language = language };
+            Appearance.Save(service.Home, next); preferences = next; UpdateChrome();
+            return Task.CompletedTask;
+        }, "Language and appearance saved");
+        RestoreInputs(drafts);
+        languageReady=false;QuickLanguage.SelectedValue=preferences.Language;languageReady=true;
+    }
 
     private void RenderPage()
     {
         if (Navigation.SelectedItem is not ListBoxItem item) return;
-        var page = (string)item.Content;
-        PageTitle.Text = page;
+        var page = (string)item.Tag;
+        fields.Clear();
+        PageTitle.Text = T(page);
         PageContent.Content = page switch
         {
             "Home" => HomePage(), "Agents" => AgentsPage(), "Connections" => ConnectionsPage(),
             "Inbox" => InboxPage(), "Adapters" => AdaptersPage(), "Audit" => AuditPage(), "Settings" => SettingsPage(),
             _ => throw new InvalidOperationException(page)
         };
+        Localize(PageContent.Content as DependencyObject);
     }
 
     private StackPanel HomePage()
@@ -138,6 +166,7 @@ public partial class MainWindow : Window
             Add(actions, "Open Demo", async () =>
             {
                 var demoService = await DemoWorkspace.CreateAsync(Program.NewDemoHome());
+                Appearance.Save(demoService.Home, preferences);
                 new MainWindow(demoService, demo: true).Show();
             }, false);
             Add(actions, "Register Agent", () => { Navigation.SelectedIndex = 1; return Task.CompletedTask; });
@@ -145,11 +174,11 @@ public partial class MainWindow : Window
         var cards = new UniformGrid { Columns = 4, Margin = new(0,0,0,18) };
         foreach (var (label,value) in new[] { ("Registered Agents", summary.RegisteredAgents.ToString()),
             ("Pending Tasks", summary.PendingTasks.ToString()), ("Needs Attention", summary.NeedsAttention.ToString()),
-            ("Retention", $"{summary.RetentionDays} days") })
+            ("Retention", $"{summary.RetentionDays} {T("days")}") })
         {
             var stack = new StackPanel(); stack.Children.Add(new TextBlock { Text = label, Foreground = Brushes.SlateGray });
             stack.Children.Add(new TextBlock { Text = value, FontSize = 28, FontWeight = FontWeights.SemiBold, Margin = new(0,8,0,0) });
-            cards.Children.Add(new Border { Child = stack, Background = Brushes.White, BorderBrush = Brush("#DCE3E7"), BorderThickness = new(1), Padding = new(14), Margin = new(0,0,10,0) });
+            cards.Children.Add(new Border { Child = stack, Background = Theme("SurfaceBrush"), BorderBrush = Theme("BorderBrush"), BorderThickness = new(1), CornerRadius = new(14), Padding = new(14), Margin = new(0,0,10,0) });
         }
         page.Children.Add(cards); Heading(page, "Needs Attention", "失败、超时、投递未知，以及需要人工继续的结果。" );
         TaskPane(page, service.Tasks().Where(RelayService.NeedsAttention)); return page;
@@ -181,14 +210,16 @@ public partial class MainWindow : Window
         page.Children.Add(detail);
         table.SelectionChanged += (_,_) => { if (table.SelectedItem is AgentRecord a) { agentId=a.AgentId; id.Text=a.AgentId; host.Text=a.Host;
             config.Text=a.ConfigPath; cli.Text=a.CliPath ?? ""; version.Text=a.HostVersion ?? ""; instructions.Text=string.Join(Environment.NewLine,a.InstructionPaths); detail.Text=RelayJson.Write(a); } };
-        table.SelectedItem=agents.SingleOrDefault(a=>a.AgentId==agentId); return page;
+        table.SelectedItem=agents.SingleOrDefault(a=>a.AgentId==agentId);
+        page.Children.Insert(2,new TextBlock{Text=T("Agent ID is a local Relay label, not an account or login."),TextWrapping=TextWrapping.Wrap,Margin=new(0,0,0,10)});
+        AddAssistant(page,"agents"); return page;
     }
 
     private StackPanel ConnectionsPage()
     {
         var page = Page(); Heading(page,"Directed Connections","Green: Allowed · Red: Explicit deny · Gray: Unavailable · Dashed: Default deny" );
         var edges=service.Connections(); var table=Table("ConnectionsTable",("From","From"),("To","To"),("Permission","Permission"),("Capability","Capability"),("Status","Display"));
-        var graph=new ConnectionGraph(service.Agents(),edges,e=>table.SelectedItem=e); page.Children.Add(graph);
+        var graph=new ConnectionGraph(service.Agents(),edges,e=>table.SelectedItem=e, preferences.Language, this); page.Children.Add(graph);
         table.ItemsSource=edges; page.Children.Add(table);
         var form=new WrapPanel(); page.Children.Add(form); var from=Field(form,"From","ConnectionFrom",220); var to=Field(form,"To","ConnectionTo",220);
         var detail=Output("ConnectionDetail",95); var actions=Row(page);
@@ -202,7 +233,7 @@ public partial class MainWindow : Window
         });
         page.Children.Add(detail);
         table.SelectionChanged+=(_,_)=>{if(table.SelectedItem is ConnectionView e) {from.Text=e.From;to.Text=e.To;connectionFrom=e.From;connectionTo=e.To;detail.Text=RelayJson.Write(e);}};
-        table.SelectedItem=edges.SingleOrDefault(e=>e.From==connectionFrom && e.To==connectionTo); return page;
+        table.SelectedItem=edges.SingleOrDefault(e=>e.From==connectionFrom && e.To==connectionTo); AddAssistant(page,"connections"); return page;
     }
 
     private sealed record TaskRow(string TaskId,string Route,string State,string NextAction,DateTimeOffset Deadline);
@@ -243,7 +274,7 @@ public partial class MainWindow : Window
         table.ItemsSource=service.Audit(Optional(filter)); var actions=Row(page);
         Add(actions,"Apply Filter",()=>{table.ItemsSource=service.Audit(Optional(filter));return Task.CompletedTask;},false);
         var detail=Output("AuditDetail",120);table.SelectionChanged+=(_,_)=>{if(table.SelectedItem is AuditEvent e)detail.Text=RelayJson.Write(e);};
-        page.Children.Add(table);page.Children.Add(detail);return page;
+        page.Children.Add(table);page.Children.Add(detail);AddAssistant(page,"audit");return page;
     }
 
     private StackPanel AdaptersPage()
@@ -263,7 +294,7 @@ public partial class MainWindow : Window
         Add(actions,"Test AMQ",async()=>{var path=Required(amq,"AMQ executable");if(Review("Verify AMQ",$"将执行：{path}\n在 Relay 自身目录创建验证队列，不启动模型。") is not null)await service.VerifyAmqAsync(path);});
         Add(actions,"Test Executor",async()=>{var id=Required(agent,"Agent ID");if(Review("Verify executor",$"Agent: {id}\n执行已登记 CLI 的版本/能力探测，不启动模型。") is not null)await service.VerifyExecutorAsync(id);});
         Add(actions,"Test Resumer",async()=>{var id=Required(agent,"Agent ID");if(Review("Verify resumer",$"Agent: {id}\nKind: {kind.Text}\n执行已登记 CLI 的帮助/版本探测，不启动模型。") is not null)await service.VerifyResumerAsync(id,Required(kind,"Resumer kind"));});
-        var detail=Output("AdapterSources",260);detail.Text=RelayJson.Write(new{sources=service.AdapterSources(),executors=service.Executors(),resumers=service.Resumers()});page.Children.Add(detail);return page;
+        var detail=Output("AdapterSources",260);detail.Text=RelayJson.Write(new{sources=service.AdapterSources(),executors=service.Executors(),resumers=service.Resumers()});page.Children.Add(detail);AddAssistant(page,"adapters");return page;
     }
 
     private StackPanel MigrationPanel()
@@ -284,12 +315,24 @@ public partial class MainWindow : Window
         Add(actions,"Recover State",()=>{service.RecoverMigration(Selected());return Task.CompletedTask;});
         page.Children.Add(table);page.Children.Add(detail);
         table.SelectionChanged+=(_,_)=>{if(table.SelectedItem is MigrationPlan p){migrationId=p.MigrationId;proof.Text=p.ProofTaskId ?? "";detail.Text=Preview(p)+"\nAudit:\n"+RelayJson.Write(service.MigrationAudit(p.MigrationId));}};
-        table.SelectedItem=plans.SingleOrDefault(p=>p.MigrationId==migrationId);return page;
+        table.SelectedItem=plans.SingleOrDefault(p=>p.MigrationId==migrationId);AddAssistant(page,"migrations");return page;
     }
 
     private StackPanel SettingsPage()
     {
-        var page=Page();Heading(page,"Local Settings","Deadline Handling: On Next Command · 无计划任务、文件 watcher 或常驻服务。" );
+        var page=Page(); Heading(page,"Appearance","Choose language and palette");
+        var appearanceForm = new WrapPanel(); page.Children.Add(appearanceForm);
+        var language = Choice(appearanceForm, "Language", "LanguageChoice", Appearance.Languages, preferences.Language);
+        var palette = Choice(appearanceForm, "Color palette", "PaletteChoice", Appearance.Palettes, preferences.Palette);
+        var accent = Field(appearanceForm, "Custom accent (#RRGGBB)", "CustomAccent", 230); accent.Text = preferences.Accent ?? "";
+        var appearanceActions = Row(page);
+        Add(appearanceActions,"Apply Appearance",() =>
+        {
+            var next = new DesktopPreferences((string)language.SelectedValue,(string)palette.SelectedValue,Optional(accent));
+            Appearance.Save(service.Home,next); preferences=next; Appearance.Apply(this,next); UpdateChrome();
+            return Task.CompletedTask;
+        });
+        Heading(page,"Local Settings","Deadline Handling: On Next Command · 无计划任务、文件 watcher 或常驻服务。" );
         var settings=service.Settings();var form=new WrapPanel();page.Children.Add(form);
         var ttl=Field(form,"Artifact TTL (days)","TtlDays",180);ttl.Text=settings.ArtifactTtlDays.ToString(CultureInfo.InvariantCulture);
         var timeout=Field(form,"Task timeout (minutes)","TaskTimeout",180);timeout.Text=settings.TaskTimeoutMinutes.ToString(CultureInfo.InvariantCulture);
@@ -303,35 +346,114 @@ public partial class MainWindow : Window
         var notificationForm=new WrapPanel();page.Children.Add(notificationForm);var executable=Field(notificationForm,"Notification helper path","NotificationPath",620);executable.Text=service.DesktopExecutable() ?? "";
         var notificationActions=Row(page);
         Add(notificationActions,"Enable Notifications",async()=>{var path=Required(executable,"Notification helper");if(Review("Enable Relay notifications",$"将探测并登记通知程序：\n{path}\n后续完成事件可启动该程序显示 Windows 通知。") is not null)await service.ConfigureDesktopAsync(path);});
-        Add(notificationActions,"Disable Notifications",()=>{service.DisableDesktop();return Task.CompletedTask;});return page;
+        Add(notificationActions,"Disable Notifications",()=>{service.DisableDesktop();return Task.CompletedTask;});AddAssistant(page,"settings");return page;
     }
 
     private string? Review(string title,string preview)
     {
-        var dialog=new ReviewDialog(this,title,preview);return dialog.ShowDialog()==true ? dialog.Reason : null;
+        var dialog=new ReviewDialog(this,T(title),preview,preferences.Language);return dialog.ShowDialog()==true ? dialog.Reason : null;
     }
     private void Add(Panel row,string label,Func<Task> action,bool refresh=true)
     {
-        var button=new Button{Content=label,Name=label.Replace(" ","").Replace("/","").Replace("→","To")};
+        var button=new Button{Content=T(label),Tag=label,Name=label.Replace(" ","").Replace("/","").Replace("→","To")};
+        if(label is "Apply Appearance" or "Save Settings" or "Register / Correct Path")button.Style=(Style)FindResource("PrimaryButtonStyle");
         AutomationProperties.SetAutomationId(button,button.Name);row.Children.Add(button);
         button.Click+=async(_,_)=>
         {
-            await Run(action,$"{label}: done",refresh);
+            var drafts=label=="Apply Appearance" ? CaptureInputs() : null;
+            await Run(action,T(label)+": "+T("Ready"),refresh);
+            if(drafts is not null)RestoreInputs(drafts);
         };
     }
     private static StackPanel Page()=>new(){Margin=new Thickness(0,0,0,8)};
-    private static void Heading(Panel page,string title,string subtitle)
-    {page.Children.Add(new TextBlock{Text=title,FontSize=16,FontWeight=FontWeights.SemiBold,Margin=new(0,6,0,7)});page.Children.Add(new TextBlock{Text=subtitle,TextWrapping=TextWrapping.Wrap,Foreground=Brush("#657B85"),Margin=new(0,0,0,14)});}
+    private void Heading(Panel page,string title,string subtitle)
+    {page.Children.Add(new TextBlock{Text=T(title),FontSize=17,FontWeight=FontWeights.SemiBold,Margin=new(0,6,0,7)});page.Children.Add(new TextBlock{Text=T(subtitle),TextWrapping=TextWrapping.Wrap,Foreground=Theme("MutedBrush"),Margin=new(0,0,0,14)});}
     private static WrapPanel Row(Panel page){var row=new WrapPanel{Margin=new(0,10,0,6)};page.Children.Add(row);return row;}
-    private static TextBox Field(Panel parent,string label,string name,double width)
-    {var p=new StackPanel{Width=width,Margin=new(0,10,12,0)};p.Children.Add(new TextBlock{Text=label,Foreground=Brush("#506873")});var box=new TextBox{Name=name};AutomationProperties.SetAutomationId(box,name);p.Children.Add(box);parent.Children.Add(p);return box;}
+    private TextBox Field(Panel parent,string label,string name,double width)
+    {
+        var p=new StackPanel{Width=width,Margin=new(0,10,12,0)};
+        var header=new DockPanel{MinHeight=36};p.Children.Add(header);
+        var box=new TextBox{Name=name}; AutomationProperties.SetAutomationId(box,name); fields.Add(name,box);
+        var copy=new Button{Name=name+"CopySetupPrompt",ToolTip=T("Copy this field prompt"),Padding=new(5),Margin=new(4,0,0,0),MinHeight=22,Width=26,Height=24,
+            Content=new System.Windows.Shapes.Path{Data=Geometry.Parse("M3,5 L3,14 L11,14 M6,2 L14,2 L14,11 L6,11 Z"),Stroke=Theme("AccentBrush"),StrokeThickness=1.5,Width=16,Height=16}};
+        AutomationProperties.SetAutomationId(copy,copy.Name);AutomationProperties.SetName(copy,T("Copy this field prompt")+": "+T(label));
+        DockPanel.SetDock(copy,Dock.Right);header.Children.Add(copy);
+        header.Children.Add(new TextBlock{Text=T(label),Foreground=Theme("MutedBrush"),VerticalAlignment=VerticalAlignment.Center,TextWrapping=TextWrapping.Wrap});
+        copy.Click+=async(_,_)=>await Run(()=>{Clipboard.SetText(SetupAssistant.CreatePrompt(FieldContext(name),new Dictionary<string,string>{{name,box.Text}},preferences.Language));return Task.CompletedTask;},"Copied setup prompt. Paste it into the Agent you want to register.",false);
+        p.Children.Add(box);parent.Children.Add(p);return box;
+    }
     private static TextBox Output(string name,double height)=>new(){Name=name,IsReadOnly=true,Height=height,AcceptsReturn=true,TextWrapping=TextWrapping.Wrap,VerticalScrollBarVisibility=ScrollBarVisibility.Auto,FontFamily=new("Consolas"),FontSize=12};
-    private static DataGrid Table(string name,params(string Label,string Path)[] columns)
-    {var table=new DataGrid{Name=name,Height=200};AutomationProperties.SetAutomationId(table,name);foreach(var c in columns)table.Columns.Add(new DataGridTextColumn{Header=c.Label,Binding=new Binding(c.Path),Width=new DataGridLength(1,DataGridLengthUnitType.Star)});return table;}
-    private static string Required(TextBox box,string label)=>!string.IsNullOrWhiteSpace(box.Text) ? box.Text.Trim() : throw new RelayException("input_required",$"请填写 {label}。");
+    private DataGrid Table(string name,params(string Label,string Path)[] columns)
+    {var table=new DataGrid{Name=name,Height=200};AutomationProperties.SetAutomationId(table,name);foreach(var c in columns){var binding=new Binding(c.Path);
+        if(c.Path is "State" or "Display" or "Permission" or "Capability" or "ValidationStatus" or "VerificationStatus" or "NextAction" or "Request.Purpose")binding.Converter=new UiValueConverter(preferences.Language);
+        table.Columns.Add(new DataGridTextColumn{Header=T(c.Label),Binding=binding,Width=new DataGridLength(1,DataGridLengthUnitType.Star)});}return table;}
+    private string Required(TextBox box,string label)=>!string.IsNullOrWhiteSpace(box.Text) ? box.Text.Trim() : throw new RelayException("input_required",string.Format(CultureInfo.CurrentUICulture,T("Please fill in {0}."),T(label)));
     private static string? Optional(TextBox box)=>string.IsNullOrWhiteSpace(box.Text) ? null : box.Text.Trim();
-    private static int Number(TextBox box)=>int.TryParse(box.Text,NumberStyles.Integer,CultureInfo.InvariantCulture,out var value) ? value : throw new RelayException("invalid_number","设置必须为整数。");
+    private int Number(TextBox box)=>int.TryParse(box.Text,NumberStyles.Integer,CultureInfo.InvariantCulture,out var value) ? value : throw new RelayException("invalid_number",T("Settings must be integers."));
     private static Brush Brush(string color)=>(Brush)new BrushConverter().ConvertFromString(color)!;
     private static void OpenFile(string path)
     {if(!File.Exists(path))throw new RelayException("artifact_missing","文件已过期或缺失。");Process.Start(new ProcessStartInfo(path){UseShellExecute=true});}
+
+    private string T(string source)=>UiText.Translate(source,preferences.Language);
+    private Dictionary<string,string> CaptureInputs()=>fields.Values.Concat(SetupReplies(PageContent)).ToDictionary(b=>b.Name,b=>b.Text);
+    private void RestoreInputs(IReadOnlyDictionary<string,string> drafts)
+    {foreach(var box in fields.Values.Concat(SetupReplies(PageContent)))if(drafts.TryGetValue(box.Name,out var value))box.Text=value;}
+    private static IEnumerable<TextBox> SetupReplies(DependencyObject root)
+    {
+        if(root is TextBox box && box.Name.EndsWith("SetupReply",StringComparison.Ordinal))yield return box;
+        foreach(var child in LogicalTreeHelper.GetChildren(root).OfType<DependencyObject>())foreach(var reply in SetupReplies(child))yield return reply;
+    }
+    private Brush Theme(string key)=>(Brush)FindResource(key);
+    private static string FieldContext(string name)=>name switch
+    {
+        "AgentId" or "AgentHost" or "AgentConfig" or "AgentCli" or "AgentVersion" or "AgentInstructions"=>"agents",
+        "ConnectionFrom" or "ConnectionTo"=>"connections",
+        "AmqPath" or "AdapterAgent" or "ResumerKind"=>"adapters",
+        "MigrationPath" or "MigrationFormat" or "MigrationProof"=>"migrations",
+        "AuditFilter"=>"audit",
+        "CustomAccent" or "TtlDays" or "TaskTimeout" or "DeliveryTimeout" or "DeliveryAttempts" or "NotificationPath"=>"settings",
+        _=>throw new InvalidOperationException("Unknown configuration field: "+name)
+    };
+    private void AddAssistant(StackPanel page,string context)
+    {
+        var group=fields.Where(f=>FieldContext(f.Key)==context).ToDictionary(f=>f.Key,f=>f.Value);
+        if(group.Count>0)page.Children.Insert(0,new FormAssistant(context,group,preferences.Language,(action,message)=>Run(action,message,false)));
+    }
+    private ComboBox Choice(Panel parent,string label,string name,IReadOnlyList<AppearanceOption> options,string selected)
+    {
+        var panel=new StackPanel{Width=200,Margin=new(0,10,12,10)};parent.Children.Add(panel);
+        panel.Children.Add(new TextBlock{Text=T(label),Foreground=Theme("MutedBrush")});
+        var choice=new ComboBox{Name=name,ItemsSource=options.Select(o=>new AppearanceOption(o.Id,T(o.Label))).ToArray(),DisplayMemberPath="Label",SelectedValuePath="Id",SelectedValue=selected,Margin=new(0,3,0,10)};
+        AutomationProperties.SetAutomationId(choice,name);panel.Children.Add(choice);return choice;
+    }
+    private void UpdateChrome()
+    {
+        Language=System.Windows.Markup.XmlLanguage.GetLanguage(preferences.Language);
+        languageReady=false;QuickLanguage.SelectedValue=preferences.Language;languageReady=true;
+        RefreshButton.Content=T("Refresh");
+        foreach(ListBoxItem item in Navigation.Items)
+        {
+            var page=(string)item.Tag;
+            var row=new StackPanel{Orientation=Orientation.Horizontal};
+            row.Children.Add(NavigationIcon.Create(page,Theme("NavTextBrush")));
+            row.Children.Add(new TextBlock{Text=T(page),Margin=new(10,0,0,0),VerticalAlignment=VerticalAlignment.Center});item.Content=row;
+            AutomationProperties.SetName(item,T(page));AutomationProperties.SetAutomationId(item,page);
+        }
+        Localize(ModeDescription);
+        Localize(BrandSubtitle);Localize(BrandTagline);HomePath.ToolTip=T("Relay data directory");
+    }
+    private void Localize(DependencyObject? root)
+    {
+        if(root is null)return;
+        if(root is TextBlock text){text.Tag??=text.Text;text.Text=T((string)text.Tag);}
+        if(root is TabItem tab && tab.Header is string header){tab.Tag??=header;tab.Header=T((string)tab.Tag);}
+        if(root is ContentControl control && control.Content is string content){control.Tag??=content;control.Content=T((string)control.Tag);}
+        foreach(var child in LogicalTreeHelper.GetChildren(root).OfType<DependencyObject>())Localize(child);
+    }
+}
+
+internal sealed class UiValueConverter(string language):IValueConverter
+{
+    public object Convert(object value,Type targetType,object parameter,CultureInfo culture)=>UiText.Translate(value.ToString()!,language);
+    public object ConvertBack(object value,Type targetType,object parameter,CultureInfo culture)=>throw new NotSupportedException();
 }

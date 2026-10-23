@@ -35,5 +35,6 @@ Copy-Item -LiteralPath (Join-Path $projectRoot 'LICENSE'), (Join-Path $projectRo
 Copy-Item -LiteralPath (Join-Path $projectRoot 'licenses') -Destination $destination -Recurse -Force
 Copy-Item -LiteralPath (Join-Path $projectRoot 'docs/PACKAGE_USAGE.md') -Destination (Join-Path $destination 'README.md')
 Copy-Item -LiteralPath (Join-Path $projectRoot 'docs/GETTING_STARTED.md') -Destination (Join-Path $destination 'GETTING_STARTED.md')
+Copy-Item -LiteralPath (Join-Path $projectRoot 'docs/CONFIGURATION_ASSISTANT.md') -Destination (Join-Path $destination 'CONFIGURATION_ASSISTANT.md')
 if ($IncludeDesktop) { Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'TryDemo.cmd') -Destination $destination }
 Write-Output $destination

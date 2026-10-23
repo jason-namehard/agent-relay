@@ -2,6 +2,8 @@
 
 日期：2026-10-23。`AgentRelay.Desktop` 是原生 WPF 管理界面，CLI、MCP、GUI 共用 `RelayService` 和 SQLite。GUI 不承担任务推理，不创建常驻服务、计划任务、文件 watcher 或周期查询。
 
+`0.1.0-preview.2` 增加六语界面、莫兰迪配色与配置助手；操作见 [配置助手与外观](CONFIGURATION_ASSISTANT.md)。
+
 ## 启动
 
 Windows x64 分发包中运行：

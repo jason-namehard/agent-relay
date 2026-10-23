@@ -26,6 +26,7 @@ internal static class Program
         var task=service.DispatchAsync(new("agent-a","agent-b","## Review\nInspect the fixture.","manual","manual","smoke")).GetAwaiter().GetResult().Task;
         File.WriteAllText(task.ResultPath,"## Result\n54\n## Verification\nFixture completed.");service.Complete(task.TaskId,task.AttemptId,"agent-b","done",task.ResultPath);
         var waiting=service.DispatchAsync(new("agent-a","agent-b","## Review\nWait for manual delivery.","manual","manual","waiting")).GetAwaiter().GetResult().Task;
+        Appearance.Save(service.Home,new DesktopPreferences("en"));
         var app=new Application();var window=new MainWindow(service);
         window.ContentRendered+=async(_,_)=>
         {
@@ -45,7 +46,7 @@ internal static class Program
     private static async Task Exercise(MainWindow window,RelayService service,TaskRecord task,TaskRecord waiting,string config,string root,string cli)
     {
         var navigation=(ListBox)window.FindName("Navigation");
-        void Navigate(string page){navigation.SelectedItem=navigation.Items.Cast<ListBoxItem>().Single(i=>(string)i.Content==page);window.UpdateLayout();}
+        void Navigate(string page){navigation.SelectedItem=navigation.Items.Cast<ListBoxItem>().Single(i=>(string)i.Tag==page);window.UpdateLayout();}
         await Wait(()=>((TextBlock)window.FindName("StatusText")).Text!="Working…");
         Check(FindAll<TextBlock>(window).Any(t=>t.Text=="Needs Attention"),"Home summary rendered");
         await SaveImage(window,Path.Combine(root,"Home.png"));
@@ -97,11 +98,12 @@ internal static class Program
         await process.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(10));
         if(process.ExitCode!=0)throw new InvalidOperationException(await stderr);
         Check(process.ExitCode==0,"External CLI updated ledger");await stdout;
-        await Wait(()=>((TextBlock)window.FindName("StatusText")).Text=="已读取事件更新");
-        Check(before!="已读取事件更新","Cross-process window message refreshed Home without polling");
+        await Wait(()=>((TextBlock)window.FindName("StatusText")).Text==UiText.Translate("已读取事件更新","en"));
+        Check(before!=UiText.Translate("已读取事件更新","en"),"Cross-process window message refreshed Home without polling");
         Navigate("Connections");await SaveImage(window,Path.Combine(root,"Connections.png"));
         foreach(var page in new[]{"Home","Agents","Connections","Inbox","Adapters","Audit","Settings"}){Navigate(page);window.UpdateLayout();Check(((ContentControl)window.FindName("PageContent")).Content is not null,$"{page} accessible");}
         var demoService=await DemoWorkspace.CreateAsync(Path.Combine(root,"demo"));
+        Appearance.Save(demoService.Home,new DesktopPreferences("en"));
         var demoWindow=new MainWindow(demoService,demo:true);demoWindow.Show();
         await Wait(()=>((TextBlock)demoWindow.FindName("StatusText")).Text!="Working…");
         demoWindow.UpdateLayout();
@@ -110,18 +112,83 @@ internal static class Program
         Check(Find<DataGrid>(demoWindow,"TasksTable").Items.Count==2,"Demo Home shows ready and failed sample tasks");
         await SaveImage(demoWindow,Path.Combine(root,"Demo.png"));demoWindow.Close();
         var emptyService=new RelayService(Path.Combine(root,"empty"));emptyService.Initialize();
+        Appearance.Save(emptyService.Home,new DesktopPreferences("en"));
         var emptyWindow=new MainWindow(emptyService);emptyWindow.Show();
         await Wait(()=>((TextBlock)emptyWindow.FindName("StatusText")).Text!="Working…");emptyWindow.UpdateLayout();
         Check(FindAll<Button>(emptyWindow).Any(b=>Equals(b.Content,"Open Demo")),"Empty registry offers isolated demo");
         await Click(emptyWindow,"Register Agent");emptyWindow.UpdateLayout();
         Check(((TextBlock)emptyWindow.FindName("PageTitle")).Text=="Agents","First-use registration action navigates to Agents");
         Check(emptyService.Agents().Count==0,"First-use navigation does not auto-register agents");emptyWindow.Close();
+        await ExerciseUsability(window,service,root,config);
+    }
+
+    private static async Task ExerciseUsability(MainWindow window,RelayService service,string root,string config)
+    {
+        void Navigate(string page){var nav=(ListBox)window.FindName("Navigation");nav.SelectedItem=nav.Items.Cast<ListBoxItem>().Single(i=>(string)i.Tag==page);window.UpdateLayout();}
+        Navigate("Agents");Find<DataGrid>(window,"AgentsTable").SelectedIndex=0;
+        Find<Button>(window,"AgentConfigCopySetupPrompt").RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+        Check(Clipboard.GetText().Contains("\"AgentConfig\"") && Clipboard.GetText().Contains("not a login name"),"Each field copies a constrained setup prompt");
+        var assistant=FindAll<FormAssistant>(window).Single();assistant.IsExpanded=true;window.UpdateLayout();
+        await Click(window,"Copy Setup Prompt");
+        Check(Clipboard.GetText().Contains("\"context\": \"agents\"") && Clipboard.GetText().Contains("\"AgentInstructions\""),"Group prompt carries stable field names");
+        var count=service.Agents().Count;
+        Find<TextBox>(window,"AgentCli").Text="keep-existing";
+        var reply=RelayJson.Write(new{relay_setup_version=1,context="agents",fields=new Dictionary<string,string>{["AgentId"]="agent-new",["AgentHost"]="fixture",["AgentConfig"]=config,["AgentCli"]=""}});
+        Clipboard.SetText(reply);await Click(window,"Paste Agent Reply");await Click(window,"Parse and Fill");
+        Check(Find<TextBox>(window,"AgentId").Text=="agent-new" && Find<TextBox>(window,"AgentConfig").Text==config,"Agent reply fills the active form");
+        Check(Find<TextBox>(window,"AgentCli").Text=="keep-existing" && service.Agents().Count==count,"Blank fields preserve input and parse does not register");
+        Find<TextBox>(window,"agentsSetupReply").Text="{\"relay_setup_version\":1,\"context\":\"agents\",\"fields\":{\"AgentId\":\"wrong\",\"AgentHost\":123}}";
+        await Click(window,"Parse and Fill");
+        Check(Find<TextBox>(window,"AgentId").Text=="agent-new" && ((Border)window.FindName("ErrorBanner")).Visibility==Visibility.Visible,"Invalid reply cannot partially fill the form");
+        Find<TextBox>(window,"AgentCli").Clear();await Click(window,"Register / Correct Path");await Click(window,"Validate");
+        Check(service.Agents().Count==count+1 && service.Agents().Single(a=>a.AgentId=="agent-new").ValidationStatus=="path_verified","Parsed registration still requires explicit save and validation");
+
+        Find<TextBox>(window,"AgentVersion").Text="unsaved-version";
+        ((ComboBox)window.FindName("QuickLanguage")).SelectedValue="zh-CN";window.UpdateLayout();
+        Check(Find<TextBox>(window,"AgentVersion").Text=="unsaved-version","Language switching preserves unsaved form input");
+
+        foreach(var option in Appearance.Languages)
+        {
+            ((ComboBox)window.FindName("QuickLanguage")).SelectedValue=option.Id;
+            await Wait(()=>Appearance.Load(service.Home).Language==option.Id);
+            Navigate("Settings");
+            Check(((TextBlock)window.FindName("PageTitle")).Text==UiText.Translate("Settings",option.Id),$"Navigation localizes in {option.Id}");
+            Check(FindAll<Button>(window).Any(b=>Equals(b.Content,UiText.Translate("Apply Appearance",option.Id))),$"Settings actions localize in {option.Id}");
+            Check(Find<TextBox>(window,"TtlDays").Text=="5",$"Language switch preserves stored settings in {option.Id}");
+        }
+        ((ComboBox)window.FindName("QuickLanguage")).SelectedValue="zh-CN";Navigate("Settings");
+        var accents=new HashSet<string>();
+        foreach(var palette in Appearance.Palettes)
+        {
+            Find<ComboBox>(window,"PaletteChoice").SelectedValue=palette.Id;await Click(window,"Apply Appearance");
+            accents.Add(((SolidColorBrush)window.FindResource("AccentBrush")).Color.ToString());
+            Check(Appearance.Load(service.Home).Palette==palette.Id,$"Palette {palette.Id} persists");
+        }
+        Check(accents.Count==4,"Morandi palettes visibly differ");
+        Find<TextBox>(window,"TtlDays").Text="7";
+        Find<TextBox>(window,"CustomAccent").Text="#637A68";await Click(window,"Apply Appearance");
+        Check(Appearance.Load(service.Home).Accent=="#637A68","Custom accent persists");
+        Check(Find<TextBox>(window,"TtlDays").Text=="7" && service.Settings().ArtifactTtlDays==5,"Appearance changes preserve drafts without saving business settings");
+        var approvedColor=((SolidColorBrush)window.FindResource("AccentBrush")).Color;
+        Find<TextBox>(window,"CustomAccent").Text="#NOTHEX";await Click(window,"Apply Appearance");
+        Check(Appearance.Load(service.Home).Accent=="#637A68" && ((SolidColorBrush)window.FindResource("AccentBrush")).Color==approvedColor,"Invalid color does not replace valid appearance");
+        Find<TextBox>(window,"CustomAccent").Clear();Find<ComboBox>(window,"PaletteChoice").SelectedValue="sage";await Click(window,"Apply Appearance");
+        await SaveImage(window,Path.Combine(root,"Settings-zh-CN.png"));
+        Navigate("Agents");FindAll<FormAssistant>(window).Single().IsExpanded=true;window.UpdateLayout();
+        await SaveImage(window,Path.Combine(root,"Assistant-zh-CN.png"));
+        Navigate("Connections");await SaveImage(window,Path.Combine(root,"Connections-zh-CN.png"));
+        var reopened=new MainWindow(new RelayService(service.Home));reopened.Show();await Task.Delay(100);reopened.UpdateLayout();
+        Check(((ComboBox)reopened.FindName("QuickLanguage")).SelectedValue!.Equals("zh-CN") && ((TextBlock)reopened.FindName("PageTitle")).Text=="首页","Language preference survives reopening");
+        reopened.Close();
+        var bad=Path.Combine(root,"bad-preferences");Directory.CreateDirectory(bad);File.WriteAllText(Path.Combine(bad,"desktop.preferences.json"),"{broken");
+        try{Appearance.Load(bad);throw new InvalidOperationException("Invalid preferences were accepted");}
+        catch(RelayException error){Check(error.Code=="invalid_desktop_preferences","Malformed preference file reports an explicit error");}
     }
 
     private static void SelectTask(MainWindow window,string id)
     {var table=Find<DataGrid>(window,"TasksTable");table.SelectedItem=table.Items.Cast<object>().Single(r=>(string)r.GetType().GetProperty("TaskId")!.GetValue(r)! == id);}
     private static async Task Click(MainWindow window,string content)
-    {FindAll<Button>(window).Single(b=>Equals(b.Content,content)).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));await Wait(()=>((TextBlock)window.FindName("StatusText")).Text!="Working…");await Task.Delay(50);}
+    {FindAll<Button>(window).Single(b=>Equals(b.Tag,content) || Equals(b.Content,content)).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));await Wait(()=>((TextBlock)window.FindName("StatusText")).Text!="Working…");await Task.Delay(50);}
     private static async Task ClickWithApproval(MainWindow window,string content,bool approve=true)
     {
         _ = window.Dispatcher.BeginInvoke(DispatcherPriority.Background,new Action(()=>
