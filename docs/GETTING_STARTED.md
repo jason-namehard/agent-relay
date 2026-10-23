@@ -2,12 +2,12 @@
 
 ## 先选择下载包
 
-从 [GitHub Releases](https://github.com/jason-namehard/agent-relay/releases) 下载 `v0.1.0-preview.4`：
+从 [GitHub Releases](https://github.com/jason-namehard/agent-relay/releases) 下载 `v0.1.0-preview.5`：
 
 | 包 | 适用场景 | 运行要求 |
 | --- | --- | --- |
-| `AgentRelay-v0.1.0-preview.4-windows-x64.zip` | Windows 桌面 GUI、演示、CLI、MCP、通知 | GUI/演示/通知自带运行库；CLI/MCP 需要 .NET 10 runtime |
-| `AgentRelay-v0.1.0-preview.4-cli-mcp.zip` | Windows/Linux 的命令行或 stdio MCP | .NET 10 runtime；不包含桌面组件 |
+| `AgentRelay-v0.1.0-preview.5-windows-x64.zip` | Windows 桌面 GUI、演示、CLI、MCP、通知 | GUI/演示/通知自带运行库；CLI/MCP 需要 .NET 10 runtime |
+| `AgentRelay-v0.1.0-preview.5-cli-mcp.zip` | Windows/Linux 的命令行或 stdio MCP | .NET 10 runtime；不包含桌面组件 |
 
 `Source code.zip` 是源码，不是应用分发包。Windows 完整解压到固定目录，不在 ZIP 浏览器里运行 exe。桌面包含微软运行库与通知组件，请保留 `licenses/` 并阅读 `DISTRIBUTION_TERMS.md`。尚未提供安装器和代码签名。
 
@@ -32,7 +32,7 @@ Windows 包双击 `TryDemo.cmd`，或运行：
 
 ## 接入自己的 Agent
 
-窗口右上角可直接选择简体中文等六种语言；设置页的语言和莫兰迪配色也在选择后立即保存。新数据目录默认雾蓝。强调色输入时可看预览，确认后点击“保存强调色”。若不清楚字段值，点击输入框旁复制图标，把当前语言的提示词交给目标 Agent；将它的固定 JSON 回复粘贴到页面中的“配置助手”，点击解析代填，再审阅和登记。Agent ID 是本机 Relay 标签，不需要登录账号。详细格式见 [配置助手与外观](https://github.com/jason-namehard/agent-relay/blob/v0.1.0-preview.4/docs/CONFIGURATION_ASSISTANT.md)。
+窗口右上角可直接选择简体中文等六种语言；设置页的语言和莫兰迪配色也在选择后立即保存。新数据目录默认雾蓝。强调色输入时可看预览，确认后点击“保存强调色”。若不清楚字段值，点击输入框旁复制图标，把当前语言的提示词交给目标 Agent；将它的固定 JSON 回复粘贴到页面中的“配置助手”，点击解析代填，再审阅和登记。Agent ID 是本机 Relay 标签，不需要登录账号。详细格式见 [配置助手与外观](https://github.com/jason-namehard/agent-relay/blob/v0.1.0-preview.5/docs/CONFIGURATION_ASSISTANT.md)。
 
 直接运行 `gui/AgentRelay.Desktop.exe`，不加 `--demo`，进入正式账本。默认 `%LOCALAPPDATA%/AgentRelay`；CLI/MCP 必须使用相同的 `--home` 或 `RELAY_HOME`。
 

@@ -268,7 +268,7 @@ public sealed class LifecycleTests
         var task = (await service.DispatchAsync(Request())).Task;
         var orphan = Path.Combine(Path.GetDirectoryName(task.RequestPath)!, "interrupted.tmp");
         File.WriteAllText(orphan, "interrupted publication");
-        clock.Advance(TimeSpan.FromDays(4));
+        clock.Advance(new DateTimeOffset(File.GetCreationTimeUtc(orphan)).AddDays(4) - clock.GetUtcNow());
         CollectionAssert.Contains(service.Cleanup(false).Paths, orphan);
         service.Cleanup(true);
         Assert.IsFalse(File.Exists(orphan));
