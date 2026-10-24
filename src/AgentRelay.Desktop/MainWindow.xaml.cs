@@ -408,16 +408,22 @@ public partial class MainWindow : Window
         AutomationProperties.SetAutomationId(notify,notify.Name);
         AutomationProperties.SetName(notify,T("Enable Notifications"));
         page.Children.Add(notify);
-        notify.Click+=async(_,_)=>
+        var restoringNotification=false;
+        async void NotificationChanged(object sender,RoutedEventArgs args)
         {
+            if(restoringNotification)return;
             var enabled=notify.IsChecked==true;
             await Run(async()=>
             {
                 if(enabled)await service.ConfigureDesktopAsync(Path.GetFullPath(Path.Combine(AppContext.BaseDirectory,"..","desktop","AgentRelay.Notify.exe")));
                 else service.DisableDesktop();
             },enabled?"Desktop notifications enabled":"Desktop notifications disabled",refresh:false);
-            notify.IsChecked=service.DesktopExecutable() is not null;
-        };
+            restoringNotification=true;
+            try{notify.IsChecked=service.DesktopExecutable() is not null;}
+            finally{restoringNotification=false;}
+        }
+        notify.Checked+=NotificationChanged;
+        notify.Unchecked+=NotificationChanged;
         var extensions=Page();
         extensions.Children.Add(Note("CLI extensions connect verified command-line tools or bridges. Availability depends on the target software, version, environment and session support. Not every Agent supports automatic calls or resuming a session. Test before enabling; manual handoff remains available."));
         var choice=Choice(extensions,"Agent","ExtensionAgent",service.Agents().Select(a=>new AppearanceOption(a.AgentId,a.DisplayName??a.AgentId)).ToArray(),agentId??service.Agents().FirstOrDefault()?.AgentId??"");

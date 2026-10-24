@@ -179,9 +179,13 @@ internal static class Program
         new RelayStore(service.Home).Write(s=>s.Execute("INSERT INTO desktop VALUES(1,$path)",("$path",Path.Combine(root,"fixture-notifier.exe"))));
         Navigate("Home");Navigate("Settings");
         notification=Find<CheckBox>(window,"EnableDesktopNotifications");
-        notification.IsChecked=false;notification.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+        var togglePeer=System.Windows.Automation.Peers.UIElementAutomationPeer.CreatePeerForElement(notification)!;
+        var toggle=(System.Windows.Automation.Provider.IToggleProvider)togglePeer.GetPattern(System.Windows.Automation.Peers.PatternInterface.Toggle)!;
+        Find<TextBox>(window,"TtlDays").Text="88";
+        toggle.Toggle();
         await Wait(()=>service.DesktopExecutable() is null);
-        Check(((TextBlock)window.FindName("StatusText")).Text=="Desktop notifications disabled","Notification change persists and reports an explicit saved result");
+        Check(((TextBlock)window.FindName("StatusText")).Text=="Desktop notifications disabled" && notification.IsChecked==false,"UI Automation Toggle persists notification state and reports a saved result");
+        Check(Find<TextBox>(window,"TtlDays").Text=="88" && service.Settings().ArtifactTtlDays==3,"Accessible notification toggle preserves unsaved drafts");
         Find<TextBox>(window,"TtlDays").Text="5";await Click(window,"Save Settings");
         Check(service.Settings().ArtifactTtlDays==5,"Retention settings persist");
         Find<TextBox>(window,"TtlDays").Text="0";await Click(window,"Save Settings");

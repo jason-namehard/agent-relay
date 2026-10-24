@@ -4,7 +4,7 @@ Windows-first local task handoffs for coding agents.
 
 [![CI](https://github.com/jason-namehard/agent-relay/actions/workflows/ci.yml/badge.svg)](https://github.com/jason-namehard/agent-relay/actions/workflows/ci.yml)
 
-**公开预览版：** [下载 v0.1.0-preview.8](https://github.com/jason-namehard/agent-relay/releases/tag/v0.1.0-preview.8) · [上手指南](docs/GETTING_STARTED.md) · [更新记录](CHANGELOG.md) · [参与贡献](CONTRIBUTING.md)
+**公开预览版：** [下载 v0.1.0-preview.9](https://github.com/jason-namehard/agent-relay/releases/tag/v0.1.0-preview.9) · [上手指南](docs/GETTING_STARTED.md) · [更新记录](CHANGELOG.md) · [参与贡献](CONTRIBUTING.md)
 
 Agent Relay 用于中转 Agent 之间的协作消息、请求与临时回稿，并展示交接进度。Agent 的名称、角色和任务由用户决定，Relay 只需要知道谁交给谁。最终成果及长期引用的文件应保存在项目目录；中转站临时文件会按保留策略清理。
 

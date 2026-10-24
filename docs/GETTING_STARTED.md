@@ -2,12 +2,12 @@
 
 ## 下载和启动
 
-从 [GitHub Releases](https://github.com/jason-namehard/agent-relay/releases/tag/v0.1.0-preview.8) 下载：
+从 [GitHub Releases](https://github.com/jason-namehard/agent-relay/releases/tag/v0.1.0-preview.9) 下载：
 
 | 包 | 用途 | 运行要求 |
 | --- | --- | --- |
-| `AgentRelay-v0.1.0-preview.8-windows-x64.zip` | Windows 桌面、演示、CLI、MCP、通知 | GUI/通知自带运行库；CLI/MCP 需要 .NET 10 runtime |
-| `AgentRelay-v0.1.0-preview.8-cli-mcp.zip` | Windows/Linux CLI 或 stdio MCP | .NET 10 runtime |
+| `AgentRelay-v0.1.0-preview.9-windows-x64.zip` | Windows 桌面、演示、CLI、MCP、通知 | GUI/通知自带运行库；CLI/MCP 需要 .NET 10 runtime |
+| `AgentRelay-v0.1.0-preview.9-cli-mcp.zip` | Windows/Linux CLI 或 stdio MCP | .NET 10 runtime |
 
 完整解压到固定目录后运行。`Source code.zip` 是源码。请保留 `licenses/` 并阅读 `DISTRIBUTION_TERMS.md`；当前未提供安装器和代码签名。
 

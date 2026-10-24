@@ -1,6 +1,6 @@
 # Agent Relay 桌面交互规格
 
-版本：0.1.0-preview.8。Windows 原生 WPF，四个主页面，节点由用户命名，软件不分配角色。
+版本：0.1.0-preview.9。Windows 原生 WPF，四个主页面，节点由用户命名，软件不分配角色。
 
 ## 页面职责
 
