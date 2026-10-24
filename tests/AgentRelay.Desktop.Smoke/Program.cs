@@ -63,6 +63,11 @@ internal static class Program
 
         ((ComboBox)window.FindName("QuickLanguage")).SelectedValue="zh-CN";await Task.Delay(30);
         Navigate("Agents");
+        var registry=Find<DataGrid>(window,"AgentsTable");
+        registry.SelectedItem=registry.Items.Cast<object>().Single(r=>(string)r.GetType().GetProperty("Name")!.GetValue(r)! == "自选节点乙");
+        Check((string)registry.SelectedItem.GetType().GetProperty("Activity")!.GetValue(registry.SelectedItem)! == "有未完成交接","Registry identifies Agents with unfinished handoffs");
+        await Click(window,"Remove Agent");
+        Check(service.Agents().Any(a=>a.AgentId=="agent-b") && ((Border)window.FindName("ErrorBanner")).Visibility==Visibility.Visible && ((TextBox)window.FindName("ErrorText")).Text.Contains("未完成交接"),"Removing an active Agent is blocked before any confirmation dialog");
         Check(!FindAll<TextBox>(window).Any(b=>b.Name.StartsWith("AgentEntry")||b.Name.EndsWith("SetupReply")),"Agent page has no competing setup form");
         var count=service.Agents().Count;
         await Modal<AgentEntryDialog>(window,"Add Agent",async dialog=>
@@ -144,26 +149,39 @@ internal static class Program
             Press(dialog,"CloseCliProbe");return Task.CompletedTask;
         });
         SeedExtension(service,"agent-c",false);
-        await Show(new CliProbeDialog(window,service,"agent-c","en"),dialog=>
+        await Show(new CliProbeDialog(window,service,"agent-c","en"),async dialog=>
         {
             Check(!service.CliExtension("agent-c")!.CanCreate,"Passing machine receipt alone does not enable CLI");
             Check(!Find<CheckBox>(dialog,"ConfirmCreateVisible").IsChecked!.Value,"Visibility is never preconfirmed");
             Find<CheckBox>(dialog,"ConfirmCreateVisible").IsChecked=true;Press(dialog,"SaveCreateConfirmation");
+            await Wait(()=>service.CliExtension("agent-c")!.CanCreate);
             Check(service.CliExtension("agent-c")!.CanCreate&&!service.CliExtension("agent-c")!.CanResume,"Visibility confirmation enables only verified new-session ability");
             Check(FindAll<Button>(dialog).Any(b=>b.Name=="ProbeResume"),"Same-session verification is a separate next step");
-            Press(dialog,"CloseCliProbe");return Task.CompletedTask;
+            Press(dialog,"CloseCliProbe");
         });
         var ext=service.CliExtension("agent-c")!;
         SaveExtension(service,ext with{ResumeProbe=new("resume-fixture","resume","RESUME-FIXTURE","fixture-session",true,false,null,DateTimeOffset.UtcNow)});
-        await Show(new CliProbeDialog(window,service,"agent-c","en"),dialog=>
+        await Show(new CliProbeDialog(window,service,"agent-c","en"),async dialog=>
         {
             Check(!service.CliExtension("agent-c")!.CanResume,"Resume machine receipt still needs same-session visibility confirmation");
             Find<CheckBox>(dialog,"ConfirmResumeVisible").IsChecked=true;Press(dialog,"SaveResumeConfirmation");
+            await Wait(()=>service.CliExtension("agent-c")!.CanResume);
             Check(service.CliExtension("agent-c")!.CanResume,"Separate same-session confirmation enables resume");
-            Press(dialog,"CloseCliProbe");return Task.CompletedTask;
+            Press(dialog,"CloseCliProbe");
         });
 
         Navigate("Settings");
+        await CheckProbeProgress(window,service,root);
+        var notification=Find<CheckBox>(window,"EnableDesktopNotifications");
+        notification.BringIntoView();window.UpdateLayout();
+        var notificationPeer=System.Windows.Automation.Peers.UIElementAutomationPeer.CreatePeerForElement(notification)!;
+        Check(notificationPeer.GetName()=="Enable Notifications" && notificationPeer.GetAutomationId()=="EnableDesktopNotifications","Notification toggle exposes a stable accessible name and ID");
+        new RelayStore(service.Home).Write(s=>s.Execute("INSERT INTO desktop VALUES(1,$path)",("$path",Path.Combine(root,"fixture-notifier.exe"))));
+        Navigate("Home");Navigate("Settings");
+        notification=Find<CheckBox>(window,"EnableDesktopNotifications");
+        notification.IsChecked=false;notification.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+        await Wait(()=>service.DesktopExecutable() is null);
+        Check(((TextBlock)window.FindName("StatusText")).Text=="Desktop notifications disabled","Notification change persists and reports an explicit saved result");
         Find<TextBox>(window,"TtlDays").Text="5";await Click(window,"Save Settings");
         Check(service.Settings().ArtifactTtlDays==5,"Retention settings persist");
         Find<TextBox>(window,"TtlDays").Text="0";await Click(window,"Save Settings");
@@ -204,6 +222,51 @@ internal static class Program
     }
 
     private static string Reply(string context,Dictionary<string,string> fields)=>RelayJson.Write(new{relay_setup_version=1,context,fields});
+    private static async Task CheckProbeProgress(MainWindow window,RelayService service,string root)
+    {
+        const string id="progress-agent";
+        service.RegisterManual(id,"fixture","进度探针");
+        var script=Path.Combine(root,"probe-progress.ps1");var started=Path.Combine(root,"probe-started");
+        var release=Path.Combine(root,"probe-release");var fail=Path.Combine(root,"probe-fail");
+        File.WriteAllText(script,"""
+            $text=[Console]::In.ReadToEnd()
+            Set-Content -LiteralPath $args[0] -Value started
+            while (-not (Test-Path -LiteralPath $args[1])) { Start-Sleep -Milliseconds 25 }
+            $reply=[regex]::Match($text,'RELAY-[A-Z0-9]+').Value
+            if (Test-Path -LiteralPath $args[2]) { $reply='wrong-marker' }
+            @{session_id='progress-session';reply=$reply;accepted=$true}|ConvertTo-Json -Compress
+            """);
+        var command=new CliCommand("pwsh",["-NoLogo","-NoProfile","-NonInteractive","-File",script,started,release,fail],"{prompt}",null);
+        service.ImportCliRecipe(id,RelayJson.Write(new CliRecipe(1,"Progress fixture","fixture",command,null,[],"fixture","local test","MIT","No model calls.")));
+        // Refresh the Agent choice after adding the isolated progress-test node.
+        await Click(window,"Refresh");
+        Find<ComboBox>(window,"ExtensionAgent").SelectedValue=id;
+        await Modal<CliProbeDialog>(window,"Test CLI",async dialog=>
+        {
+            try
+            {
+            for(var attempt=0;attempt<2;attempt++)
+            {
+                File.Delete(started);File.Delete(release);if(attempt==1)File.WriteAllText(fail,"fail");
+                Press(dialog,"ProbeCreate");
+                await Wait(()=>File.Exists(started),400);
+                Check(((TextBlock)window.FindName("StatusText")).Text=="Running CLI probe…" && Find<TextBlock>(dialog,"CliProbeStatus").Text=="Running CLI probe…","Parent and test window show running status while the CLI process is actually blocked");
+                await SaveImage(window,Path.Combine(root,"Probe-running-"+attempt+".png"));
+                File.WriteAllText(release,"finish");
+                var expected=attempt==0?"CLI probe passed · Confirm session visibility":"CLI probe failed · See the test result";
+                await Wait(()=>((TextBlock)window.FindName("StatusText")).Text==expected);
+                Check(Find<TextBlock>(dialog,"CliProbeStatus").Text==expected,"Probe result remains visible instead of reverting to an idle-window message");
+                Check(!service.CliExtension(id)!.CanCreate,"Progress tests do not auto-confirm visibility");
+            }
+            }
+            finally
+            {
+                File.WriteAllText(release,"finish");
+                await Wait(()=>Find<Button>(dialog,"CloseCliProbe").IsEnabled);
+            }
+            Press(dialog,"CloseCliProbe");
+        });
+    }
     private static async Task CheckGraphPairs(Window owner,string root)
     {
         foreach(var count in new[]{2,3,4,6,8})
@@ -297,8 +360,8 @@ internal static class Program
     {var table=Find<DataGrid>(window,"TasksTable");table.SelectedItem=table.Items.Cast<object>().Single(r=>(string)r.GetType().GetProperty("TaskId")!.GetValue(r)! == id);}
     private static async Task Click(MainWindow window,string label)
     {FindAll<Button>(window).Single(b=>Equals(b.Tag,label)||Equals(b.Content,label)).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));await Wait(()=>((TextBlock)window.FindName("StatusText")).Text!="Working…");await Task.Delay(30);}
-    private static async Task Wait(Func<bool> predicate)
-    {for(var i=0;i<100;i++){if(predicate())return;await Task.Delay(50);}throw new TimeoutException("UI condition not reached.");}
+    private static async Task Wait(Func<bool> predicate,int attempts=100)
+    {for(var i=0;i<attempts;i++){if(predicate())return;await Task.Delay(50);}throw new TimeoutException("UI condition not reached.");}
     private static T Find<T>(DependencyObject root,string name)where T:FrameworkElement=>FindAll<T>(root).Single(e=>e.Name==name);
     private static T ByAutomation<T>(DependencyObject root,string id)where T:DependencyObject=>FindAll<T>(root).Single(e=>AutomationProperties.GetAutomationId(e)==id);
     private static IEnumerable<T> FindAll<T>(DependencyObject root)where T:DependencyObject

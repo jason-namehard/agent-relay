@@ -5,6 +5,16 @@ internal static class SimplifiedText
     public static void AddTo(Dictionary<string, string[]> entries)
     {
         void Add(string en, string cn, string tw, string ja, string ko, string es) => entries[en] = [en, cn, tw, ja, ko, es];
+        Add("CLI probe passed · Confirm session visibility", "CLI 探针通过 · 请确认会话可见", "CLI 探針通過 · 請確認工作階段可見", "CLI テスト成功 · セッションの表示を確認してください", "CLI 테스트 통과 · 세션 표시를 확인하세요", "Prueba CLI superada · Confirma la visibilidad de la sesión");
+        Add("CLI probe failed · See the test result", "CLI 探针失败 · 请查看测试结果", "CLI 探針失敗 · 請查看測試結果", "CLI テスト失敗 · 結果を確認してください", "CLI 테스트 실패 · 결과를 확인하세요", "Prueba CLI fallida · Consulta el resultado");
+        Add("CLI operation failed · See the test window", "CLI 操作失败 · 请查看测试窗口", "CLI 操作失敗 · 請查看測試視窗", "CLI 操作失敗 · テスト画面を確認してください", "CLI 작업 실패 · 테스트 창을 확인하세요", "Operación CLI fallida · Consulta la ventana de prueba");
+        Add("Visibility confirmation saved", "会话可见性确认已保存", "工作階段可見性確認已儲存", "セッション表示の確認を保存しました", "세션 표시 확인을 저장했습니다", "Confirmación de visibilidad guardada");
+        Add("Handoffs", "交接情况", "交接情況", "引き継ぎ状況", "전달 상태", "Envíos");
+        Add("Unfinished handoffs", "有未完成交接", "有未完成交接", "未完了の引き継ぎあり", "미완료 전달 있음", "Envíos pendientes");
+        Add("No unfinished handoffs", "无未完成交接", "無未完成交接", "未完了の引き継ぎなし", "미완료 전달 없음", "Sin envíos pendientes");
+        Add("This Agent has unfinished handoffs. Complete or cancel them before removing it.", "该 Agent 有未完成交接，请先完成或取消，再移除节点。", "此 Agent 有未完成交接，請先完成或取消，再移除節點。", "未完了の引き継ぎがあります。完了またはキャンセルしてから削除してください。", "미완료 전달이 있습니다. 완료하거나 취소한 후 Agent를 제거하세요.", "Este agente tiene envíos pendientes. Complétalos o cancélalos antes de quitarlo.");
+        Add("Desktop notifications enabled", "桌面通知已启用", "桌面通知已啟用", "デスクトップ通知を有効にしました", "데스크톱 알림을 활성화했습니다", "Notificaciones de escritorio activadas");
+        Add("Desktop notifications disabled", "桌面通知已关闭", "桌面通知已關閉", "デスクトップ通知を無効にしました", "데스크톱 알림을 비활성화했습니다", "Notificaciones de escritorio desactivadas");
         Add("Request", "请求内容", "請求內容", "依頼内容", "요청 내용", "Solicitud");
         Add("Manual node", "手动节点", "手動節點", "手動ノード", "수동 노드", "Nodo manual");
         Add("Waiting for handoff details…", "等待填写交接内容…", "等待填寫交接內容…", "引き継ぎ内容の入力待ち…", "전달 내용 입력 대기 중…", "Esperando los datos del envío…");

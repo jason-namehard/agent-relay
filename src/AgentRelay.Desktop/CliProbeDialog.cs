@@ -23,13 +23,15 @@ public sealed class CliProbeDialog : Window
         this.service=service;this.agentId=agentId;this.language=language;this.demo=demo;
         this.reportActivity=reportActivity;
         layout=new EntryDialogLayout(this,owner,T("Test CLI"),language);
+        layout.Status.Name="CliProbeStatus";
+        System.Windows.Automation.AutomationProperties.SetAutomationId(layout.Status,"CliProbeStatus");
         Closing+=(_,e)=>{if(running)e.Cancel=true;};
         Render();
     }
 
     private string T(string text)=>UiText.Translate(text,language);
     private TextBlock Note(string text)=>new(){Text=T(text),TextWrapping=TextWrapping.Wrap,Margin=new(0,8,0,10)};
-    private Button Action(Panel parent,string label,string name,Func<Task> action)
+    private Button Action(Panel parent,string label,string name,Func<Task<string>> action)
     {
         var button=new Button{Name=name,Content=T(label),MinHeight=38,Height=double.NaN};
         System.Windows.Automation.AutomationProperties.SetAutomationId(button,name);
@@ -38,10 +40,15 @@ public sealed class CliProbeDialog : Window
             var activity=name is "ProbeCreate" or "ProbeResume"?"Running CLI probe…":"Saving visibility confirmation…";
             running=true;layout.Body.IsEnabled=false;layout.Actions.IsEnabled=false;layout.Status.Text=T(activity);
             reportActivity?.Invoke(activity);
-            try{await action();Render();}
+            try
+            {
+                await System.Windows.Threading.Dispatcher.Yield(System.Windows.Threading.DispatcherPriority.Background);
+                var result=await action();
+                Render();layout.Status.Text=T(result);reportActivity?.Invoke(result);
+            }
             catch(Exception error) when(error is RelayException or IOException or UnauthorizedAccessException or Win32Exception or ExternalException)
-            {layout.Status.Text=T(error.Message);}
-            finally{running=false;layout.Body.IsEnabled=true;layout.Actions.IsEnabled=true;reportActivity?.Invoke("CLI test window open…");}
+            {layout.Status.Text=T(error.Message);reportActivity?.Invoke("CLI operation failed · See the test window");}
+            finally{running=false;layout.Body.IsEnabled=true;layout.Actions.IsEnabled=true;}
         };
         parent.Children.Add(button);return button;
     }
@@ -62,12 +69,12 @@ public sealed class CliProbeDialog : Window
             var plan=EntryDialogLayout.Input("ProbeRecipe",RelayJson.Write(extension.Recipe),true);plan.IsReadOnly=true;plan.Height=170;
             layout.Body.Children.Add(new Expander{Header=T("Calling recipe"),Content=plan});
             if(demo)layout.Body.Children.Add(Note("Demo mode does not run external CLI calls. Use a normal workspace to test a real Agent."));
-            var create=Action(layout.Body,"Run new-session probe","ProbeCreate",async()=>{await service.RunCliProbeAsync(agentId,"create");});
+            var create=Action(layout.Body,"Run new-session probe","ProbeCreate",()=>RunProbe("create"));
             create.IsEnabled=!demo;
             if(extension.CreateProbe is {} probe)ProbeResult(probe);
             if(extension.CanCreate && extension.Recipe.Resume is not null)
             {
-                var resume=Action(layout.Body,"Run same-session probe","ProbeResume",async()=>{await service.RunCliProbeAsync(agentId,"resume");});
+                var resume=Action(layout.Body,"Run same-session probe","ProbeResume",()=>RunProbe("resume"));
                 resume.IsEnabled=!demo;
                 if(extension.ResumeProbe is {} resumed)ProbeResult(resumed);
             }
@@ -77,6 +84,12 @@ public sealed class CliProbeDialog : Window
         var close=new Button{Name="CloseCliProbe",Content=T("Close"),IsCancel=true};
         close.Click+=(_,_)=>DialogResult=true;
         layout.Actions.Children.Add(close);
+    }
+
+    private async Task<string> RunProbe(string operation)
+    {
+        var probe=await service.RunCliProbeAsync(agentId,operation);
+        return probe.MachinePassed?"CLI probe passed · Confirm session visibility":"CLI probe failed · See the test result";
     }
 
     private void ProbeResult(CliProbe probe)
@@ -91,7 +104,7 @@ public sealed class CliProbeDialog : Window
             IsChecked=probe.UserConfirmed,Margin=new(0,8,0,10),Name=probe.Operation=="create"?"ConfirmCreateVisible":"ConfirmResumeVisible"};
         layout.Body.Children.Add(confirm);
         var save=Action(layout.Body,"Save visibility confirmation",probe.Operation=="create"?"SaveCreateConfirmation":"SaveResumeConfirmation",()=>
-        {service.ConfirmCliProbe(agentId,probe.ProbeId,confirm.IsChecked==true);return Task.CompletedTask;});
+        {service.ConfirmCliProbe(agentId,probe.ProbeId,confirm.IsChecked==true);return Task.FromResult("Visibility confirmation saved");});
         save.IsEnabled=false;
         confirm.Checked+=(_,_)=>save.IsEnabled=true;
         confirm.Unchecked+=(_,_)=>save.IsEnabled=probe.UserConfirmed;

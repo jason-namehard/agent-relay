@@ -2,12 +2,12 @@
 
 ## 下载和启动
 
-从 [GitHub Releases](https://github.com/jason-namehard/agent-relay/releases/tag/v0.1.0-preview.7) 下载：
+从 [GitHub Releases](https://github.com/jason-namehard/agent-relay/releases/tag/v0.1.0-preview.8) 下载：
 
 | 包 | 用途 | 运行要求 |
 | --- | --- | --- |
-| `AgentRelay-v0.1.0-preview.7-windows-x64.zip` | Windows 桌面、演示、CLI、MCP、通知 | GUI/通知自带运行库；CLI/MCP 需要 .NET 10 runtime |
-| `AgentRelay-v0.1.0-preview.7-cli-mcp.zip` | Windows/Linux CLI 或 stdio MCP | .NET 10 runtime |
+| `AgentRelay-v0.1.0-preview.8-windows-x64.zip` | Windows 桌面、演示、CLI、MCP、通知 | GUI/通知自带运行库；CLI/MCP 需要 .NET 10 runtime |
+| `AgentRelay-v0.1.0-preview.8-cli-mcp.zip` | Windows/Linux CLI 或 stdio MCP | .NET 10 runtime |
 
 完整解压到固定目录后运行。`Source code.zip` 是源码。请保留 `licenses/` 并阅读 `DISTRIBUTION_TERMS.md`；当前未提供安装器和代码签名。
 
@@ -44,6 +44,8 @@
 A→B 代表有从 A 传递文件并通过 CLI 通知 B 的方案。箭头及其相邻线段绿色表示已启用，红色表示暂停或尚未启用。双向线可以一端绿、一端红；点击一条线，下方分别控制两个方向。线上不重复显示状态标签，悬停可查看详细状态；手动复制仍可使用。
 
 ## 中转站和常见问题
+
+Agent 管理的“交接情况”显示节点是否有未完成交接；有活动交接时会直接阻止移除，完成或取消后再操作。CLI 探针执行时，主窗口和测试窗口同步显示进度，结束后保留通过或失败结果。通知开关保存后会显示启用或关闭状态，其他设置草稿继续保留。
 
 更换目录前完成或取消活动交接，并等待正在执行的调用结束。迁移复制文件与账本、校验后切换，保留旧目录；失败时原目录保留，修复占用或权限后点击“迁移校验”。外部 CLI/MCP 使用新的 `--home` 或 `RELAY_HOME`；已粘贴的旧提示词重新复制。
 

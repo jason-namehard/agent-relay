@@ -210,12 +210,15 @@ public partial class MainWindow : Window
         TaskPane(page,service.Tasks());return page;
     }
 
-    private sealed record AgentRow(AgentRecord Source,string Name,string Host,string Capability);
+    private sealed record AgentRow(AgentRecord Source,string Name,string Host,string Capability,string Activity);
+    private HashSet<string> ActiveAgentIds() => service.Tasks()
+        .Where(v=>v.Task.State is not (TaskState.Succeeded or TaskState.Failed or TaskState.TimedOut or TaskState.Cancelled))
+        .SelectMany(v=>new[]{v.Task.RequesterId,v.Task.RecipientId}).ToHashSet(StringComparer.Ordinal);
     private StackPanel AgentsPage()
     {
         var page=Page();Heading(page,"Your Agents","Choose your own Agent names. Relay only needs to know who sends and who receives.");
         var actions=Row(page);
-        var table=Table("AgentsTable",("Name","Name"),("Host","Host"),("CLI capability","Capability"));
+        var table=Table("AgentsTable",("Name","Name"),("Host","Host"),("CLI capability","Capability"),("Handoffs","Activity"));
         async Task Edit(AgentRecord? existing)
         {
             var dialog=new AgentEntryDialog(this,preferences.Language,existing);
@@ -233,6 +236,9 @@ public partial class MainWindow : Window
         Add(actions,"Remove Agent",()=>
         {
             var agent=Selected();
+            if(ActiveAgentIds().Contains(agent.AgentId))
+                throw new RelayException("agent_busy",T("This Agent has unfinished handoffs. Complete or cancel them before removing it."));
+            StatusText.Text=T("Waiting for confirmation…");
             if(MessageBox.Show(this,T("Remove this Agent from Relay? Existing task history is kept."),agent.DisplayName??agent.AgentId,MessageBoxButton.OKCancel,MessageBoxImage.Question)!=MessageBoxResult.OK){reviewCancelled=true;return Task.CompletedTask;}
             service.RemoveAgent(agent.AgentId);agentId=null;return Task.CompletedTask;
         });
@@ -240,8 +246,10 @@ public partial class MainWindow : Window
         {
             agentId=Selected().AgentId;ShowCliProbe(agentId);return Task.CompletedTask;
         });
+        var active=ActiveAgentIds();
         var rows=service.Agents().Select(a=>new AgentRow(a,a.DisplayName??a.AgentId,a.Host=="manual"?T("Manual node"):a.Host,
-            T(service.CliExtension(a.AgentId) is {CanResume:true}?"New session and resume verified":service.CliExtension(a.AgentId) is {CanCreate:true}?"New session verified":"Manual handoff"))).ToArray();
+            T(service.CliExtension(a.AgentId) is {CanResume:true}?"New session and resume verified":service.CliExtension(a.AgentId) is {CanCreate:true}?"New session verified":"Manual handoff"),
+            T(active.Contains(a.AgentId)?"Unfinished handoffs":"No unfinished handoffs"))).ToArray();
         table.ItemsSource=rows;page.Children.Add(table);
         table.SelectionChanged+=(_,_)=>{if(table.SelectedItem is AgentRow a)agentId=a.Source.AgentId;};
         table.SelectedItem=rows.SingleOrDefault(a=>a.Source.AgentId==agentId)??rows.FirstOrDefault();
@@ -396,13 +404,20 @@ public partial class MainWindow : Window
         var actions=Row(page);Add(actions,"Save Settings",()=>{service.Configure(new(Number(ttl),Number(timeout),Number(delivery),Number(retries)));return Task.CompletedTask;});
         Add(actions,"Clean expired files",()=>{var proposed=service.Cleanup(false);if(MessageBox.Show(this,string.Format(CultureInfo.CurrentUICulture,T("Delete {0} expired relay files?"),proposed.Eligible),T("Clean expired files"),MessageBoxButton.OKCancel)==MessageBoxResult.OK)service.Cleanup(true);else reviewCancelled=true;return Task.CompletedTask;});
         Heading(page,"Desktop Notifications","Notify when Relay processes a completed handoff. Closing this app does not start a background monitor.");
-        var notify=new CheckBox{Content=T("Enable Notifications"),IsChecked=service.DesktopExecutable() is not null,Margin=new(0,4,0,16)};
+        var notify=new CheckBox{Name="EnableDesktopNotifications",Content=T("Enable Notifications"),IsChecked=service.DesktopExecutable() is not null,Margin=new(0,4,0,16)};
+        AutomationProperties.SetAutomationId(notify,notify.Name);
+        AutomationProperties.SetName(notify,T("Enable Notifications"));
         page.Children.Add(notify);
-        notify.Click+=async(_,_)=>await Run(async()=>
+        notify.Click+=async(_,_)=>
         {
-            if(notify.IsChecked==true)await service.ConfigureDesktopAsync(Path.GetFullPath(Path.Combine(AppContext.BaseDirectory,"..","desktop","AgentRelay.Notify.exe")));
-            else service.DisableDesktop();
-        },"Ready");
+            var enabled=notify.IsChecked==true;
+            await Run(async()=>
+            {
+                if(enabled)await service.ConfigureDesktopAsync(Path.GetFullPath(Path.Combine(AppContext.BaseDirectory,"..","desktop","AgentRelay.Notify.exe")));
+                else service.DisableDesktop();
+            },enabled?"Desktop notifications enabled":"Desktop notifications disabled",refresh:false);
+            notify.IsChecked=service.DesktopExecutable() is not null;
+        };
         var extensions=Page();
         extensions.Children.Add(Note("CLI extensions connect verified command-line tools or bridges. Availability depends on the target software, version, environment and session support. Not every Agent supports automatic calls or resuming a session. Test before enabling; manual handoff remains available."));
         var choice=Choice(extensions,"Agent","ExtensionAgent",service.Agents().Select(a=>new AppearanceOption(a.AgentId,a.DisplayName??a.AgentId)).ToArray(),agentId??service.Agents().FirstOrDefault()?.AgentId??"");
