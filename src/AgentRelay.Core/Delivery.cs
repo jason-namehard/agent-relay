@@ -141,8 +141,7 @@ public sealed partial class RelayService
                 var task = s.Task(taskId);
                 var box = Outbox(s, taskId);
                 if (box is null || box.State != "pending" || Terminal(task.State) || task.DeadlineAt <= Now) return null;
-                RequirePermission(s, task.RequesterId, task.RecipientId);
-                RequirePaths(Agent(s, task.RequesterId)); RequirePaths(Agent(s, task.RecipientId));
+                RequireDispatchAccess(s, task.RequesterId, task.RecipientId, task.Mode, task.AdapterId);
                 if (!Available(s, task.AdapterId))
                 {
                     task.State = TaskState.AwaitingManual; s.Save(task);
@@ -166,6 +165,8 @@ public sealed partial class RelayService
             if (claimed is null) return;
             IDeliveryAdapter adapter;
             if (adapters.TryGetValue(claimed.AdapterId, out var injected)) adapter = injected;
+            else if (claimed.AdapterId.StartsWith("cli:", StringComparison.Ordinal))
+                adapter = new CliRecipeDeliveryAdapter(CliExtension(claimed.RecipientId)!);
             else
             {
                 var record = store.Read(s => s.Json<AdapterRecord>("SELECT json FROM adapters WHERE id=$id", ("$id", claimed.AdapterId)))!;

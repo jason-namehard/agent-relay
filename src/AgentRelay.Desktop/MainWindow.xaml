@@ -20,7 +20,7 @@
     </StackPanel>
     <ListBox x:Name="Navigation" Background="Transparent" BorderThickness="0" Foreground="{DynamicResource NavTextBrush}" ItemContainerStyle="{StaticResource NavigationItemStyle}" SelectionChanged="Navigate">
      <ListBoxItem Tag="Home"/><ListBoxItem Tag="Agents"/><ListBoxItem Tag="Connections"/>
-     <ListBoxItem Tag="Inbox"/><ListBoxItem Tag="Adapters"/><ListBoxItem Tag="Audit"/><ListBoxItem Tag="Settings"/>
+     <ListBoxItem Tag="Settings"/>
     </ListBox>
    </DockPanel>
   </Border>

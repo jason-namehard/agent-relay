@@ -14,20 +14,16 @@ public sealed partial class RelayService
     {
         var agents = Agents();
         var permissions = ConnectionPermissions().ToDictionary(p => (p.From, p.To));
-        var automatic = Adapters().Any(a => a.AdapterId == "amq-cli" && a.VerificationStatus == "passed" && File.Exists(a.Executable));
         return (from sender in agents from recipient in agents where sender.AgentId != recipient.AgentId
             let permission = permissions.TryGetValue((sender.AgentId, recipient.AgentId), out var p) ? p.Decision : "default_deny"
-            let available = Available(sender) && Available(recipient)
+            let cli = CliExtension(recipient.AgentId)?.CanCreate == true
+            let available = cli
             select new ConnectionView(sender.AgentId, recipient.AgentId, permission,
-                available ? automatic ? "manual + AMQ (verified)" : "manual" : "unavailable / unverified",
-                permission == "deny" ? "Denied" : permission == "default_deny" ? "Default deny" : available ? "Allowed" : "Unavailable",
-                available ? "手工交接可用；自动执行与会话继续需各自验证。" : "登记路径未验证、为空或已失效；请在 Agents 纠正并验证。"))
+                available ? "verified CLI" : "manual",
+                !available ? "Unavailable" : permission == "allow" ? "Allowed" : "Denied",
+                available ? "目标 Agent 的可见新会话已验证；该方向需要单独启用。" : "缺少已验证的自动通知方案；可在设置中扩充 CLI 接口，或手动复制提示词。"))
             .ToList();
     }
-
-    private static bool Available(AgentRecord a) => a.ValidationStatus == "path_verified" &&
-        File.Exists(a.ConfigPath) && new FileInfo(a.ConfigPath).Length > 0 &&
-        (a.CliPath is null || File.Exists(a.CliPath)) && a.InstructionPaths.All(File.Exists);
 
     public static bool NeedsAttention(TaskView view) => view.DeadlineExceeded ||
         view.Task.State is TaskState.Failed or TaskState.TimedOut or TaskState.DeliveryUnknown ||

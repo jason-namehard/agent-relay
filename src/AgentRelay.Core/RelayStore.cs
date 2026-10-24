@@ -44,6 +44,7 @@ public sealed class RelayStore
             CREATE TABLE IF NOT EXISTS executions (task_id TEXT NOT NULL, attempt_id TEXT NOT NULL,
                 json TEXT NOT NULL, PRIMARY KEY(task_id,attempt_id));
             CREATE TABLE IF NOT EXISTS resumers (agent_id TEXT PRIMARY KEY, json TEXT NOT NULL);
+            CREATE TABLE IF NOT EXISTS cli_extensions (agent_id TEXT PRIMARY KEY, json TEXT NOT NULL);
             CREATE TABLE IF NOT EXISTS desktop (id INTEGER PRIMARY KEY CHECK(id=1), executable TEXT NOT NULL);
             CREATE TABLE IF NOT EXISTS continuations (task_id TEXT NOT NULL, attempt_id TEXT NOT NULL,
                 event TEXT NOT NULL, json TEXT NOT NULL, PRIMARY KEY(task_id,attempt_id,event));
@@ -62,6 +63,7 @@ public sealed class RelayStore
 
     public SqliteConnection Open(bool readOnly = false)
     {
+        RequireCurrentLocation();
         var connection = new SqliteConnection(new SqliteConnectionStringBuilder
         {
             DataSource = DatabasePath,
@@ -88,10 +90,20 @@ public sealed class RelayStore
             throw new RelayException("not_initialized", "请先运行 relay init。", 3);
         using var connection = Open();
         using var transaction = connection.BeginTransaction();
+        RequireCurrentLocation();
         var result = operation(new StoreSession(connection, transaction));
         transaction.Commit();
         WindowsLedgerSignal.Publish();
         return result;
+    }
+
+    private void RequireCurrentLocation()
+    {
+        var moved = Path.Combine(Home, RelayService.RelocationMovedFile);
+        if (File.Exists(moved))
+            throw new RelayException("relocation_moved", $"中转站已迁移，请使用新目录：{RelayJson.Read<RelayRelocationRequest>(File.ReadAllText(moved)).Target}", 3);
+        if (File.Exists(Path.Combine(Home, RelayService.RelocationIncompleteFile)))
+            throw new RelayException("relocation_incomplete", "此目录的迁移尚未完成，请回到原中转站运行迁移校验。", 3);
     }
 }
 

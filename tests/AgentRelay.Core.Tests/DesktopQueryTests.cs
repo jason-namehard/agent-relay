@@ -16,11 +16,11 @@ public sealed class DesktopQueryTests
         service.SetPermission("agent-a","agent-b","allow");service.SetPermission("agent-a","agent-c","allow");
         service.SetPermission("agent-c","agent-b","deny");
         var edges=service.Connections();
-        Assert.AreEqual("Allowed",edges.Single(e=>e.From=="agent-a" && e.To=="agent-b").Display);
-        Assert.AreEqual("Default deny",edges.Single(e=>e.From=="agent-b" && e.To=="agent-a").Display);
+        Assert.AreEqual("Unavailable",edges.Single(e=>e.From=="agent-a" && e.To=="agent-b").Display);
+        Assert.AreEqual("Unavailable",edges.Single(e=>e.From=="agent-b" && e.To=="agent-a").Display);
         Assert.AreEqual("allow",edges.Single(e=>e.From=="agent-a" && e.To=="agent-c").Permission);
         Assert.AreEqual("Unavailable",edges.Single(e=>e.From=="agent-a" && e.To=="agent-c").Display);
-        Assert.AreEqual("Denied",edges.Single(e=>e.From=="agent-c" && e.To=="agent-b").Display);
+        Assert.AreEqual("Unavailable",edges.Single(e=>e.From=="agent-c" && e.To=="agent-b").Display);
         File.Delete(config);
         Assert.AreEqual("Unavailable",service.Connections().Single(e=>e.From=="agent-a" && e.To=="agent-b").Display);
     }

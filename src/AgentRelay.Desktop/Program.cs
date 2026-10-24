@@ -16,7 +16,7 @@ internal static class Program
             var options = args.Where(a => a != "--demo").ToArray();
             if (args.Count(a => a == "--demo") > 1 || options.Length != 0 && (options.Length != 2 || options[0] != "--home"))
                 throw new RelayException("invalid_arguments", "用法：AgentRelay.Desktop.exe [--demo] [--home <data directory>]");
-            var home = options.Length == 2 ? options[1] : demo ? NewDemoHome() : Environment.GetEnvironmentVariable("RELAY_HOME") ??
+            var home = options.Length == 2 ? options[1] : demo ? NewDemoHome() : Environment.GetEnvironmentVariable("RELAY_HOME") ?? RelayLocation.Load() ??
                 Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "AgentRelay");
             var service = demo ? DemoWorkspace.CreateAsync(home).GetAwaiter().GetResult() : new RelayService(home);
             service.Initialize();

@@ -24,7 +24,7 @@ public sealed class RelayTools(RelayService service, McpIdentity identity)
             if (mode != "auto") throw new RelayException("invalid_execution_mode", "execute=true 仅支持 auto 模式。");
             service.RequireExecutorReady(to);
         }
-        var view = await service.DispatchAsync(new DispatchRequest(identity.AgentId, to, content, mode, "amq-cli", idempotency_key,
+        var view = await service.DispatchAsync(new DispatchRequest(identity.AgentId, to, content, mode, execute ? "amq-cli" : service.PreferredDeliveryAdapter(to), idempotency_key,
             OriginSession: origin_session), cancellationToken);
         service.RecordMcpOperation(view.Task.TaskId, identity.AgentId, "dispatch", identity.RouteId);
         if (execute && view.Task.State == TaskState.Dispatched)

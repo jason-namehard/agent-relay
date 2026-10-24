@@ -41,7 +41,7 @@ public sealed class LifecycleTests
     public async Task DirectionalPermissionDoesNotBlockCompletionCallback()
     {
         var task = (await service.DispatchAsync(Request())).Task;
-        var error = await Assert.ThrowsExactlyAsync<RelayException>(() => service.DispatchAsync(Request() with { From = "agent-b", To = "agent-a" }));
+        var error = await Assert.ThrowsExactlyAsync<RelayException>(() => service.DispatchAsync(Request("auto") with { From = "agent-b", To = "agent-a" }));
         Assert.AreEqual("permission_denied", error.Code);
         WriteResult(task);
         var done = service.Complete(task.TaskId, task.AttemptId, "agent-b", "done", task.ResultPath);
@@ -232,7 +232,7 @@ public sealed class LifecycleTests
         var agent = service.Agents().Single(a => a.AgentId == "agent-b");
         File.Delete(agent.ConfigPath);
         Assert.AreEqual("invalid", service.ValidateAgent("agent-b").ValidationStatus);
-        var error = await Assert.ThrowsExactlyAsync<RelayException>(() => service.DispatchAsync(Request()));
+        var error = await Assert.ThrowsExactlyAsync<RelayException>(() => service.DispatchAsync(Request("auto")));
         Assert.AreEqual("agent_invalid", error.Code);
         Assert.AreEqual(agent.ConfigPath, service.Agents().Single(a => a.AgentId == "agent-b").ConfigPath);
     }

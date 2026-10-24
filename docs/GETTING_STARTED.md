@@ -1,73 +1,59 @@
-# Agent Relay — 从演示到第一次交接
+# Agent Relay — 第一次交接
 
-## 先选择下载包
+## 下载和启动
 
-从 [GitHub Releases](https://github.com/jason-namehard/agent-relay/releases) 下载 `v0.1.0-preview.5`：
+从 [GitHub Releases](https://github.com/jason-namehard/agent-relay/releases/tag/v0.1.0-preview.6) 下载：
 
-| 包 | 适用场景 | 运行要求 |
+| 包 | 用途 | 运行要求 |
 | --- | --- | --- |
-| `AgentRelay-v0.1.0-preview.5-windows-x64.zip` | Windows 桌面 GUI、演示、CLI、MCP、通知 | GUI/演示/通知自带运行库；CLI/MCP 需要 .NET 10 runtime |
-| `AgentRelay-v0.1.0-preview.5-cli-mcp.zip` | Windows/Linux 的命令行或 stdio MCP | .NET 10 runtime；不包含桌面组件 |
+| `AgentRelay-v0.1.0-preview.6-windows-x64.zip` | Windows 桌面、演示、CLI、MCP、通知 | GUI/通知自带运行库；CLI/MCP 需要 .NET 10 runtime |
+| `AgentRelay-v0.1.0-preview.6-cli-mcp.zip` | Windows/Linux CLI 或 stdio MCP | .NET 10 runtime |
 
-`Source code.zip` 是源码，不是应用分发包。Windows 完整解压到固定目录，不在 ZIP 浏览器里运行 exe。桌面包含微软运行库与通知组件，请保留 `licenses/` 并阅读 `DISTRIBUTION_TERMS.md`。尚未提供安装器和代码签名。
+完整解压到固定目录后运行。`Source code.zip` 是源码。请保留 `licenses/` 并阅读 `DISTRIBUTION_TERMS.md`；当前未提供安装器和代码签名。
 
-## 不用账号先试演示
+双击 `TryDemo.cmd` 可体验独立演示账本，包含三个样本 Agent 及成功、失败和待手动交接样本。演示不读取现用 Agent 配置，不调用模型，CLI 实际探针被禁用。每次演示创建新的 `%LOCALAPPDATA%/AgentRelay.Demos/<UUID>/`。
 
-Windows 包双击 `TryDemo.cmd`，或运行：
+正式使用运行 `gui/AgentRelay.Desktop.exe`。右上角可切换语言，设置里可选择配色。
 
-```powershell
-./gui/AgentRelay.Desktop.exe --demo
-```
+## 最短上手路径
 
-演示窗口明确显示 `DEMO`，数据存入新建的 `%LOCALAPPDATA%/AgentRelay.Demos/<UUID>/`。它包含三位虚构 Agent、一个成功样本、一个失败样本和一个待手工交接任务，**未调用 AI，也未读取认证或现用 Agent 配置**。
+1. **设置：确认中转站。** 默认目录可直接使用，也可选择空目录。中转站保存消息、临时回稿和账本；最终成果请放到项目目录。
+2. **Agent 管理：添加两个节点。** 只需给它们起名称，名称和角色由你决定。配置路径、CLI 和版本都不是手工交接的必填项。需要辅助时，在添加/编辑窗口复制整组接入提示词，交给目标 Agent，将其回复粘贴解析，检查后保存。
+3. **任务看板：新建交接。** 选择发送方、接收方，填写内容。也可展开生成助手，复制提示词让任意 Agent 整理意图，再粘贴完整回复解析。解析只代填，检查后点击创建。
+4. **选择手动复制。** 在任务详情复制给接收方的提示词，粘贴到目标 Agent 的会话中。提示词包含中转站、请求与结果位置以及回报方式。
+5. **查看回复。** Agent 按提示词写回结果并显式回报后，看板更新状态。成功任务可复制给发送方的继续提示词。文件出现或被打开不会自动标记完成。
 
-按这个顺序体验：
+接收 Agent 需能访问中转站文件，并按提示词通过 Relay CLI/MCP 回报状态。CLI/MCP 所需 .NET 10 runtime 需安装在实际调用它们的环境。手动交接免去自动唤起配置，但不会凭文件变化猜测完成。
 
-1. Home 查看待处理任务，选择成功样本后 `Copy Prompt`。
-2. Connections 查看 A→B 允许、B→A 明确拒绝和 Agent C 未验证的差别。
-3. Inbox 选择待交接任务，查看请求、尝试和受管结果路径。
-4. Audit 查看显式完成与失败事件，确认文件变化并不等于任务完成。
+每个任务的请求、回复和处理记录集中在同一详情中。查看投递未知状态时先核对目标会话，不要直接重新创建同一任务。
 
-关闭演示后，可删除底部所示的独立演示目录。每次 `--demo` 创建新目录；显式 `--home` 必须指向尚不存在的路径。普通空白 Home 也提供 `Open Demo`，不会把演示写入正式账本。
+## 可选：接通 CLI 自动通知
 
-## 接入自己的 Agent
+**设置 → 高级：CLI 接口扩充** 中选择 Agent，复制扩充提示词给了解其本机调用或桥接方式的 Agent。导入返回方案只保存，不会运行命令；缺少已实现的桥接程序时先使用手动交接。
 
-窗口右上角可直接选择简体中文等六种语言；设置页的语言和莫兰迪配色也在选择后立即保存。新数据目录默认雾蓝。强调色输入时可看预览，确认后点击“保存强调色”。若不清楚字段值，点击输入框旁复制图标，把当前语言的提示词交给目标 Agent；将它的固定 JSON 回复粘贴到页面中的“配置助手”，点击解析代填，再审阅和登记。Agent ID 是本机 Relay 标签，不需要登录账号。详细格式见 [配置助手与外观](https://github.com/jason-namehard/agent-relay/blob/v0.1.0-preview.5/docs/CONFIGURATION_ASSISTANT.md)。
+在 **Agent 管理 → 测试 CLI** 查看程序和参数，再运行新会话探针。请求只要求回复短标识，但宿主上下文仍可能计费。机器回执通过后，去目标软件会话列表找到标识，勾选并保存可见性确认。方案提供续接命令时，还可发起同会话探针，确认第二个标识位于原会话。
 
-直接运行 `gui/AgentRelay.Desktop.exe`，不加 `--demo`，进入正式账本。默认 `%LOCALAPPDATA%/AgentRelay`；CLI/MCP 必须使用相同的 `--home` 或 `RELAY_HOME`。
+测试通过后，在连接图启用所需方向；新建交接可选择自动 CLI。实际交接创建新会话，不把工作发到探针会话。机器接收回执只代表已提交，任务仍等待显式完成。
 
-在 Agents 登记两个稳定 ID、真实宿主与准确配置路径，单独 Validate。在 Connections 明确允许 A→B。仅有路径验证不代表执行器、认证或会话继续已验证；默认从 `manual` 交接开始。
-
-安装 [.NET 10 runtime](https://dotnet.microsoft.com/download/dotnet/10.0) 后，在解压目录创建 `request.md` 写入真实任务，再运行：
-
-```powershell
-$relay = Join-Path $PWD 'relay.dll'
-$dataRoot = Join-Path $env:LOCALAPPDATA 'AgentRelay'
-$handoff = dotnet $relay --home $dataRoot task dispatch --from agent-a --to agent-b --request ./request.md --mode manual --idempotency-key first-handoff | ConvertFrom-Json
-$task = $handoff.data.task
-$handoff.data.prompt
-```
-
-手工派发返回退出码 `4`，表示已保存且需要人工投递。把响应中的请求提示词交给 B，然后 A 结束当前轮。B 写入 `$task.result_path` 后显式回调：
-
-```powershell
-dotnet $relay --home $dataRoot task ack --task $task.task_id --attempt $task.attempt_id --sender agent-b --idempotency-key first-ack
-dotnet $relay --home $dataRoot task complete --task $task.task_id --attempt $task.attempt_id --sender agent-b --status succeeded --result $task.result_path --idempotency-key first-done
-```
-
-回到 GUI 的 Inbox，查看成功状态、结果和当前界面语言的继续提示词。如果宿主不支持自动继续，就复制提示词交回 A；不要重复派发。同一次请求重试命令时保持原幂等键。通知列表显示易读事件和已读/未读状态，悬停可查看原始信息。
-
-## 自动化接入与排错
-
-真实 AMQ/Codex 执行、原会话继续和 MCP 配置迁移分别按 [项目 README](https://github.com/jason-namehard/agent-relay#readme)、[Phase 3](https://github.com/jason-namehard/agent-relay/blob/main/docs/PHASE3.md)、[Phase 4](https://github.com/jason-namehard/agent-relay/blob/main/docs/PHASE4.md) 操作。验证、登记不会自动修改宿主配置；应用迁移须先审阅批准。
-
-| 现象 | 下一步 |
+| 连接样式 | 含义 |
 | --- | --- |
-| CLI 提示缺少 .NET runtime | 安装 .NET 10 runtime；GUI 能启动不代表 CLI 所需 runtime 已全局安装 |
-| Agent `invalid` 或连接 Gray | 在 Agents 检查原登记路径，纠正后重新 Validate |
-| `awaiting_manual` / 退出码 4 | 复制请求给 B，等待显式完成，不重新派发 |
-| `delivery_unknown` / 退出码 6 | 查看运输证据，不自动重发 |
-| 结果已过期 | 查看任务记录和审计，决定是否重新生成 |
-| 编辑页面提示账本有变化 | 外部进程更新会在独立底栏提示；草稿保留，审阅后使用“刷新”。它只读，不调用模型或重新投递 |
+| 绿色箭头 | 有可用方案，该方向已启用 |
+| 红色箭头 | 有可用方案，该方向暂停或尚未启用 |
+| 灰色虚线，无箭头 | 缺少可用方案，未建立链接 |
 
-当前没有常驻服务或系统调度器。所有进程关闭后的截止时间在下次 Recover 处理；取消 Relay 任务不终止已运行的宿主。提问与缺陷报告请附应用版本、Windows/.NET 版本、复现步骤和已脱敏的错误码，不上传认证文件、完整宿主配置或迁移备份。
+A→B 代表 A 可以传递文件并通过 CLI 通知 B，反方向独立。只有 A→B 为绿色时，B 不因此获得自动通知 A 的能力；手动复制仍可使用。
+
+## 中转站和常见问题
+
+更换目录前完成或取消活动交接，并等待正在执行的调用结束。迁移复制文件与账本、校验后切换，保留旧目录；失败时原目录保留，修复占用或权限后点击“迁移校验”。外部 CLI/MCP 使用新的 `--home` 或 `RELAY_HOME`；已粘贴的旧提示词重新复制。
+
+| 现象 | 处理 |
+| --- | --- |
+| 自动 CLI 不可选 | 检查目标 Agent 探针及可见性确认，再启用对应方向；也可直接手动复制 |
+| 探针机器通过但找不到会话 | 不确认可见性，检查方案或继续手工交接 |
+| 待手动交接 | 复制当前任务提示词给接收 Agent，不重复创建 |
+| 投递未知或超时 | 先查目标会话和任务处理记录，确认是否已经执行 |
+| 结果文件过期 | 查看记录并决定是否重新生成；长期成果保存到项目目录 |
+| 编辑页提示账本变化 | 草稿保留，完成当前编辑后刷新 |
+
+关闭全部进程不会启动后台监控。取消交接不终止已经运行的 Agent。高级 CLI/MCP 操作见 [README](../README.md)；报告问题请附版本、复现步骤及脱敏错误信息。

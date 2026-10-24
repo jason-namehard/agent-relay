@@ -91,6 +91,18 @@ public static class SetupAssistant
                 JSON template:
                 """
         };
+        if (!fields.ContainsKey("AgentId"))
+            instructions = string.Join('\n', instructions.Split('\n').Where(line => !line.TrimStart().StartsWith("AgentId", StringComparison.Ordinal)));
+        if (fields.ContainsKey("AgentName"))
+            instructions += "\n" + (language switch
+            {
+                "zh-CN" => "AgentName 是用户自定义显示名称，可使用中文；保留用户填写的名称，未填写时可建议软件名称。不设定 Agent 的工作角色，不要求账号或内部会话 ID。高级路径信息未知时留空，手动交接无需这些路径。",
+                "zh-TW" => "AgentName 是使用者自訂顯示名稱，可使用中文；保留使用者填寫的名稱，未填寫時可建議軟體名稱。不設定 Agent 的工作角色，不要求帳號或內部工作階段 ID。進階路徑資訊未知時留空，手動交接無須這些路徑。",
+                "ja" => "AgentName はユーザーが決める表示名です。既存の名前を維持し、空ならアプリ名を提案できます。役割、アカウント、内部セッション ID は指定しません。不明なパスは空欄にしてください。手動での引き継ぎにパスは不要です。",
+                "ko" => "AgentName은 사용자가 정하는 표시 이름입니다. 기존 이름을 유지하고 비어 있으면 앱 이름을 제안할 수 있습니다. 역할, 계정 또는 내부 세션 ID를 지정하지 마세요. 모르는 경로는 비워두세요. 수동 전달에는 경로가 필요하지 않습니다.",
+                "es" => "AgentName es el nombre visible elegido por el usuario. Conserva el nombre indicado; si falta, puedes proponer el nombre de la aplicación. No asignes roles ni solicites cuentas o Id internos de sesión. Deja vacías las rutas desconocidas; no se necesitan para el envío manual.",
+                _ => "AgentName is a user-chosen display name in any language. Keep an existing name; if empty, you may suggest the application name. Do not assign roles or request accounts or internal session IDs. Leave unknown advanced paths empty; manual handoff does not require them."
+            }) + "\n";
         var template = JsonSerializer.Serialize(new { relay_setup_version = 1, context, fields }, RelayJson.Options);
         return instructions + "\n" + template;
     }
@@ -170,7 +182,7 @@ public static class SetupAssistant
 
     private static void ValidateContext(string context)
     {
-        if (context is not ("agents" or "connections" or "adapters" or "migrations" or "settings" or "audit"))
+        if (context is not ("agents" or "connections" or "adapters" or "migrations" or "settings" or "audit" or "handoff"))
             throw new RelayException("setup_invalid_context", $"Unsupported setup context: {context}.");
     }
 

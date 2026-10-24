@@ -13,6 +13,7 @@ public static class UiText
             _ => throw new ArgumentOutOfRangeException(nameof(language), language, "Unsupported UI language.")
         };
         // Task bodies, paths, JSON and external errors are opaque content.
+        if (EntryText.TryGet(source, language, out var entry)) return entry;
         return Entries.TryGetValue(source, out var translations) ? translations[column] : source;
     }
 
@@ -26,9 +27,9 @@ public static class UiText
             foreach (var alias in aliases) entries.Add(alias, translations);
         }
 
-        Add("Home", "首页", "首頁", "ホーム", "홈", "Inicio");
+        Add("Task board", "任务看板", "任務看板", "タスクボード", "작업 보드", "Tablero", "Home");
         Add("Agents", "Agent 管理", "Agent 管理", "Agent 管理", "Agent 관리", "Agentes");
-        Add("Connections", "连接", "連線", "接続", "연결", "Conexiones");
+        Add("Connections", "连接图", "連線圖", "接続マップ", "연결 지도", "Conexiones");
         Add("Inbox", "收件箱", "收件匣", "受信箱", "받은 편지함", "Bandeja de entrada");
         Add("Adapters", "适配器", "配接器", "アダプター", "어댑터", "Adaptadores");
         Add("Audit", "审计", "稽核", "監査", "감사", "Auditoría");
@@ -373,6 +374,7 @@ public static class UiText
         entries.Add("allow", entries["Allow"]);
         entries.Add("deny", entries["Deny"]);
         entries.Add("default_deny", entries["Default deny"]);
+        SimplifiedText.AddTo(entries);
         return entries;
     }
 }

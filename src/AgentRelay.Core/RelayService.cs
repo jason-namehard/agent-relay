@@ -35,15 +35,16 @@ public sealed partial class RelayService
     }
 
     public AgentRecord Register(string id, string host, string configPath, string? cliPath = null,
-        string? hostVersion = null, string[]? instructionPaths = null)
+        string? hostVersion = null, string[]? instructionPaths = null, string? displayName = null)
     {
         ValidateId(id);
         if (string.IsNullOrWhiteSpace(host)) throw new RelayException("invalid_host", "host 不能为空。");
         var agent = new AgentRecord(id, host, Path.GetFullPath(configPath),
             cliPath is null ? null : Path.GetFullPath(cliPath), hostVersion,
-            (instructionPaths ?? []).Select(Path.GetFullPath).ToArray(), "unverified", null);
+            (instructionPaths ?? []).Select(Path.GetFullPath).ToArray(), "unverified", null, displayName);
         return store.Write(s =>
         {
+            InvalidateCliExtension(s, id);
             s.Execute("INSERT INTO agents(id,json) VALUES($id,$json) ON CONFLICT(id) DO UPDATE SET json=excluded.json",
                 ("$id", id), ("$json", RelayJson.Write(agent)));
             return agent;
@@ -67,6 +68,37 @@ public sealed partial class RelayService
 
     public List<AgentRecord> Agents() => store.Read(s => s.Query("SELECT json FROM agents ORDER BY id",
         r => RelayJson.Read<AgentRecord>(r.GetString(0))));
+
+    public AgentRecord RegisterManual(string id, string host, string displayName, string? cliPath = null,
+        string? hostVersion = null, string[]? instructionPaths = null)
+    {
+        ValidateId(id);
+        if (string.IsNullOrWhiteSpace(host) || string.IsNullOrWhiteSpace(displayName))
+            throw new RelayException("input_required", "Agent 名称和宿主不能为空。");
+        var agent = new AgentRecord(id, host, "", cliPath is null ? null : Path.GetFullPath(cliPath), hostVersion,
+            (instructionPaths ?? []).Select(Path.GetFullPath).ToArray(), "manual_ready", null, displayName.Trim());
+        return store.Write(s =>
+        {
+            InvalidateCliExtension(s, id);
+            s.Execute("INSERT INTO agents(id,json) VALUES($id,$json) ON CONFLICT(id) DO UPDATE SET json=excluded.json",
+                ("$id", id), ("$json", RelayJson.Write(agent)));
+            return agent;
+        });
+    }
+
+    public void RemoveAgent(string id) => store.Write(s =>
+    {
+        Agent(s, id);
+        if (s.Query("SELECT json FROM tasks", r=>RelayJson.Read<TaskRecord>(r.GetString(0)))
+            .Any(t=>(t.RequesterId==id || t.RecipientId==id) && !Terminal(t.State)))
+            throw new RelayException("agent_busy", "该 Agent 仍有进行中的交接，请先完成或取消交接。");
+        s.Execute("DELETE FROM cli_extensions WHERE agent_id=$id", ("$id",id));
+        s.Execute("DELETE FROM executors WHERE agent_id=$id", ("$id",id));
+        s.Execute("DELETE FROM resumers WHERE agent_id=$id", ("$id",id));
+        s.Execute("DELETE FROM permissions WHERE sender=$id OR recipient=$id", ("$id",id));
+        s.Execute("DELETE FROM agents WHERE id=$id", ("$id",id));
+        return true;
+    });
 
     public object Discover()
     {

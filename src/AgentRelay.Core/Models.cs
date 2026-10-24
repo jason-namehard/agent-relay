@@ -38,7 +38,8 @@ public enum TaskState
 }
 
 public sealed record AgentRecord(string AgentId, string Host, string ConfigPath, string? CliPath,
-    string? HostVersion, string[] InstructionPaths, string ValidationStatus, DateTimeOffset? VerifiedAt);
+    string? HostVersion, string[] InstructionPaths, string ValidationStatus, DateTimeOffset? VerifiedAt,
+    string? DisplayName = null);
 public sealed record AdapterRecord(string AdapterId, string Executable, string Version, string VerificationStatus,
     DateTimeOffset VerifiedAt, string Evidence);
 public sealed record OriginSession(string Host, string SessionId, string ConfigProfile, string Cwd);

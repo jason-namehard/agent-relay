@@ -160,7 +160,7 @@ public static class RelayCli
                 s.RequireExecutorReady(v.Get("to"));
             }
             var dispatched = await s.DispatchAsync(new DispatchRequest(v.Get("from"), v.Get("to"), File.ReadAllText(v.Get("request")),
-                v.Optional("mode") ?? "auto", v.Optional("adapter") ?? "amq-cli", v.Get("idempotency-key"), v.Timestamp("deadline-at"), origin), v.CancellationToken);
+                v.Optional("mode") ?? "auto", v.Optional("adapter") ?? (v.Flag("execute") ? "amq-cli" : s.PreferredDeliveryAdapter(v.Get("to"))), v.Get("idempotency-key"), v.Timestamp("deadline-at"), origin), v.CancellationToken);
             if (v.Flag("execute") && dispatched.Task.State == TaskState.Dispatched)
                 LaunchExecution(s, dispatched.Task, executionTimeout);
             return s.Status(dispatched.Task.TaskId);

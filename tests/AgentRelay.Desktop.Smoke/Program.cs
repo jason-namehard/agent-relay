@@ -50,221 +50,226 @@ internal static class Program
         var navigation=(ListBox)window.FindName("Navigation");
         void Navigate(string page){navigation.SelectedItem=navigation.Items.Cast<ListBoxItem>().Single(i=>(string)i.Tag==page);window.UpdateLayout();}
         await Wait(()=>((TextBlock)window.FindName("StatusText")).Text!="Working…");
-        Check(FindAll<TextBlock>(window).Any(t=>t.Text=="Needs Attention"),"Home summary rendered");
-        await SaveImage(window,Path.Combine(root,"Home.png"));
-        Navigate("Connections");
-        var connections=Find<DataGrid>(window,"ConnectionsTable");
-        Check(connections.Items.Count==6,"All directed pairs represented");
-        Check(service.Connections().Select(e=>e.Display).Distinct().Count()==4,"Allowed, denied, default deny and unavailable remain distinct");
-        await SaveImage(window,Path.Combine(root,"Connections.png"));
-        Navigate("Agents");var agents=Find<DataGrid>(window,"AgentsTable");agents.SelectedIndex=0;
-        Check(Find<TextBox>(window,"AgentConfig").Text==config,"Agent selection retains exact path");
-        Find<TextBox>(window,"AgentConfig").Text=Path.Combine(root,"missing.toml");
-        await ClickWithApproval(window,"Register / Correct Path",approve:false);
-        Check(service.Agents().Single(a=>a.AgentId=="agent-a").ConfigPath==config && Find<TextBox>(window,"AgentConfig").Text==Path.Combine(root,"missing.toml"),"Cancelled registry correction preserves both the saved path and input draft");
-        await ClickWithApproval(window,"Register / Correct Path");
-        await Click(window,"Validate");
-        Check(((Border)window.FindName("ErrorBanner")).Visibility==Visibility.Visible,"Invalid path is visible");
-        Find<TextBox>(window,"AgentConfig").Text=config;
-        await ClickWithApproval(window,"Register / Correct Path");await Click(window,"Validate");
-        Check(service.Agents().Single(a=>a.AgentId=="agent-a").ValidationStatus=="path_verified","Corrected path requires explicit revalidation");
-        await window.Dispatcher.InvokeAsync(()=>{},DispatcherPriority.ApplicationIdle);
-        Check(((TextBlock)window.FindName("StatusText")).Text=="Validate: Ready" && ((TextBlock)window.FindName("LedgerHint")).Text=="","Own ledger writes preserve action success without a refresh warning");
-        Navigate("Inbox");SelectTask(window,task.TaskId);await Click(window,"Copy Prompt");
-        Check(Clipboard.GetText().Contains(task.TaskId) && Clipboard.GetText().Contains(service.Status(task.TaskId).Task.ResultPath),"Prompt copied from current task");
-        var notifications=Find<DataGrid>(window,"NotificationsTable");notifications.SelectedIndex=0;await Click(window,"Mark Read");
-        Check(service.Inbox().First().IsRead,"Read acknowledgement persisted");
-        SelectTask(window,waiting.TaskId);await ClickWithApproval(window,"Cancel");
-        Check(service.Status(waiting.TaskId).Task.State==TaskState.Cancelled,"Cancel only changes Relay state");
-        await SaveImage(window,Path.Combine(root,"Inbox.png"));
-        Navigate("Adapters");var tabs=FindAll<TabControl>(window).Single();tabs.SelectedIndex=1;window.UpdateLayout();
-        var target=Path.Combine(root,"host.json");File.WriteAllText(target,"{\"mcpServers\":{}}\n");
-        var manifest=Path.Combine(root,"manifest.json");
-        var request=new MigrationRequest(new("fixture-adapter","1","https://github.com/jason-namehard/agent-relay","fixture","MIT",["stdio_mcp"],[],[]),target,"json","{}","{\"fixture\":{\"command\":\"fixture\"}}");
-        File.WriteAllText(manifest,RelayJson.Write(request));
-        Find<TextBox>(window,"MigrationPath").Text=manifest;await Click(window,"Plan Manifest");
-        Check(File.ReadAllText(target)=="{\"mcpServers\":{}}\n","Plan leaves host config untouched");
-        var migration=service.Migrations().Single();
-        await ClickWithApproval(window,"Apply",approve:false);
-        Check(service.Migration(migration.MigrationId).State=="planned","Cancelled approval cannot apply");
-        await ClickWithApproval(window,"Apply");Check(service.Migration(migration.MigrationId).State=="applied","Reviewed apply persists and backs up");
-        await SaveImage(window,Path.Combine(root,"Migrations.png"));
-        await ClickWithApproval(window,"Rollback");Check(File.ReadAllText(target)=="{\"mcpServers\":{}}\n","Reviewed rollback restores original bytes");
-        Navigate("Settings");Find<TextBox>(window,"TtlDays").Text="5";await Click(window,"Save Settings");
-        Check(service.Settings().ArtifactTtlDays==5,"Settings persist");
-        Find<TextBox>(window,"TtlDays").Text="0";await Click(window,"Save Settings");
-        Check(service.Settings().ArtifactTtlDays==5 && ((Border)window.FindName("ErrorBanner")).Visibility==Visibility.Visible,"Invalid settings do not overwrite valid data");
-        Navigate("Audit");Check(Find<DataGrid>(window,"AuditTable").Items.Count>0,"Audit rendered");
+        Check(navigation.Items.Cast<ListBoxItem>().Select(i=>(string)i.Tag).SequenceEqual(new[]{"Home","Agents","Connections","Settings"}),"Exactly four main pages");
+        Check(Find<DataGrid>(window,"TasksTable").Items.Count==2,"Board combines all handoffs");
+        SelectTask(window,task.TaskId);
+        await Click(window,"Copy prompt for agent-a");
+        Check(Clipboard.GetText().Contains(task.TaskId)&&Clipboard.GetText().Contains(service.Status(task.TaskId).Task.ResultPath)&&Clipboard.GetText().Contains(service.Home),"Copied completed handoff includes identity, reply path and relay location");
+        await SaveImage(window,Path.Combine(root,"Board.png"));
+
+        ((ComboBox)window.FindName("QuickLanguage")).SelectedValue="zh-CN";await Task.Delay(30);
+        Navigate("Agents");
+        Check(!FindAll<TextBox>(window).Any(b=>b.Name.StartsWith("AgentEntry")||b.Name.EndsWith("SetupReply")),"Agent page has no competing setup form");
+        var count=service.Agents().Count;
+        await Modal<AgentEntryDialog>(window,"Add Agent",async dialog=>
+        {
+            Expand(dialog);
+            Find<TextBox>(dialog,"AgentEntryReply").Text=Reply("agents",new(){["AgentName"]="自由命名甲",["AgentHost"]="manual"});
+            Press(dialog,"AgentEntryParseReply");
+            Check(Find<TextBox>(dialog,"AgentEntryName").Text=="自由命名甲"&&service.Agents().Count==count,"Parsing Agent reply fills draft without registration");
+            Find<TextBox>(dialog,"AgentEntryReply").Text="{bad";
+            Press(dialog,"AgentEntryParseReply");
+            Check(Find<TextBox>(dialog,"AgentEntryName").Text=="自由命名甲","Invalid Agent reply preserves draft");
+            await CheckGlyphs(dialog,Find<TextBox>(dialog,"AgentEntryName"));
+            await SaveImage(dialog,Path.Combine(root,"AgentEntry-zh.png"));
+            Press(dialog,"CancelAgentEntry");
+        });
+        Check(service.Agents().Count==count,"Cancelled Agent entry writes nothing");
+        await Modal<AgentEntryDialog>(window,"Add Agent",dialog=>
+        {
+            Expand(dialog);
+            Find<TextBox>(dialog,"AgentEntryReply").Text=Reply("agents",new(){["AgentName"]="任意节点甲"});
+            Press(dialog,"AgentEntryParseReply");Press(dialog,"SaveAgentEntry");return Task.CompletedTask;
+        });
+        var manual=service.Agents().Single(a=>a.DisplayName=="任意节点甲");
+        Check(manual.ConfigPath==""&&manual.Host=="manual","Name alone registers a manual Agent without configuration paths");
+        await SaveImage(window,Path.Combine(root,"Agents.png"));
         Navigate("Home");
+        ((ComboBox)window.FindName("QuickLanguage")).SelectedValue="en";await Task.Delay(30);
+        var taskCount=service.Tasks().Count;
+        await Modal<HandoffDialog>(window,"New handoff",async dialog=>
+        {
+            Expand(dialog);
+            Find<ComboBox>(dialog,"HandoffFrom").SelectedValue=manual.AgentId;
+            Press(dialog,"HandoffCopyPrompt");
+            Check(Clipboard.GetText().Contains("任意节点甲")&&Clipboard.GetText().Contains(manual.AgentId),"Handoff prompt includes user names and stable node IDs");
+            Find<TextBox>(dialog,"HandoffReply").Text=Reply("handoff",new(){["From"]=manual.AgentId,["To"]="agent-c",["Content"]="请读取交接内容，不预设角色。"});
+            Press(dialog,"HandoffParseReply");
+            Check((string)Find<ComboBox>(dialog,"HandoffFrom").SelectedValue==manual.AgentId&&Find<TextBox>(dialog,"HandoffContent").Text.Contains("不预设角色"),"Handoff reply selects sender, recipient and message");
+            Check(service.Tasks().Count==taskCount&&dialog.Result is null,"Handoff parse does not send or create a task");
+            Check(!Find<RadioButton>(dialog,"HandoffAutomatic").IsEnabled&&Find<RadioButton>(dialog,"HandoffManual").IsChecked==true,"Missing CLI route defaults to manual");
+            Find<TextBox>(dialog,"HandoffReply").Text=Reply("handoff",new(){["From"]=manual.AgentId,["To"]=manual.AgentId,["Content"]="invalid"});
+            Press(dialog,"HandoffParseReply");
+            Check((string)Find<ComboBox>(dialog,"HandoffTo").SelectedValue=="agent-c","Invalid same-node reply does not partially overwrite draft");
+            await SaveImage(dialog,Path.Combine(root,"Handoff.png"));
+            Press(dialog,"CreateHandoff");
+        });
+        Check(service.Tasks().Count==taskCount+1,"Explicit create adds one manual handoff");
+        var created=service.Tasks().Single(v=>v.Task.RequesterId==manual.AgentId).Task;
+        Check(created.Mode=="manual"&&File.Exists(created.RequestPath),"Manual Agent can send a stored handoff");
+        await Click(window,"Copy prompt for agent-c");
+        Check(Clipboard.GetText().Contains(created.RequestPath)&&Clipboard.GetText().Contains(service.Home),"Manual prompt carries request path and relay location");
+
+        Navigate("Connections");
+        Check(FindAll<System.Windows.Shapes.Path>(window).Count(p=>AutomationProperties.GetAutomationId(p).StartsWith("ConnectionStroke:"))==12,"Every direction remains visible with four nodes");
+        Check(FindAll<System.Windows.Shapes.Path>(window).Where(p=>AutomationProperties.GetAutomationId(p).StartsWith("ConnectionStroke:")).All(p=>p.StrokeDashArray.Count>0),"Unconfigured routes use dashed gray lines");
+        Check(!FindAll<System.Windows.Shapes.Polygon>(window).Any(),"Unavailable routes have no arrowheads");
+        SeedExtension(service,"agent-a",true);SeedExtension(service,"agent-b",true);
+        Navigate("Home");Navigate("Connections");
+        var forward=ByAutomation<System.Windows.Shapes.Path>(window,"ConnectionEdge:agent-a:agent-b");
+        forward.RaiseEvent(new MouseButtonEventArgs(Mouse.PrimaryDevice,0,MouseButton.Left){RoutedEvent=UIElement.MouseLeftButtonDownEvent});
+        await Click(window,"Pause connection");
+        Check(service.Connections().Single(e=>e.From=="agent-a"&&e.To=="agent-b").Display=="Denied","Green arrow can pause its own direction");
+        Check(service.Connections().Single(e=>e.From=="agent-b"&&e.To=="agent-a").Display=="Denied","Changing forward route leaves reverse route independent");
+        await Click(window,"Enable connection");
+        Check(service.Connections().Single(e=>e.From=="agent-a"&&e.To=="agent-b").Display=="Allowed","Red arrow can enable its own direction");
+        Check(ByAutomation<System.Windows.Shapes.Path>(window,"ConnectionStroke:agent-a:agent-b").StrokeDashArray.Count==0,"Available enabled route is a solid stroke");
+        Check(ByAutomation<System.Windows.Shapes.Polygon>(window,"ConnectionArrow:agent-a:agent-b").Points.Count==3,"Available route has a geometric arrowhead");
+        Check(FindAll<Border>(window).Where(b=>AutomationProperties.GetAutomationId(b).StartsWith("ConnectionLabel:")).All(b=>b.Child is TextBlock text&&!text.Text.Contains('→')),"Connection labels contain state text without duplicate textual arrows");
+        await SaveImage(window,Path.Combine(root,"Connections.png"));
+
+        var probe=new CliProbeDialog(window,service,"agent-c","en");
+        await Show(probe,dialog=>
+        {
+            Check(!FindAll<Button>(dialog).Any(b=>b.Name=="ProbeCreate"),"No recipe provides explanation without a misleading run button");
+            Check(FindAll<TextBlock>(dialog).Any(t=>t.Text.Contains("No CLI recipe")),"No recipe points to advanced extensions");
+            Press(dialog,"CloseCliProbe");return Task.CompletedTask;
+        });
+        SeedExtension(service,"agent-c",false);
+        await Show(new CliProbeDialog(window,service,"agent-c","en"),dialog=>
+        {
+            Check(!service.CliExtension("agent-c")!.CanCreate,"Passing machine receipt alone does not enable CLI");
+            Check(!Find<CheckBox>(dialog,"ConfirmCreateVisible").IsChecked!.Value,"Visibility is never preconfirmed");
+            Find<CheckBox>(dialog,"ConfirmCreateVisible").IsChecked=true;Press(dialog,"SaveCreateConfirmation");
+            Check(service.CliExtension("agent-c")!.CanCreate&&!service.CliExtension("agent-c")!.CanResume,"Visibility confirmation enables only verified new-session ability");
+            Check(FindAll<Button>(dialog).Any(b=>b.Name=="ProbeResume"),"Same-session verification is a separate next step");
+            Press(dialog,"CloseCliProbe");return Task.CompletedTask;
+        });
+        var ext=service.CliExtension("agent-c")!;
+        SaveExtension(service,ext with{ResumeProbe=new("resume-fixture","resume","RESUME-FIXTURE","fixture-session",true,false,null,DateTimeOffset.UtcNow)});
+        await Show(new CliProbeDialog(window,service,"agent-c","en"),dialog=>
+        {
+            Check(!service.CliExtension("agent-c")!.CanResume,"Resume machine receipt still needs same-session visibility confirmation");
+            Find<CheckBox>(dialog,"ConfirmResumeVisible").IsChecked=true;Press(dialog,"SaveResumeConfirmation");
+            Check(service.CliExtension("agent-c")!.CanResume,"Separate same-session confirmation enables resume");
+            Press(dialog,"CloseCliProbe");return Task.CompletedTask;
+        });
+
+        Navigate("Settings");
+        Find<TextBox>(window,"TtlDays").Text="5";await Click(window,"Save Settings");
+        Check(service.Settings().ArtifactTtlDays==5,"Retention settings persist");
+        Find<TextBox>(window,"TtlDays").Text="0";await Click(window,"Save Settings");
+        Check(service.Settings().ArtifactTtlDays==5&&((Border)window.FindName("ErrorBanner")).Visibility==Visibility.Visible,"Invalid retention does not overwrite valid settings");
+        Find<TextBox>(window,"CustomAccent").Text="#123456";await Click(window,"Save Accent");
+        Find<TextBox>(window,"CustomAccent").Text="invalid";await Click(window,"Save Accent");
+        Check(Appearance.Load(service.Home).Accent=="#123456","Invalid accent does not replace saved color");
+        foreach(var palette in Appearance.Palettes)
+        {
+            Find<ComboBox>(window,"PaletteChoice").SelectedValue=palette.Id;
+            await Task.Delay(30);
+            Check(Appearance.Load(service.Home).Palette==palette.Id,"Palette persists: "+palette.Id);
+        }
+        foreach(var language in Appearance.Languages)
+        {
+            ((ComboBox)window.FindName("QuickLanguage")).SelectedValue=language.Id;await Task.Delay(30);
+            Check(Appearance.Load(service.Home).Language==language.Id&&navigation.Items.Count==4,"Four-page language switch persists: "+language.Id);
+        }
+        ((ComboBox)window.FindName("QuickLanguage")).SelectedValue="zh-CN";await Task.Delay(30);
+        await SaveImage(window,Path.Combine(root,"Settings-zh.png"));
+        ((ComboBox)window.FindName("QuickLanguage")).SelectedValue="en";await Task.Delay(30);
+        Find<TextBox>(window,"CustomAccent").Text="#345678";
         var before=((TextBlock)window.FindName("StatusText")).Text;
-        var dotnet=Environment.GetEnvironmentVariable("DOTNET_HOST_PATH") ?? throw new InvalidOperationException("DOTNET_HOST_PATH required for CLI signal probe.");
+        await ExternalUpdate(service,cli);
+        await Wait(()=>((TextBlock)window.FindName("LedgerHint")).Text==UiText.Translate("Ledger changed · Refresh","en"));
+        Check(Find<TextBox>(window,"CustomAccent").Text=="#345678"&&((TextBlock)window.FindName("StatusText")).Text==before,"External event preserves Settings drafts and action status");
+        Navigate("Home");before=((TextBlock)window.FindName("StatusText")).Text;
+        await ExternalUpdate(service,cli);
+        await Wait(()=>((TextBlock)window.FindName("LedgerHint")).Text==UiText.Translate("已读取事件更新","en"));
+        Check(((TextBlock)window.FindName("StatusText")).Text==before,"Board refreshes on external CLI events without overwriting action status");
+        var emptyService=new RelayService(Path.Combine(root,"empty"));emptyService.Initialize();
+        Appearance.Save(emptyService.Home,new DesktopPreferences("en"));
+        var empty=new MainWindow(emptyService);empty.Show();await Task.Delay(100);
+        Check(FindAll<TextBlock>(empty).Any(t=>t.Text.Contains("No handoffs yet")),"Empty board explains how to start");
+        await Click(empty,"New handoff");
+        Check(((Border)empty.FindName("ErrorBanner")).Visibility==Visibility.Visible&&emptyService.Tasks().Count==0,"New handoff explains missing Agents without creating work");
+        empty.Close();
+    }
+
+    private static string Reply(string context,Dictionary<string,string> fields)=>RelayJson.Write(new{relay_setup_version=1,context,fields});
+    private static void SeedExtension(RelayService service,string id,bool confirmed)
+    {
+        var command=new CliCommand(Path.Combine(service.Home,"never-executed-fixture.exe"),["{prompt}"],null,null);
+        var recipe=new CliRecipe(1,"Smoke fixture","fixture",command,command,[],"fixture","local smoke fixture","MIT","Never executed.");
+        SaveExtension(service,new(id,Guid.NewGuid().ToString(),recipe,new("create-fixture-"+id,"create","CREATE-FIXTURE","fixture-session",true,confirmed,null,DateTimeOffset.UtcNow),null));
+    }
+    private static void SaveExtension(RelayService service,CliExtensionRecord record)
+    {
+        var store=new RelayStore(service.Home);
+        store.Write(s=>{s.Execute("INSERT INTO cli_extensions VALUES($id,$json) ON CONFLICT(agent_id) DO UPDATE SET json=excluded.json",("$id",record.AgentId),("$json",RelayJson.Write(record)));return true;});
+    }
+    private static async Task CheckGlyphs(Window dialog,TextBox box)
+    {
+        foreach(var size in new[]{13d,18d,24d})
+        {
+            box.FontSize=size;box.Text="中文 Agjpqy";box.BringIntoView();box.Focus();dialog.UpdateLayout();
+            await dialog.Dispatcher.InvokeAsync(()=>{},DispatcherPriority.ApplicationIdle);
+            var content=(ScrollViewer)box.Template.FindName("PART_ContentHost",box);
+            var bounds=content.TransformToAncestor(box).TransformBounds(new Rect(0,0,content.ActualWidth,content.ActualHeight));
+            foreach(var index in new[]{0,1,4,5,6,7,8})
+            {
+                var glyph=box.GetRectFromCharacterIndex(index);
+                Check(!glyph.IsEmpty&&glyph.Height>0&&glyph.Top>=bounds.Top-1&&glyph.Bottom<=bounds.Bottom+1,$"Text glyph {index} fully fits viewport at {size}px");
+            }
+        }
+    }
+    private static async Task ExternalUpdate(RelayService service,string cli)
+    {
+        var dotnet=Environment.GetEnvironmentVariable("DOTNET_HOST_PATH")??throw new InvalidOperationException("DOTNET_HOST_PATH required.");
         var start=new ProcessStartInfo(dotnet){UseShellExecute=false,CreateNoWindow=true,RedirectStandardOutput=true,RedirectStandardError=true};
-        foreach(var argument in new[]{cli,"--home",service.Home,"permission","set","--from","agent-c","--to","agent-a","--decision","deny"})start.ArgumentList.Add(argument);
+        foreach(var arg in new[]{cli,"--home",service.Home,"permission","set","--from","agent-c","--to","agent-a","--decision","deny"})start.ArgumentList.Add(arg);
         using var process=Process.Start(start)!;var stdout=process.StandardOutput.ReadToEndAsync();var stderr=process.StandardError.ReadToEndAsync();
         await process.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(10));
         if(process.ExitCode!=0)throw new InvalidOperationException(await stderr);
-        Check(process.ExitCode==0,"External CLI updated ledger");await stdout;
-        await Wait(()=>((TextBlock)window.FindName("LedgerHint")).Text==UiText.Translate("已读取事件更新","en"));
-        Check(((TextBlock)window.FindName("StatusText")).Text==before,"External refresh uses a separate hint and preserves the action status");
-        Navigate("Agents");Find<TextBox>(window,"AgentId").Text="draft-agent";Find<TextBox>(window,"AgentConfig").Text="E:/draft/config.toml";
-        var editStatus=((TextBlock)window.FindName("StatusText")).Text;
-        using(var update=Process.Start(start)!)
-        {
-            var updateOut=update.StandardOutput.ReadToEndAsync();var updateError=update.StandardError.ReadToEndAsync();
-            await update.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(10));
-            if(update.ExitCode!=0)throw new InvalidOperationException(await updateError);
-            await updateOut;
-        }
-        await Wait(()=>((TextBlock)window.FindName("LedgerHint")).Text==UiText.Translate("Ledger changed · Refresh","en"));
-        Check(Find<TextBox>(window,"AgentId").Text=="draft-agent" && Find<TextBox>(window,"AgentConfig").Text=="E:/draft/config.toml" && ((TextBlock)window.FindName("StatusText")).Text==editStatus,"External writes keep editor drafts and show only a separate refresh hint");
-        Navigate("Connections");await SaveImage(window,Path.Combine(root,"Connections.png"));
-        foreach(var page in new[]{"Home","Agents","Connections","Inbox","Adapters","Audit","Settings"}){Navigate(page);window.UpdateLayout();Check(((ContentControl)window.FindName("PageContent")).Content is not null,$"{page} accessible");}
-        var demoService=await DemoWorkspace.CreateAsync(Path.Combine(root,"demo"));
-        Appearance.Save(demoService.Home,new DesktopPreferences("en"));
-        var demoWindow=new MainWindow(demoService,demo:true);demoWindow.Show();
-        await Wait(()=>((TextBlock)demoWindow.FindName("StatusText")).Text!="Working…");
-        demoWindow.UpdateLayout();
-        Check(demoWindow.Title.Contains("Demo") && ((TextBlock)demoWindow.FindName("ModeDescription")).Text.Contains("DEMO"),"Demo remains visibly labelled");
-        Check(((TextBlock)demoWindow.FindName("VersionLabel")).Text=="v"+RelayVersion.Current,"GUI shows source preview version");
-        Check(Find<DataGrid>(demoWindow,"TasksTable").Items.Count==2,"Demo Home shows ready and failed sample tasks");
-        await SaveImage(demoWindow,Path.Combine(root,"Demo.png"));demoWindow.Close();
-        var emptyService=new RelayService(Path.Combine(root,"empty"));emptyService.Initialize();
-        Appearance.Save(emptyService.Home,new DesktopPreferences("en"));
-        var emptyWindow=new MainWindow(emptyService);emptyWindow.Show();
-        await Wait(()=>((TextBlock)emptyWindow.FindName("StatusText")).Text!="Working…");emptyWindow.UpdateLayout();
-        Check(FindAll<Button>(emptyWindow).Any(b=>Equals(b.Content,"Open Demo")),"Empty registry offers isolated demo");
-        await Click(emptyWindow,"Register Agent");emptyWindow.UpdateLayout();
-        Check(((TextBlock)emptyWindow.FindName("PageTitle")).Text=="Agents","First-use registration action navigates to Agents");
-        Check(emptyService.Agents().Count==0,"First-use navigation does not auto-register agents");emptyWindow.Close();
-        await ExerciseUsability(window,service,root,config);
+        await stdout;Check(process.ExitCode==0,"External CLI updated ledger");
     }
-
-    private static async Task ExerciseUsability(MainWindow window,RelayService service,string root,string config)
+    private static async Task Modal<T>(MainWindow owner,string button,Func<T,Task> exercise) where T:Window
     {
-        void Navigate(string page){var nav=(ListBox)window.FindName("Navigation");nav.SelectedItem=nav.Items.Cast<ListBoxItem>().Single(i=>(string)i.Tag==page);window.UpdateLayout();}
-        Navigate("Agents");Find<DataGrid>(window,"AgentsTable").SelectedIndex=0;
-        Find<Button>(window,"AgentConfigCopySetupPrompt").RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
-        Check(Clipboard.GetText().Contains("\"AgentConfig\"") && Clipboard.GetText().Contains("not a login name"),"Each field copies a constrained setup prompt");
-        var assistant=FindAll<FormAssistant>(window).Single();assistant.IsExpanded=true;window.UpdateLayout();
-        await Click(window,"Copy Setup Prompt");
-        Check(Clipboard.GetText().Contains("\"context\": \"agents\"") && Clipboard.GetText().Contains("\"AgentInstructions\""),"Group prompt carries stable field names");
-        var count=service.Agents().Count;
-        Find<TextBox>(window,"AgentCli").Text="keep-existing";
-        var reply=RelayJson.Write(new{relay_setup_version=1,context="agents",fields=new Dictionary<string,string>{["AgentId"]="agent-new",["AgentHost"]="fixture",["AgentConfig"]=config,["AgentCli"]=""}});
-        Clipboard.SetText(reply);await Click(window,"Paste Agent Reply");await Click(window,"Parse and Fill");
-        Check(Find<TextBox>(window,"AgentId").Text=="agent-new" && Find<TextBox>(window,"AgentConfig").Text==config,"Agent reply fills the active form");
-        Check(Find<TextBox>(window,"AgentCli").Text=="keep-existing" && service.Agents().Count==count,"Blank fields preserve input and parse does not register");
-        Find<TextBox>(window,"agentsSetupReply").Text="{\"relay_setup_version\":1,\"context\":\"agents\",\"fields\":{\"AgentId\":\"wrong\",\"AgentHost\":123}}";
-        await Click(window,"Parse and Fill");
-        Check(Find<TextBox>(window,"AgentId").Text=="agent-new" && ((Border)window.FindName("ErrorBanner")).Visibility==Visibility.Visible,"Invalid reply cannot partially fill the form");
-        Find<TextBox>(window,"AgentCli").Clear();await Click(window,"Register / Correct Path");await Click(window,"Validate");
-        Check(service.Agents().Count==count+1 && service.Agents().Single(a=>a.AgentId=="agent-new").ValidationStatus=="path_verified","Parsed registration still requires explicit save and validation");
-
-        Find<TextBox>(window,"AgentVersion").Text="unsaved-version";
-        ((ComboBox)window.FindName("QuickLanguage")).SelectedValue="zh-CN";window.UpdateLayout();
-        Check(Find<TextBox>(window,"AgentVersion").Text=="unsaved-version","Language switching preserves unsaved form input");
-
-        foreach(var option in Appearance.Languages)
+        var done=new TaskCompletionSource();
+        _=owner.Dispatcher.BeginInvoke(DispatcherPriority.Background,new Action(async()=>
         {
-            ((ComboBox)window.FindName("QuickLanguage")).SelectedValue=option.Id;
-            await Wait(()=>Appearance.Load(service.Home).Language==option.Id);
-            Navigate("Connections");Find<TextBox>(window,"ConnectionFrom").Text="agent-a";Find<TextBox>(window,"ConnectionTo").Text="agent-b";
-            await ClickWithApproval(window,"Deny A → B",approve:false);
-            Check(service.Connections().Single(e=>e.From=="agent-a" && e.To=="agent-b").Permission=="allow",$"Cancelled permission review leaves the direction unchanged in {option.Id}");
-            if(option.Id=="ja")
-                Check(FindAll<TextBlock>(((ListBox)window.FindName("Navigation")).Items.Cast<ListBoxItem>().Single(i=>(string)i.Tag=="Agents")).Any(t=>t.Text=="Agent 管理"),"Japanese Agent navigation includes the separating space");
-            Navigate("Inbox");
-            var noticeTable=Find<DataGrid>(window,"NotificationsTable");var notice=noticeTable.Items[0];
-            var read=(string)notice.GetType().GetProperty("IsRead")!.GetValue(notice)!;
-            var label=(string)notice.GetType().GetProperty("Event")!.GetValue(notice)!;
-            Check(read==UiText.Translate("Read",option.Id) || read==UiText.Translate("Unread",option.Id),$"Notification read state is human readable in {option.Id}");
-            Check(!label.Contains(service.Inbox()[0].Event.Split(':')[0],StringComparison.Ordinal),$"Notification event hides its attempt ID in {option.Id}");
-            var completed=service.Status(service.Tasks().First(v=>v.Task.State==TaskState.Succeeded).Task.TaskId);
-            var localizedPrompt=DesktopLocalizedContent.TaskPrompt(completed,service.Artifacts(completed.Task.TaskId),option.Id);
-            Check(localizedPrompt.Contains(completed.Task.ResultPath,StringComparison.Ordinal),$"Localized continuation retains the exact managed result path in {option.Id}");
-            if(option.Id=="en")Check(localizedPrompt.StartsWith("Continue Agent Relay",StringComparison.Ordinal),"English continuation uses English instructions");
-            if(option.Id=="ja")Check(!localizedPrompt.StartsWith("继续处理",StringComparison.Ordinal),"Japanese continuation no longer uses Chinese instructions");
-            Navigate("Settings");
-            Check(((TextBlock)window.FindName("PageTitle")).Text==UiText.Translate("Settings",option.Id),$"Navigation localizes in {option.Id}");
-            Check(FindAll<Button>(window).Any(b=>Equals(b.Content,UiText.Translate("Save Accent",option.Id))),$"Settings actions localize in {option.Id}");
-            Check(Find<TextBox>(window,"TtlDays").Text=="5",$"Language switch preserves stored settings in {option.Id}");
-        }
-        ((ComboBox)window.FindName("QuickLanguage")).SelectedValue="zh-CN";Navigate("Settings");
-        var accents=new HashSet<string>();
-        foreach(var palette in Appearance.Palettes)
-        {
-            Find<ComboBox>(window,"PaletteChoice").SelectedValue=palette.Id;window.UpdateLayout();
-            accents.Add(((SolidColorBrush)window.FindResource("AccentBrush")).Color.ToString());
-            Check(Appearance.Load(service.Home).Palette==palette.Id,$"Palette {palette.Id} persists");
-        }
-        Check(accents.Count==4,"Morandi palettes visibly differ");
-        Find<TextBox>(window,"TtlDays").Text="7";
-        Find<TextBox>(window,"CustomAccent").Text="#637A68";await Click(window,"Save Accent");
-        Check(Appearance.Load(service.Home).Accent=="#637A68","Custom accent persists");
-        Check(Find<TextBox>(window,"TtlDays").Text=="7" && service.Settings().ArtifactTtlDays==5,"Appearance changes preserve drafts without saving business settings");
-        var approvedColor=((SolidColorBrush)window.FindResource("AccentBrush")).Color;
-        Find<TextBox>(window,"CustomAccent").Text="#NOTHEX";
-        Check(Find<TextBlock>(window,"AccentError").Visibility==Visibility.Visible,"Invalid accent has an inline error beside the field");
-        await Click(window,"Save Accent");
-        Check(Appearance.Load(service.Home).Accent=="#637A68" && ((SolidColorBrush)window.FindResource("AccentBrush")).Color==approvedColor,"Invalid color does not replace valid appearance");
-        Find<TextBox>(window,"CustomAccent").Clear();await Click(window,"Save Accent");
-        Find<ComboBox>(window,"PaletteChoice").SelectedValue="mist";window.UpdateLayout();
-        Find<ComboBox>(window,"LanguageChoice").SelectedValue="en";window.UpdateLayout();
-        Check(Appearance.Load(service.Home).Language=="en" && ((ComboBox)window.FindName("QuickLanguage")).SelectedValue!.Equals("en"),"Settings language applies immediately and synchronizes the top selector");
-        Check(Find<TextBox>(window,"TtlDays").Text=="7" && service.Settings().ArtifactTtlDays==5,"Immediate choices preserve unsaved business input");
-        Find<ComboBox>(window,"LanguageChoice").SelectedValue="zh-CN";window.UpdateLayout();
-        var paletteChoice=Find<ComboBox>(window,"PaletteChoice");var customAccent=Find<TextBox>(window,"CustomAccent");
-        Check(new FrameworkElement[]{(ComboBox)window.FindName("QuickLanguage"),(Button)window.FindName("RefreshButton"),Find<ComboBox>(window,"LanguageChoice"),paletteChoice,customAccent,Find<TextBox>(window,"TtlDays")}.All(c=>Math.Abs(c.ActualHeight-34)<0.1),"Top bar and single-line form controls measure 34 pixels");
-        Check(Math.Abs(paletteChoice.TranslatePoint(new Point(),window).Y-customAccent.TranslatePoint(new Point(),window).Y)<0.1,"Accent field and palette selector share a baseline");
-        await SaveImage(window,Path.Combine(root,"Settings-zh-CN.png"));
-        Navigate("Agents");FindAll<FormAssistant>(window).Single().IsExpanded=true;window.UpdateLayout();
-        await SaveImage(window,Path.Combine(root,"Assistant-zh-CN.png"));
-        service.Register("agent-d","fixture",config);Navigate("Connections");
-        var connections=Find<DataGrid>(window,"ConnectionsTable");
-        var graphEdges=FindAll<System.Windows.Shapes.Path>(window).Where(p=>AutomationProperties.GetAutomationId(p).StartsWith("ConnectionEdge:",StringComparison.Ordinal)).ToArray();
-        Check(connections.Items.Count==20 && graphEdges.Length==service.Connections().Count(e=>e.Permission!="default_deny"),"Five-agent graph collapses default deny while the table retains all 20 directions");
-        var reverse=graphEdges.Single(p=>p.Tag is ConnectionView{From:"agent-b",To:"agent-a"});
-        reverse.RaiseEvent(new MouseButtonEventArgs(Mouse.PrimaryDevice,Environment.TickCount,MouseButton.Left){RoutedEvent=UIElement.MouseLeftButtonDownEvent});
-        Check(connections.SelectedItem==reverse.Tag && Find<TextBox>(window,"ConnectionFrom").Text=="agent-b" && Find<TextBox>(window,"ConnectionTo").Text=="agent-a","Clicking the reverse graph edge selects its exact directed permission");
-        await SaveImage(window,Path.Combine(root,"Connections-zh-CN.png"));
-        ((ComboBox)window.FindName("QuickLanguage")).SelectedValue="es";window.UpdateLayout();
-        var inboxNav=((ListBox)window.FindName("Navigation")).Items.Cast<ListBoxItem>().Single(i=>(string)i.Tag=="Inbox");
-        Check((string)inboxNav.ToolTip==UiText.Translate("Inbox","es") && FindAll<TextBlock>(inboxNav).Any(t=>t.TextTrimming==TextTrimming.CharacterEllipsis && Equals(t.ToolTip,t.Text)),"Long Spanish navigation has ellipsis and its full translated tooltip");
-        Navigate("Settings");await SaveImage(window,Path.Combine(root,"Settings-es.png"));
-        ((ComboBox)window.FindName("QuickLanguage")).SelectedValue="zh-CN";
-        var reopened=new MainWindow(new RelayService(service.Home));reopened.Show();await Task.Delay(100);reopened.UpdateLayout();
-        Check(((ComboBox)reopened.FindName("QuickLanguage")).SelectedValue!.Equals("zh-CN") && ((TextBlock)reopened.FindName("PageTitle")).Text=="首页","Language preference survives reopening");
-        reopened.Close();
-        var bad=Path.Combine(root,"bad-preferences");Directory.CreateDirectory(bad);File.WriteAllText(Path.Combine(bad,"desktop.preferences.json"),"{broken");
-        try{Appearance.Load(bad);throw new InvalidOperationException("Invalid preferences were accepted");}
-        catch(RelayException error){Check(error.Code=="invalid_desktop_preferences","Malformed preference file reports an explicit error");}
+            var dialog=Application.Current.Windows.OfType<T>().Single();
+            try{await exercise(dialog);done.SetResult();}
+            catch(Exception error){dialog.Close();done.SetException(error);}
+        }));
+        await Click(owner,button);await done.Task;
     }
-
+    private static async Task Show<T>(T dialog,Func<T,Task> exercise) where T:Window
+    {
+        var done=new TaskCompletionSource();
+        dialog.ContentRendered+=async(_,_)=>{try{await exercise(dialog);done.SetResult();}catch(Exception error){dialog.Close();done.SetException(error);}};
+        dialog.ShowDialog();await done.Task;
+    }
+    private static void Expand(DependencyObject root){foreach(var expander in FindAll<Expander>(root))expander.IsExpanded=true;if(root is Window window)window.UpdateLayout();}
+    private static void Press(DependencyObject root,string name)=>Find<Button>(root,name).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
     private static void SelectTask(MainWindow window,string id)
     {var table=Find<DataGrid>(window,"TasksTable");table.SelectedItem=table.Items.Cast<object>().Single(r=>(string)r.GetType().GetProperty("TaskId")!.GetValue(r)! == id);}
-    private static async Task Click(MainWindow window,string content)
-    {FindAll<Button>(window).Single(b=>Equals(b.Tag,content) || Equals(b.Content,content)).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));await Wait(()=>((TextBlock)window.FindName("StatusText")).Text!="Working…");await Task.Delay(50);}
-    private static async Task ClickWithApproval(MainWindow window,string content,bool approve=true)
-    {
-        _ = window.Dispatcher.BeginInvoke(DispatcherPriority.Background,new Action(()=>
-        {
-            var dialog=Application.Current.Windows.OfType<ReviewDialog>().Single();
-            Check(!Find<Button>(dialog,"ApproveButton").IsEnabled,"Approval starts disabled");
-            if(!approve){dialog.Close();return;}
-            Find<TextBox>(dialog,"ApprovalReason").Text="Reviewed smoke fixture";
-            Find<CheckBox>(dialog,"ApprovalCheck").IsChecked=true;
-            Find<Button>(dialog,"ApproveButton").RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
-        }));
-        await Click(window,content);
-        if(!approve)Check(((TextBlock)window.FindName("StatusText")).Text==UiText.Translate("Action cancelled · No changes",(string)((ComboBox)window.FindName("QuickLanguage")).SelectedValue),"Cancelled review reports no changes: "+content);
-    }
+    private static async Task Click(MainWindow window,string label)
+    {FindAll<Button>(window).Single(b=>Equals(b.Tag,label)||Equals(b.Content,label)).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));await Wait(()=>((TextBlock)window.FindName("StatusText")).Text!="Working…");await Task.Delay(30);}
     private static async Task Wait(Func<bool> predicate)
     {for(var i=0;i<100;i++){if(predicate())return;await Task.Delay(50);}throw new TimeoutException("UI condition not reached.");}
-    private static T Find<T>(DependencyObject root,string name) where T:FrameworkElement=>FindAll<T>(root).Single(e=>e.Name==name);
-    private static IEnumerable<T> FindAll<T>(DependencyObject root) where T:DependencyObject
-    {if(root is T typed)yield return typed;for(var i=0;i<VisualTreeHelper.GetChildrenCount(root);i++)foreach(var child in FindAll<T>(VisualTreeHelper.GetChild(root,i)))yield return child;}
-    private static void Check(bool passed,string check)
-    {if(!passed)throw new InvalidOperationException(check);checks.Add(check);}
+    private static T Find<T>(DependencyObject root,string name)where T:FrameworkElement=>FindAll<T>(root).Single(e=>e.Name==name);
+    private static T ByAutomation<T>(DependencyObject root,string id)where T:DependencyObject=>FindAll<T>(root).Single(e=>AutomationProperties.GetAutomationId(e)==id);
+    private static IEnumerable<T> FindAll<T>(DependencyObject root)where T:DependencyObject
+    {
+        var seen=new HashSet<DependencyObject>();var pending=new Stack<DependencyObject>();pending.Push(root);
+        while(pending.Count>0)
+        {
+            var item=pending.Pop();if(!seen.Add(item))continue;if(item is T typed)yield return typed;
+            foreach(var child in LogicalTreeHelper.GetChildren(item).OfType<DependencyObject>())pending.Push(child);
+            if(item is Visual)for(var i=0;i<VisualTreeHelper.GetChildrenCount(item);i++)pending.Push(VisualTreeHelper.GetChild(item,i));
+        }
+    }
+    private static void Check(bool passed,string check){if(!passed)throw new InvalidOperationException(check);checks.Add(check);}
     private static async Task SaveImage(Window window,string path)
-    {await window.Dispatcher.InvokeAsync(()=>{},DispatcherPriority.ApplicationIdle);window.UpdateLayout();var content=(FrameworkElement)window.Content;var bitmap=new RenderTargetBitmap((int)content.ActualWidth,(int)content.ActualHeight,96,96,PixelFormats.Pbgra32);bitmap.Render(content);var encoder=new PngBitmapEncoder();encoder.Frames.Add(BitmapFrame.Create(bitmap));using var output=File.Create(path);encoder.Save(output);}
+    {await window.Dispatcher.InvokeAsync(()=>{},DispatcherPriority.ApplicationIdle);window.UpdateLayout();var content=(FrameworkElement)window.Content;var bitmap=new RenderTargetBitmap((int)content.ActualWidth,(int)content.ActualHeight,96,96,PixelFormats.Pbgra32);var visual=new DrawingVisual();using(var drawing=visual.RenderOpen()){var bounds=new Rect(0,0,content.ActualWidth,content.ActualHeight);drawing.DrawRectangle(window.Background,null,bounds);drawing.DrawRectangle(new VisualBrush(content){Stretch=Stretch.Fill},null,bounds);}bitmap.Render(visual);var encoder=new PngBitmapEncoder();encoder.Frames.Add(BitmapFrame.Create(bitmap));using var output=File.Create(path);encoder.Save(output);}
 }

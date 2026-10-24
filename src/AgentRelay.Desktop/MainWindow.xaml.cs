@@ -19,7 +19,8 @@ namespace AgentRelay.Desktop;
 
 public partial class MainWindow : Window
 {
-    private readonly RelayService service;
+    private RelayService service;
+    private readonly bool demo;
     private DesktopPreferences preferences;
     private bool languageReady;
     private readonly Dictionary<string, TextBox> fields = new(StringComparer.Ordinal);
@@ -29,21 +30,13 @@ public partial class MainWindow : Window
     private uint ledgerMessage;
     private HwndSource? source;
     private string? taskId;
-    private string? migrationId;
     private string? agentId;
     private string? connectionFrom;
     private string? connectionTo;
-    private int adapterTab;
-    private const string LedgerHelp = "Refresh 只读取账本。Recover 会处理待投递/继续操作，可能调用已验证适配器。";
-    private static readonly JsonSerializerOptions ManifestJson = new(RelayJson.Options)
-    {
-        RespectRequiredConstructorParameters = true, RespectNullableAnnotations = true,
-        UnmappedMemberHandling = JsonUnmappedMemberHandling.Disallow
-    };
-
     public MainWindow(RelayService service, bool demo = false)
     {
         this.service = service;
+        this.demo = demo;
         preferences = Appearance.Load(service.Home);
         InitializeComponent();
         Appearance.Apply(this, preferences);
@@ -71,7 +64,7 @@ public partial class MainWindow : Window
         Loaded += async (_, _) =>
         {
             Navigation.SelectedIndex = 0;
-            await Run(async () => { await service.RecoverAsync(); }, "启动恢复完成");
+            await Run(() => Task.CompletedTask, "Ready");
         };
     }
 
@@ -162,180 +155,173 @@ public partial class MainWindow : Window
         PageContent.Content = page switch
         {
             "Home" => HomePage(), "Agents" => AgentsPage(), "Connections" => ConnectionsPage(),
-            "Inbox" => InboxPage(), "Adapters" => AdaptersPage(), "Audit" => AuditPage(), "Settings" => SettingsPage(),
+            "Settings" => SettingsPage(),
             _ => throw new InvalidOperationException(page)
         };
         Localize(PageContent.Content as DependencyObject);
     }
 
-    private StackPanel HomePage()
+    private string AgentName(string id) => service.Agents().SingleOrDefault(a=>a.AgentId==id)?.DisplayName ?? id;
+    private string HandoffPrompt(TaskView view)
     {
-        var page = Page(); var summary = service.Summary();
-        if (summary.RegisteredAgents == 0)
-        {
-            Heading(page, "Start your first handoff", "先用隔离演示查看连接与结果；正式接入从 Agents 登记和验证真实路径开始。" );
-            var actions = Row(page);
-            Add(actions, "Open Demo", async () =>
-            {
-                var demoService = await DemoWorkspace.CreateAsync(Program.NewDemoHome());
-                Appearance.Save(demoService.Home, preferences);
-                new MainWindow(demoService, demo: true).Show();
-            }, false);
-            Add(actions, "Register Agent", () => { Navigation.SelectedIndex = 1; return Task.CompletedTask; });
-        }
-        var cards = new UniformGrid { Columns = 4, Margin = new(0,0,0,18) };
-        foreach (var (label,value) in new[] { ("Registered Agents", summary.RegisteredAgents.ToString()),
-            ("Pending Tasks", summary.PendingTasks.ToString()), ("Needs Attention", summary.NeedsAttention.ToString()),
-            ("Retention", $"{summary.RetentionDays} {T("days")}") })
-        {
-            var stack = new StackPanel(); stack.Children.Add(new TextBlock { Text = label, Foreground = Brushes.SlateGray });
-            stack.Children.Add(new TextBlock { Text = value, FontSize = 28, FontWeight = FontWeights.SemiBold, Margin = new(0,8,0,0) });
-            cards.Children.Add(new Border { Child = stack, Background = Theme("SurfaceBrush"), BorderBrush = Theme("BorderBrush"), BorderThickness = new(1), CornerRadius = new(14), Padding = new(14), Margin = new(0,0,10,0) });
-        }
-        page.Children.Add(cards); Heading(page, "Needs Attention", "失败、超时、投递未知，以及需要人工继续的结果。" );
-        TaskPane(page, service.Tasks().Where(RelayService.NeedsAttention)); return page;
+        var task=view.Task;
+        var text=DesktopLocalizedContent.TaskPrompt(view,service.Artifacts(task.TaskId),preferences.Language);
+        text+="\n\nRelay home: "+service.Home+"\nRequest: "+task.RequestPath+"\nResult: "+task.ResultPath;
+        if(task.State!=TaskState.AwaitingManual)return text;
+        var executable=Path.GetFullPath(Path.Combine(AppContext.BaseDirectory,"..","relay.exe"));
+        var command=File.Exists(executable)?"& '"+executable.Replace("'","''")+"'":"relay";
+        var common=" --home '"+service.Home.Replace("'","''")+"' task ";
+        var identity=$" --task {task.TaskId} --attempt {task.AttemptId} --sender {task.RecipientId}";
+        return text+"\n\nPowerShell callback commands (use the installed Relay CLI or equivalent MCP tools):\n"+
+            command+common+"ack"+identity+" --idempotency-key received\n"+
+            command+common+"start"+identity+" --idempotency-key started\n"+
+            command+common+"complete"+identity+" --idempotency-key completed --status succeeded --result '"+task.ResultPath.Replace("'","''")+"'\n"+
+            "On failure, use task fail with --status failed --error-code and --message plus the failure report path. Report only actual outcomes. If CLI/MCP is unavailable, return your reply file to the user; they can import it in the task details. File changes alone do not mark a task completed.";
+    }
+    private TextBlock Note(string text) => new(){Text=T(text),TextWrapping=TextWrapping.Wrap,Foreground=Theme("MutedBrush"),Margin=new(0,6,0,12)};
+    private void Go(string page)
+    {
+        Navigation.SelectedItem=Navigation.Items.Cast<ListBoxItem>().Single(i=>(string)i.Tag==page);
     }
 
+    private StackPanel HomePage()
+    {
+        var page=Page();
+        page.Children.Add(Note("Relay stores collaboration messages, requests and temporary replies. Keep final deliverables and long-term references in your project folder; relay files expire under the retention policy."));
+        var summary=service.Summary();
+        var cards=Row(page);
+        Add(cards,T("Registered Agents")+": "+summary.RegisteredAgents,()=>{Go("Agents");return Task.CompletedTask;});
+        cards.Children.Add(Note(T("Pending Tasks")+": "+summary.PendingTasks+"  ·  "+T("Retention")+": "+summary.RetentionDays+" "+T("days")));
+        var actions=Row(page);
+        Add(actions,"New handoff",async()=>
+        {
+            var agents=service.Agents().Select(a=>new HandoffAgentOption(a.AgentId,a.DisplayName??a.AgentId)).ToArray();
+            if(agents.Length<2)throw new RelayException("agents_required",T("Add at least two Agents first."));
+            var dialog=new HandoffDialog(this,preferences.Language,agents,(from,to)=>service.Connections().Any(e=>e.From==from&&e.To==to&&e.Display=="Allowed") && service.CliExtension(to)?.CanCreate==true);
+            if(dialog.ShowDialog()!=true){reviewCancelled=true;return;}
+            var draft=dialog.Result!;
+            var result=await service.DispatchAsync(new(draft.From,draft.To,draft.Content,draft.Automatic?"auto":"manual",draft.Automatic?"cli:"+draft.To:"manual",Guid.NewGuid().ToString()));
+            taskId=result.Task.TaskId;
+        });
+        Add(actions,"Open relay folder",()=>{Process.Start(new ProcessStartInfo(service.Home){UseShellExecute=true});return Task.CompletedTask;},false);
+        TaskPane(page,service.Tasks());return page;
+    }
+
+    private sealed record AgentRow(AgentRecord Source,string Name,string Host,string Capability);
     private StackPanel AgentsPage()
     {
-        var page = Page(); Heading(page, "Agent Registry", "登记和路径校验只读取宿主文件；纠正路径后需重新 Validate。" );
-        var agents = service.Agents(); var table = Table("AgentsTable", ("Agent ID","AgentId"),("Host","Host"),("Validation","ValidationStatus"),("Config path","ConfigPath"));
-        table.ItemsSource = agents; page.Children.Add(table);
-        var form = new WrapPanel(); page.Children.Add(form);
-        var id = Field(form,"Agent ID","AgentId",180); var host = Field(form,"Host","AgentHost",140);
-        var config = Field(form,"Config path","AgentConfig",440); var cli = Field(form,"CLI path (optional)","AgentCli",440);
-        var version = Field(form,"Host version (optional)","AgentVersion",180);
-        var instructions = Field(form,"Instruction paths (one per line)","AgentInstructions",440); instructions.AcceptsReturn = true; instructions.Height=60;
-        var detail = Output("AgentDetail", 120); var buttons = Row(page);
-        Add(buttons,"Discover",() => { detail.Text = RelayJson.Write(service.Discover()); return Task.CompletedTask; },false);
-        Add(buttons,"Browse config",() => { var dialog = new OpenFileDialog(); if (dialog.ShowDialog(this) == true) config.Text=dialog.FileName; return Task.CompletedTask; },false);
-        Add(buttons,"Register / Correct Path",() =>
+        var page=Page();Heading(page,"Your Agents","Choose your own Agent names. Relay only needs to know who sends and who receives.");
+        var actions=Row(page);
+        var table=Table("AgentsTable",("Name","Name"),("Host","Host"),("CLI capability","Capability"));
+        async Task Edit(AgentRecord? existing)
         {
-            var prior = service.Agents().SingleOrDefault(a => a.AgentId == id.Text.Trim());
-            if (prior is not null && Review("Correct registry entry", $"仅修改 Relay 登记，不写宿主文件。\n当前：\n{RelayJson.Write(prior)}\n新配置：{config.Text}\n新 CLI：{cli.Text}\n新指令：{instructions.Text}") is null) return Task.CompletedTask;
-            service.Register(id.Text.Trim(),host.Text.Trim(),Required(config,"Config path"),Optional(cli),Optional(version),
-                instructions.Text.Split(['\r','\n'],StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));
-            agentId=id.Text.Trim(); return Task.CompletedTask;
+            var dialog=new AgentEntryDialog(this,preferences.Language,existing);
+            if(dialog.ShowDialog()!=true){reviewCancelled=true;return;}
+            var draft=dialog.Result!;
+            var id=existing?.AgentId ?? "agent-"+Guid.NewGuid().ToString("N")[..12];
+            if(string.IsNullOrWhiteSpace(draft.ConfigPath)) service.RegisterManual(id,draft.Host,draft.Name,draft.CliPath,draft.HostVersion,draft.InstructionPaths);
+            else service.Register(id,draft.Host,draft.ConfigPath,draft.CliPath,draft.HostVersion,draft.InstructionPaths,draft.Name);
+            agentId=id;await Task.CompletedTask;
+        }
+        Add(actions,"Add Agent",()=>Edit(null));
+        AgentRecord Selected()=>table.SelectedItem is AgentRow a?a.Source:throw new RelayException("selection_required",T("Select an Agent."));
+        Add(actions,"Edit Agent",()=>Edit(Selected()));
+        Add(actions,"Remove Agent",()=>
+        {
+            var agent=Selected();
+            if(MessageBox.Show(this,T("Remove this Agent from Relay? Existing task history is kept."),agent.DisplayName??agent.AgentId,MessageBoxButton.OKCancel,MessageBoxImage.Question)!=MessageBoxResult.OK){reviewCancelled=true;return Task.CompletedTask;}
+            service.RemoveAgent(agent.AgentId);agentId=null;return Task.CompletedTask;
         });
-        Add(buttons,"Validate",() => { var result=service.ValidateAgent(Required(id,"Agent ID")); agentId=result.AgentId;
-            if (result.ValidationStatus != "path_verified") throw new RelayException("agent_invalid","登记路径无效；请检查配置、CLI 与指令文件。"); return Task.CompletedTask; });
-        page.Children.Add(detail);
-        table.SelectionChanged += (_,_) => { if (table.SelectedItem is AgentRecord a) { agentId=a.AgentId; id.Text=a.AgentId; host.Text=a.Host;
-            config.Text=a.ConfigPath; cli.Text=a.CliPath ?? ""; version.Text=a.HostVersion ?? ""; instructions.Text=string.Join(Environment.NewLine,a.InstructionPaths); detail.Text=RelayJson.Write(a); } };
-        table.SelectedItem=agents.SingleOrDefault(a=>a.AgentId==agentId);
-        page.Children.Insert(2,new TextBlock{Text=T("Agent ID is a local Relay label, not an account or login."),TextWrapping=TextWrapping.Wrap,Margin=new(0,0,0,10)});
-        AddAssistant(page,"agents"); return page;
+        Add(actions,"Test CLI",()=>
+        {
+            agentId=Selected().AgentId;new CliProbeDialog(this,service,agentId,preferences.Language,demo).ShowDialog();return Task.CompletedTask;
+        });
+        var rows=service.Agents().Select(a=>new AgentRow(a,a.DisplayName??a.AgentId,a.Host,
+            T(service.CliExtension(a.AgentId) is {CanResume:true}?"New session and resume verified":service.CliExtension(a.AgentId) is {CanCreate:true}?"New session verified":"Manual handoff"))).ToArray();
+        table.ItemsSource=rows;page.Children.Add(table);
+        table.SelectionChanged+=(_,_)=>{if(table.SelectedItem is AgentRow a)agentId=a.Source.AgentId;};
+        table.SelectedItem=rows.SingleOrDefault(a=>a.Source.AgentId==agentId)??rows.FirstOrDefault();
+        page.Children.Add(Note("Add or edit an Agent to copy one setup prompt and parse its reply. CLI testing is optional; manual handoff is always available."));
+        return page;
     }
 
     private StackPanel ConnectionsPage()
     {
-        var page = Page(); Heading(page,"Directed Connections","Green: Allowed · Red: Explicit deny · Gray: Unavailable · Dashed: Default deny" );
-        var edges=service.Connections(); var table=Table("ConnectionsTable",("From","From"),("To","To"),("Permission","Permission"),("Capability","Capability"),("Status","Display"));
-        var graph=new ConnectionGraph(service.Agents(),edges,e=>table.SelectedItem=e, preferences.Language, this); page.Children.Add(graph);
-        table.ItemsSource=edges; page.Children.Add(table);
-        var form=new WrapPanel(); page.Children.Add(form); var from=Field(form,"From","ConnectionFrom",220); var to=Field(form,"To","ConnectionTo",220);
-        var detail=Output("ConnectionDetail",95); var actions=Row(page);
-        foreach(var decision in new[]{"allow","deny"}) Add(actions, decision=="allow" ? "Allow A → B" : "Deny A → B",() =>
+        var page=Page();Heading(page,"Directed connections","Green: enabled · Red: paused or not enabled · Gray dashed: no calling recipe");
+        page.Children.Add(Note("A → B means A can deliver files through Relay and notify B by CLI. The reverse direction is independent: a red or gray B → A route cannot automatically notify A. Manual copy remains available. These switches only control Relay routes."));
+        var edges=service.Connections();
+        var detail=Page();
+        void Select(ConnectionView edge)
         {
-            var sender=Required(from,"From"); var recipient=Required(to,"To");
-            var edge=service.Connections().SingleOrDefault(e=>e.From==sender && e.To==recipient);
-            if(Review("Change directed permission",$"{sender} → {recipient}\nDecision: {decision}\nCapability: {edge?.Capability ?? "Unknown"}\n{edge?.Reason}\n仅影响该方向的 Relay 路由，不改变宿主原生权限。") is not null)
-                service.SetPermission(sender,recipient,decision);
-            connectionFrom=sender; connectionTo=recipient; return Task.CompletedTask;
-        });
+            connectionFrom=edge.From;connectionTo=edge.To;detail.Children.Clear();
+            Heading(detail,AgentName(edge.From)+" → "+AgentName(edge.To),edge.Display=="Unavailable"?"No calling recipe. Copy a handoff prompt, or try an advanced CLI extension.":edge.Display=="Allowed"?"Automatic notification is enabled for this direction.":"A calling recipe is available; this direction is paused or not enabled.");
+            var actions=Row(detail);
+            if(edge.Display!="Unavailable") Add(actions,edge.Display=="Allowed"?"Pause connection":"Enable connection",()=>{service.SetPermission(edge.From,edge.To,edge.Display=="Allowed"?"deny":"allow");return Task.CompletedTask;});
+            else Add(actions,"CLI interface extensions",()=>{agentId=edge.To;Go("Settings");return Task.CompletedTask;});
+            Add(actions,"Manual handoff",()=>{Go("Home");return Task.CompletedTask;});
+        }
+        page.Children.Add(new ConnectionGraph(service.Agents(),edges,Select,preferences.Language,this,AgentName));
         page.Children.Add(detail);
-        table.SelectionChanged+=(_,_)=>{if(table.SelectedItem is ConnectionView e) {from.Text=e.From;to.Text=e.To;connectionFrom=e.From;connectionTo=e.To;detail.Text=RelayJson.Write(e);}};
-        table.SelectedItem=edges.SingleOrDefault(e=>e.From==connectionFrom && e.To==connectionTo); AddAssistant(page,"connections"); return page;
-    }
-
-    private sealed record TaskRow(string TaskId,string Route,string State,string NextAction,DateTimeOffset Deadline);
-    private sealed record NotificationRow(InboxItem Source,string Event,string Message,string IsRead,DateTimeOffset CreatedAt)
-    {
-        public string Detail => RelayJson.Write(Source);
-    }
-    private StackPanel InboxPage()
-    {
-        var page=Page(); Heading(page,"Tasks & Inbox",LedgerHelp); TaskPane(page,service.Tasks());
-        Heading(page,"Notifications","已读只改变 Inbox，不改变任务状态。" );
-        var table=Table("NotificationsTable",("Event","Event"),("Message","Message"),("Created","CreatedAt"),("Read","IsRead"));
-        table.ItemsSource=service.Inbox().Select(n=>new NotificationRow(n,DesktopLocalizedContent.NotificationEvent(n.Event,preferences.Language),
-            DesktopLocalizedContent.NotificationMessage(n,preferences.Language),T(n.IsRead ? "Read" : "Unread"),n.CreatedAt)).ToArray();
-        ((DataGridTextColumn)table.Columns[0]).ElementStyle=new Style(typeof(TextBlock),(Style)FindResource("TableTextStyle")){Setters={new Setter(ToolTipProperty,new Binding("Detail"))}};
-        table.RowStyle=new Style(typeof(DataGridRow)){Setters={new Setter(ToolTipProperty,new Binding("Detail"))}};
-        page.Children.Add(table); var actions=Row(page);
-        Add(actions,"Mark Read",()=>{if(table.SelectedItem is not NotificationRow n) throw new RelayException("selection_required","请选择通知。"); service.MarkNotificationRead(n.Source.NotificationId);return Task.CompletedTask;});
+        var selected=edges.SingleOrDefault(e=>e.From==connectionFrom&&e.To==connectionTo)??edges.FirstOrDefault();
+        if(selected is not null)Select(selected);
         return page;
     }
 
+    private sealed record TaskRow(string TaskId,string Route,string Mode,string State,DateTimeOffset Created);
     private void TaskPane(StackPanel page,IEnumerable<TaskView> views)
     {
-        var rows=views.Select(v=>new TaskRow(v.Task.TaskId,$"{v.Task.RequesterId} → {v.Task.RecipientId}",v.Task.State.ToString(),v.NextAction,v.Task.DeadlineAt)).ToList();
-        var table=Table("TasksTable",("Route","Route"),("State","State"),("Next action","NextAction"),("Deadline (UTC)","Deadline")); table.ItemsSource=rows; page.Children.Add(table);
-        var actions=Row(page); var detail=Output("TaskDetail",215);
-        string Selected()=> table.SelectedItem is TaskRow row ? row.TaskId : throw new RelayException("selection_required","请选择任务。");
-        Add(actions,"Copy Prompt",()=>{var view=service.Status(Selected());Clipboard.SetText(DesktopLocalizedContent.TaskPrompt(view,service.Artifacts(view.Task.TaskId),preferences.Language));return Task.CompletedTask;},false);
-        Add(actions,"Open Request",()=>{OpenFile(service.Status(Selected()).Task.RequestPath);return Task.CompletedTask;},false);
-        Add(actions,"Open Result",()=>{var v=service.Status(Selected()); var result=service.Artifacts(v.Task.TaskId).SingleOrDefault(a=>a.Path==v.Task.ResultPath && a.State=="available" && a.ExpiresAt>DateTimeOffset.UtcNow);
-            if(result is null) throw new RelayException("artifact_unavailable","结果尚未登记、已过期或缺失，请检查任务证据。"); OpenFile(result.Path); return Task.CompletedTask;},false);
-        Add(actions,"Recover",async()=>{var v=service.Status(Selected());if(Review("Recover task",$"{RelayJson.Write(v)}\n恢复会处理已持久化的运输和继续 outbox；可能调用已登记适配器。") is not null) await service.RecoverAsync(v.Task.TaskId);});
-        Add(actions,"Approve Dispatch",async()=>{var v=service.Status(Selected());if(Review("Approve dispatch",RelayJson.Write(v)+"\n仅批准投递；不启动新的模型执行 worker。") is not null) await service.ApproveAsync(v.Task.TaskId);});
-        Add(actions,"Retry",async()=>{var v=service.Status(Selected()); var reason=Review("Retry task",RelayJson.Write(v)+"\n将创建新尝试，可能重复副作用；不会自动启动执行 worker。"); if(reason is not null) await service.RetryAsync(v.Task.TaskId,reason,true);});
-        Add(actions,"Cancel",()=>{var v=service.Status(Selected());var reason=Review("Cancel Relay task",RelayJson.Write(v)+"\n停止 Relay 后续派发，不终止宿主中正在运行的 Agent。"); if(reason is not null)service.Cancel(v.Task.TaskId,reason);return Task.CompletedTask;});
-        page.Children.Add(detail);
-        table.SelectionChanged+=(_,_)=>{if(table.SelectedItem is TaskRow r){taskId=r.TaskId;var v=service.Status(taskId);detail.Text=$"{DesktopLocalizedContent.TaskPrompt(v,service.Artifacts(taskId),preferences.Language)}\n\n{RelayJson.Write(v)}\n\nDelivery evidence:\n{RelayJson.Write(service.DeliveryEvidence(taskId))}\n\nAudit:\n{RelayJson.Write(service.Audit(taskId))}";}};
-        table.SelectedItem=rows.SingleOrDefault(r=>r.TaskId==taskId) ?? rows.FirstOrDefault();
-    }
-
-    private StackPanel AuditPage()
-    {
-        var page=Page(); Heading(page,"Event Timeline","按账本事件顺序展示；任务正文不在审计列表中。" );
-        var form=new WrapPanel(); page.Children.Add(form); var filter=Field(form,"Task ID filter (empty = all)","AuditFilter",440); filter.Text=taskId ?? "";
-        var table=Table("AuditTable",("Time (UTC)","RecordedAt"),("Task","TaskId"),("Event","Event"),("Actor","SenderId"),("Detail","Detail")); table.Height=390;
-        table.ItemsSource=service.Audit(Optional(filter)); var actions=Row(page);
-        Add(actions,"Apply Filter",()=>{table.ItemsSource=service.Audit(Optional(filter));return Task.CompletedTask;},false);
-        var detail=Output("AuditDetail",120);table.SelectionChanged+=(_,_)=>{if(table.SelectedItem is AuditEvent e)detail.Text=RelayJson.Write(e);};
-        page.Children.Add(table);page.Children.Add(detail);AddAssistant(page,"audit");return page;
-    }
-
-    private StackPanel AdaptersPage()
-    {
-        var page=Page();Heading(page,"Adapters & Migrations","Test 只运行明确指定的 CLI；来源记录不自动授予执行权限。" );
-        var tabs=new TabControl();page.Children.Add(tabs);
-        tabs.Items.Add(new TabItem{Header="Validation",Content=ValidationPanel()});
-        tabs.Items.Add(new TabItem{Header="Migrations",Content=MigrationPanel()});
-        tabs.SelectedIndex=adapterTab;tabs.SelectionChanged+=(_,e)=>{if(e.Source==tabs)adapterTab=tabs.SelectedIndex;};return page;
-    }
-
-    private StackPanel ValidationPanel()
-    {
-        var page=Page(); var table=Table("AdaptersTable",("Adapter","AdapterId"),("Version","Version"),("Verification","VerificationStatus"),("Executable","Executable")); table.ItemsSource=service.Adapters();page.Children.Add(table);
-        var form=new WrapPanel();page.Children.Add(form);var amq=Field(form,"AMQ executable","AmqPath",500);var agent=Field(form,"Agent ID","AdapterAgent",220);var kind=Field(form,"Resumer kind","ResumerKind",220);kind.Text="codex-queue";
-        var actions=Row(page);
-        Add(actions,"Test AMQ",async()=>{var path=Required(amq,"AMQ executable");if(Review("Verify AMQ",$"将执行：{path}\n在 Relay 自身目录创建验证队列，不启动模型。") is not null)await service.VerifyAmqAsync(path);});
-        Add(actions,"Test Executor",async()=>{var id=Required(agent,"Agent ID");if(Review("Verify executor",$"Agent: {id}\n执行已登记 CLI 的版本/能力探测，不启动模型。") is not null)await service.VerifyExecutorAsync(id);});
-        Add(actions,"Test Resumer",async()=>{var id=Required(agent,"Agent ID");if(Review("Verify resumer",$"Agent: {id}\nKind: {kind.Text}\n执行已登记 CLI 的帮助/版本探测，不启动模型。") is not null)await service.VerifyResumerAsync(id,Required(kind,"Resumer kind"));});
-        var detail=Output("AdapterSources",260);detail.Text=RelayJson.Write(new{sources=service.AdapterSources(),executors=service.Executors(),resumers=service.Resumers()});page.Children.Add(detail);AddAssistant(page,"adapters");return page;
-    }
-
-    private StackPanel MigrationPanel()
-    {
-        var page=Page();var form=new WrapPanel();page.Children.Add(form);
-        var path=Field(form,"Config / manifest path","MigrationPath",500);var format=Field(form,"Format: json / toml","MigrationFormat",150);format.Text="toml";
-        var proof=Field(form,"Proof task ID","MigrationProof",440);var detail=Output("MigrationDetail",280);
-        var table=Table("MigrationsTable",("ID","MigrationId"),("State","State"),("Purpose","Request.Purpose"),("Target","Request.TargetPath")); var plans=service.Migrations();table.ItemsSource=plans;
-        var actions=Row(page);
-        Add(actions,"Browse",()=>{var d=new OpenFileDialog();if(d.ShowDialog(this)==true)path.Text=d.FileName;return Task.CompletedTask;},false);
-        Add(actions,"Inventory",()=>{detail.Text=RelayJson.Write(service.InspectConfiguration(Required(path,"Config path"),Required(format,"Format")));return Task.CompletedTask;},false);
-        Add(actions,"Plan Manifest",()=>{var request=JsonSerializer.Deserialize<MigrationRequest>(File.ReadAllText(Required(path,"Manifest path")),ManifestJson) ?? throw new JsonException("Expected migration manifest.");migrationId=service.PlanMigration(request).MigrationId;return Task.CompletedTask;});
-        string Selected()=>table.SelectedItem is MigrationPlan p ? p.MigrationId : throw new RelayException("selection_required","请选择迁移提案。");
-        string Preview(MigrationPlan p)=>File.ReadAllText(p.PreviewPath)+$"\n\nCurrent state: {p.State}\nBackup: {p.BackupPath}\n";
-        Add(actions,"Apply",()=>{var p=service.Migration(Selected());var reason=Review("Apply migration",Preview(p));if(reason is not null)service.ApplyMigration(p.MigrationId,true,reason);return Task.CompletedTask;});
-        Add(actions,"Validate Proof",()=>{service.ValidateMigration(Selected(),Required(proof,"Proof task ID"));return Task.CompletedTask;});
-        Add(actions,"Rollback",()=>{var p=service.Migration(Selected());var reason=Review("Rollback migration",Preview(p)+"\n恢复原始备份；后续变更将阻止覆盖。先回滚旧入口停用提案，再回滚新入口。");if(reason is not null)service.RollbackMigration(p.MigrationId,true,reason);return Task.CompletedTask;});
-        Add(actions,"Recover State",()=>{service.RecoverMigration(Selected());return Task.CompletedTask;});
-        page.Children.Add(table);page.Children.Add(detail);
-        table.SelectionChanged+=(_,_)=>{if(table.SelectedItem is MigrationPlan p){migrationId=p.MigrationId;proof.Text=p.ProofTaskId ?? "";detail.Text=Preview(p)+"\nAudit:\n"+RelayJson.Write(service.MigrationAudit(p.MigrationId));}};
-        table.SelectedItem=plans.SingleOrDefault(p=>p.MigrationId==migrationId);AddAssistant(page,"migrations");return page;
+        var rows=views.OrderByDescending(v=>v.Task.CreatedAt).Select(v=>new TaskRow(v.Task.TaskId,AgentName(v.Task.RequesterId)+" → "+AgentName(v.Task.RecipientId),T(v.Task.Mode=="manual"?"Manual handoff":"CLI"),v.Task.State.ToString(),v.Task.CreatedAt.ToLocalTime())).ToArray();
+        var table=Table("TasksTable",("Route","Route"),("Delivery","Mode"),("State","State"),("Created","Created"));table.Height=230;
+        var stateStyle=new Style(typeof(TextBlock),(Style)FindResource("TableTextStyle"));
+        foreach(var state in new[]{"Succeeded","Failed","TimedOut","DeliveryUnknown","Running","Acknowledged"})
+        {
+            var trigger=new DataTrigger{Binding=new Binding("State"),Value=state};
+            trigger.Setters.Add(new Setter(TextBlock.ForegroundProperty,state=="Succeeded"?Theme("AllowedBrush"):state is "Running" or "Acknowledged"?Brush("#8C691F"):Theme("DeniedBrush")));
+            stateStyle.Triggers.Add(trigger);
+        }
+        ((DataGridTextColumn)table.Columns[2]).ElementStyle=stateStyle;
+        table.ItemsSource=rows;page.Children.Add(table);
+        var pane=Page();page.Children.Add(pane);
+        table.SelectionChanged+=(_,_)=>
+        {
+            pane.Children.Clear();if(table.SelectedItem is not TaskRow row)return;
+            taskId=row.TaskId;var view=service.Status(taskId);var task=view.Task;
+            var success=task.State==TaskState.Succeeded;
+            Heading(pane,row.Route,T(task.State.ToString())+(task.ErrorMessage is null?"":" · "+task.ErrorMessage));
+            var actions=Row(pane);
+            var recipient=task.State is TaskState.AwaitingManual or TaskState.Dispatched or TaskState.Acknowledged or TaskState.Running?task.RecipientId:task.RequesterId;
+            Add(actions,string.Format(CultureInfo.CurrentUICulture,T("Copy prompt for {0}"),AgentName(recipient)),()=>{Clipboard.SetText(HandoffPrompt(view));return Task.CompletedTask;},false);
+            if(task.State==TaskState.AwaitingConfirmation)Add(actions,"Approve Dispatch",async()=>{await service.ApproveAsync(task.TaskId);});
+            Add(actions,"Open task folder",()=>{Process.Start(new ProcessStartInfo(Path.GetDirectoryName(task.RequestPath)!){UseShellExecute=true});return Task.CompletedTask;},false);
+            if(task.State is TaskState.AwaitingManual or TaskState.Dispatched or TaskState.Acknowledged or TaskState.Running)
+                Add(actions,"Import completed reply",async()=>
+                {
+                    var picker=new OpenFileDialog{Title=T("Import completed reply"),InitialDirectory=Path.GetDirectoryName(task.ResultPath),Filter="Markdown / Text|*.md;*.txt|All files|*.*"};
+                    if(picker.ShowDialog(this)!=true){reviewCancelled=true;return;}
+                    if(MessageBox.Show(this,T("Confirm that the recipient finished this handoff and this file is its reply."),T("Import completed reply"),MessageBoxButton.OKCancel)!=MessageBoxResult.OK){reviewCancelled=true;return;}
+                    var artifact=service.RegisterArtifact(task.TaskId,task.AttemptId,"result",picker.FileName);
+                    service.Complete(task.TaskId,task.AttemptId,task.RecipientId,Guid.NewGuid().ToString(),artifact.Path);
+                    await service.ProcessContinuationsAsync(task.TaskId);
+                });
+            var request=Output("TaskRequest",130);request.Text=File.Exists(task.RequestPath)?File.ReadAllText(task.RequestPath):T("File expired or missing.");
+            pane.Children.Add(new Expander{Header=T("Request"),Content=request,IsExpanded=true,Margin=new(0,8,0,8)});
+            if(success||task.State==TaskState.Failed)
+            {
+                var reply=Output("TaskResult",130);reply.Text=File.Exists(task.ResultPath)?File.ReadAllText(task.ResultPath):T("File expired or missing.");
+                pane.Children.Add(new Expander{Header=T("Reply"),Content=reply,IsExpanded=true,Margin=new(0,8,0,8)});
+            }
+            var history=Page();
+            foreach(var e in service.Audit(task.TaskId))history.Children.Add(Note(e.RecordedAt.ToLocalTime().ToString("g")+" · "+DesktopLocalizedContent.NotificationEvent(e.Event,preferences.Language)));
+            var more=Row(history);
+            if(task.State is not (TaskState.Succeeded or TaskState.Failed or TaskState.Cancelled or TaskState.TimedOut))
+                Add(more,"Cancel",()=>{if(MessageBox.Show(this,T("Cancel this handoff? This does not stop an already running Agent."),T("Cancel"),MessageBoxButton.OKCancel)==MessageBoxResult.OK)service.Cancel(task.TaskId,"Cancelled by user");else reviewCancelled=true;return Task.CompletedTask;});
+            if(task.State is TaskState.Failed or TaskState.TimedOut or TaskState.DeliveryUnknown)
+                Add(more,"Retry",async()=>{if(MessageBox.Show(this,T("Retry may repeat a delivery or model call. Continue?"),T("Retry"),MessageBoxButton.OKCancel)==MessageBoxResult.OK)await service.RetryAsync(task.TaskId,"Retry requested by user",true);else reviewCancelled=true;});
+            Add(more,"Copy diagnostics",()=>{Clipboard.SetText(RelayJson.Write(new{view,events=service.Audit(task.TaskId),delivery=service.DeliveryEvidence(task.TaskId)}));return Task.CompletedTask;},false);
+            pane.Children.Add(new Expander{Header=T("Processing history"),Content=history,Margin=new(0,8,0,8)});
+        };
+        table.SelectedItem=rows.SingleOrDefault(r=>r.TaskId==taskId)??rows.FirstOrDefault();
+        if(rows.Length==0)page.Children.Add(Note("No handoffs yet. Add two Agents, then create your first handoff."));
     }
 
     private StackPanel SettingsPage()
@@ -374,22 +360,53 @@ public partial class MainWindow : Window
         accent.TextChanged+=(_,_)=>PreviewAccent();PreviewAccent();
         language.SelectionChanged+=async(_,_)=>{if(language.SelectedValue is string selected && selected!=preferences.Language)await ChangeLanguage(selected);};
         palette.SelectionChanged+=async(_,_)=>{if(palette.SelectedValue is string selected && selected!=preferences.Palette)await ChangeAppearance(preferences with{Palette=selected});};
-        Heading(page,"Local Settings","Deadline Handling: On Next Command · 无计划任务、文件 watcher 或常驻服务。" );
+        Heading(page,"Relay storage","This folder holds temporary handoff files and the local ledger.");
+        var location=Output("RelayLocation",60);location.Text=service.Home;page.Children.Add(location);
+        var storageActions=Row(page);
+        Add(storageActions,"Change relay folder",()=>
+        {
+            var picker=new OpenFolderDialog{Title=T("Choose relay folder")};
+            if(picker.ShowDialog(this)!=true){reviewCancelled=true;return Task.CompletedTask;}
+            var next=service.Relocate(picker.FolderName);
+            service=next;HomePath.Text=service.Home;
+            if(!demo)RelayLocation.Save(service.Home);
+            return Task.CompletedTask;
+        });
+        Add(storageActions,"Check migration",()=>{service=service.VerifyRelocation();if(!demo)RelayLocation.Save(service.Home);HomePath.Text=service.Home;return Task.CompletedTask;});
         var settings=service.Settings();var form=new WrapPanel();page.Children.Add(form);
         var ttl=Field(form,"Artifact TTL (days)","TtlDays",180);ttl.Text=settings.ArtifactTtlDays.ToString(CultureInfo.InvariantCulture);
-        var timeout=Field(form,"Task timeout (minutes)","TaskTimeout",180);timeout.Text=settings.TaskTimeoutMinutes.ToString(CultureInfo.InvariantCulture);
-        var delivery=Field(form,"Delivery timeout (seconds)","DeliveryTimeout",180);delivery.Text=settings.DeliveryTimeoutSeconds.ToString(CultureInfo.InvariantCulture);
-        var retries=Field(form,"Delivery attempts (max 3)","DeliveryAttempts",180);retries.Text=settings.MaxDeliveryAttempts.ToString(CultureInfo.InvariantCulture);
+        var advanced=Page();var advancedForm=new WrapPanel();advanced.Children.Add(advancedForm);
+        var timeout=Field(advancedForm,"Task timeout (minutes)","TaskTimeout",180);timeout.Text=settings.TaskTimeoutMinutes.ToString(CultureInfo.InvariantCulture);
+        var delivery=Field(advancedForm,"Delivery timeout (seconds)","DeliveryTimeout",180);delivery.Text=settings.DeliveryTimeoutSeconds.ToString(CultureInfo.InvariantCulture);
+        var retries=Field(advancedForm,"Delivery attempts (max 3)","DeliveryAttempts",180);retries.Text=settings.MaxDeliveryAttempts.ToString(CultureInfo.InvariantCulture);
+        page.Children.Add(new Expander{Header=T("Advanced task settings"),Content=advanced});
         var actions=Row(page);Add(actions,"Save Settings",()=>{service.Configure(new(Number(ttl),Number(timeout),Number(delivery),Number(retries)));return Task.CompletedTask;});
-        var preview=Output("CleanupPreview",140);CleanupResult? proposed=null;
-        Add(actions,"Preview Cleanup",()=>{proposed=service.Cleanup(false);preview.Text=RelayJson.Write(proposed);return Task.CompletedTask;},false);
-        Add(actions,"Apply Cleanup",()=>{if(proposed is null)throw new RelayException("preview_required","请先 Preview Cleanup。");var current=service.Cleanup(false);if(!current.Paths.SequenceEqual(proposed.Paths))throw new RelayException("cleanup_changed","清理候选已变化，请重新预览。");if(Review("Delete expired managed artifacts",RelayJson.Write(current)) is not null)service.Cleanup(true);return Task.CompletedTask;});page.Children.Add(preview);
-        Heading(page,"Desktop Notifications","仅管理 Relay 通知辅助程序，不改宿主配置。" );
-        var notificationForm=new WrapPanel();page.Children.Add(notificationForm);var executable=Field(notificationForm,"Notification helper path","NotificationPath",620);executable.Text=service.DesktopExecutable() ?? "";
-        var notificationActions=Row(page);
-        Add(notificationActions,"Enable Notifications",async()=>{var path=Required(executable,"Notification helper");if(Review("Enable Relay notifications",$"将探测并登记通知程序：\n{path}\n后续完成事件可启动该程序显示 Windows 通知。") is not null)await service.ConfigureDesktopAsync(path);});
-        Add(notificationActions,"Disable Notifications",()=>{service.DisableDesktop();return Task.CompletedTask;});AddAssistant(page,"settings",page.Children.Count);return page;
+        Add(actions,"Clean expired files",()=>{var proposed=service.Cleanup(false);if(MessageBox.Show(this,string.Format(CultureInfo.CurrentUICulture,T("Delete {0} expired relay files?"),proposed.Eligible),T("Clean expired files"),MessageBoxButton.OKCancel)==MessageBoxResult.OK)service.Cleanup(true);else reviewCancelled=true;return Task.CompletedTask;});
+        Heading(page,"Desktop Notifications","Notify when Relay processes a completed handoff. Closing this app does not start a background monitor.");
+        var notify=new CheckBox{Content=T("Enable Notifications"),IsChecked=service.DesktopExecutable() is not null,Margin=new(0,4,0,16)};
+        page.Children.Add(notify);
+        notify.Click+=async(_,_)=>await Run(async()=>
+        {
+            if(notify.IsChecked==true)await service.ConfigureDesktopAsync(Path.GetFullPath(Path.Combine(AppContext.BaseDirectory,"..","desktop","AgentRelay.Notify.exe")));
+            else service.DisableDesktop();
+        },"Ready");
+        var extensions=Page();
+        extensions.Children.Add(Note("CLI extensions connect verified command-line tools or bridges. Availability depends on the target software, version, environment and session support. Not every Agent supports automatic calls or resuming a session. Test before enabling; manual handoff remains available."));
+        var choice=Choice(extensions,"Agent","ExtensionAgent",service.Agents().Select(a=>new AppearanceOption(a.AgentId,a.DisplayName??a.AgentId)).ToArray(),agentId??service.Agents().FirstOrDefault()?.AgentId??"");
+        choice.SelectionChanged+=(_,_)=>{agentId=choice.SelectedValue as string;};
+        string Selected()=>choice.SelectedValue is string id?id:throw new RelayException("selection_required",T("Select an Agent."));
+        var recipe=new TextBox{Name="CliRecipeReply",AcceptsReturn=true,Height=150,TextWrapping=TextWrapping.Wrap,VerticalScrollBarVisibility=ScrollBarVisibility.Auto};extensions.Children.Add(recipe);
+        fields.Add(recipe.Name,recipe);
+        var extensionActions=Row(extensions);
+        Add(extensionActions,"Copy extension prompt",()=>{Clipboard.SetText(service.CliRecipePrompt(Selected()));return Task.CompletedTask;},false);
+        Add(extensionActions,"Paste Agent Reply",()=>{recipe.Text=Clipboard.GetText();return Task.CompletedTask;},false);
+        Add(extensionActions,"Import calling recipe",()=>{service.ImportCliRecipe(Selected(),recipe.Text);return Task.CompletedTask;});
+        Add(extensionActions,"Test CLI",()=>{new CliProbeDialog(this,service,Selected(),preferences.Language,demo).ShowDialog();return Task.CompletedTask;});
+        extensions.Children.Add(Note("Import saves a recipe without running it. Review the executable and arguments in the test dialog before making a real call."));
+        page.Children.Add(new Expander{Header=T("Advanced: CLI interface extensions"),Content=extensions,IsExpanded=agentId is not null,Margin=new(0,16,0,8)});
+        return page;
     }
+
 
     private string? Review(string title,string preview)
     {
@@ -399,7 +416,9 @@ public partial class MainWindow : Window
     }
     private Button Add(Panel row,string label,Func<Task> action,bool refresh=true)
     {
-        var button=new Button{Content=T(label),Tag=label,Name=label.Replace(" ","").Replace("/","").Replace("→","To")};
+        var name=System.Text.RegularExpressions.Regex.Replace(label,"[^a-zA-Z0-9_]","");
+        if(name.Length==0 || !char.IsLetter(name[0]))name="Action"+Guid.NewGuid().ToString("N");
+        var button=new Button{Content=T(label),Tag=label,Name=name};
         if(label is "Save Accent" or "Save Settings" or "Register / Correct Path")button.Style=(Style)FindResource("PrimaryButtonStyle");
         AutomationProperties.SetAutomationId(button,button.Name);row.Children.Add(button);
         button.Click+=async(_,_)=>
@@ -419,12 +438,7 @@ public partial class MainWindow : Window
         var p=new StackPanel{Width=width,Margin=new(0,10,12,0)};
         var header=new DockPanel{MinHeight=36};p.Children.Add(header);
         var box=new TextBox{Name=name}; AutomationProperties.SetAutomationId(box,name); fields.Add(name,box);
-        var copy=new Button{Name=name+"CopySetupPrompt",ToolTip=T("Copy this field prompt"),Padding=new(5),Margin=new(4,0,0,0),MinHeight=22,Width=26,Height=24,
-            Content=new System.Windows.Shapes.Path{Data=Geometry.Parse("M3,5 L3,14 L11,14 M6,2 L14,2 L14,11 L6,11 Z"),Stroke=Theme("AccentBrush"),StrokeThickness=1.5,Width=16,Height=16}};
-        AutomationProperties.SetAutomationId(copy,copy.Name);AutomationProperties.SetName(copy,T("Copy this field prompt")+": "+T(label));
-        DockPanel.SetDock(copy,Dock.Right);header.Children.Add(copy);
         header.Children.Add(new TextBlock{Text=T(label),Foreground=Theme("MutedBrush"),VerticalAlignment=VerticalAlignment.Center,TextWrapping=TextWrapping.Wrap});
-        copy.Click+=async(_,_)=>await Run(()=>{Clipboard.SetText(SetupAssistant.CreatePrompt(FieldContext(name),new Dictionary<string,string>{{name,box.Text}},preferences.Language));return Task.CompletedTask;},"Copied setup prompt. Paste it into the Agent you want to register.",false);
         p.Children.Add(box);parent.Children.Add(p);return box;
     }
     private static TextBox Output(string name,double height)=>new(){Name=name,IsReadOnly=true,Height=height,AcceptsReturn=true,TextWrapping=TextWrapping.Wrap,VerticalScrollBarVisibility=ScrollBarVisibility.Auto,FontFamily=new("Consolas"),FontSize=12};
@@ -449,21 +463,6 @@ public partial class MainWindow : Window
         foreach(var child in LogicalTreeHelper.GetChildren(root).OfType<DependencyObject>())foreach(var reply in SetupReplies(child))yield return reply;
     }
     private Brush Theme(string key)=>(Brush)FindResource(key);
-    private static string FieldContext(string name)=>name switch
-    {
-        "AgentId" or "AgentHost" or "AgentConfig" or "AgentCli" or "AgentVersion" or "AgentInstructions"=>"agents",
-        "ConnectionFrom" or "ConnectionTo"=>"connections",
-        "AmqPath" or "AdapterAgent" or "ResumerKind"=>"adapters",
-        "MigrationPath" or "MigrationFormat" or "MigrationProof"=>"migrations",
-        "AuditFilter"=>"audit",
-        "CustomAccent" or "TtlDays" or "TaskTimeout" or "DeliveryTimeout" or "DeliveryAttempts" or "NotificationPath"=>"settings",
-        _=>throw new InvalidOperationException("Unknown configuration field: "+name)
-    };
-    private void AddAssistant(StackPanel page,string context,int index=0)
-    {
-        var group=fields.Where(f=>FieldContext(f.Key)==context).ToDictionary(f=>f.Key,f=>f.Value);
-        if(group.Count>0)page.Children.Insert(index,new FormAssistant(context,group,preferences.Language,(action,message)=>Run(action,message,false)));
-    }
     private ComboBox Choice(Panel parent,string label,string name,IReadOnlyList<AppearanceOption> options,string selected)
     {
         var panel=new StackPanel{Width=200,Margin=new(0,10,12,0)};parent.Children.Add(panel);

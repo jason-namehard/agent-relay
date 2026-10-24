@@ -17,7 +17,7 @@
  <Style TargetType="Button">
   <Setter Property="Padding" Value="14,5"/>
   <Setter Property="Margin" Value="0,0,8,8"/>
-  <Setter Property="Height" Value="34"/>
+  <Setter Property="MinHeight" Value="36"/>
   <Setter Property="VerticalAlignment" Value="Center"/>
   <Setter Property="Background" Value="{DynamicResource SurfaceBrush}"/>
   <Setter Property="Foreground" Value="{DynamicResource TextBrush}"/>
@@ -37,8 +37,8 @@
     <ControlTemplate.Triggers>
      <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="Frame" Property="BorderBrush" Value="{DynamicResource AccentBrush}"/></Trigger>
      <Trigger Property="IsPressed" Value="True"><Setter TargetName="Frame" Property="Opacity" Value="0.75"/></Trigger>
-     <Trigger Property="IsDefaulted" Value="True"><Setter TargetName="Frame" Property="BorderBrush" Value="{DynamicResource AccentBrush}"/><Setter TargetName="Frame" Property="BorderThickness" Value="2"/></Trigger>
-     <Trigger Property="IsKeyboardFocused" Value="True"><Setter TargetName="Frame" Property="BorderBrush" Value="{DynamicResource AccentBrush}"/><Setter TargetName="Frame" Property="BorderThickness" Value="2"/></Trigger>
+     <Trigger Property="IsDefaulted" Value="True"><Setter TargetName="Frame" Property="BorderBrush" Value="{DynamicResource AccentBrush}"/></Trigger>
+     <Trigger Property="IsKeyboardFocused" Value="True"><Setter TargetName="Frame" Property="BorderBrush" Value="{DynamicResource AccentBrush}"/></Trigger>
      <Trigger Property="IsEnabled" Value="False"><Setter TargetName="Frame" Property="Opacity" Value="0.45"/><Setter Property="Cursor" Value="Arrow"/></Trigger>
     </ControlTemplate.Triggers>
    </ControlTemplate></Setter.Value>
@@ -52,7 +52,8 @@
 
  <Style TargetType="TextBox">
   <Setter Property="Padding" Value="10,5"/><Setter Property="Margin" Value="0,3,0,10"/>
-  <Setter Property="Height" Value="34"/><Setter Property="VerticalAlignment" Value="Center"/>
+  <Setter Property="MinHeight" Value="36"/><Setter Property="VerticalAlignment" Value="Center"/>
+  <Setter Property="UseLayoutRounding" Value="True"/>
   <Setter Property="Background" Value="{DynamicResource SurfaceBrush}"/>
   <Setter Property="Foreground" Value="{DynamicResource TextBrush}"/>
   <Setter Property="CaretBrush" Value="{DynamicResource TextBrush}"/>
@@ -64,11 +65,11 @@
   <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="TextBox">
    <Border x:Name="Frame" CornerRadius="7" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}"
            BorderThickness="{TemplateBinding BorderThickness}">
-    <ScrollViewer x:Name="PART_ContentHost" Margin="{TemplateBinding Padding}"/>
+    <ScrollViewer x:Name="PART_ContentHost"/>
    </Border>
    <ControlTemplate.Triggers>
     <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="Frame" Property="BorderBrush" Value="{DynamicResource AccentBrush}"/></Trigger>
-    <Trigger Property="IsKeyboardFocusWithin" Value="True"><Setter TargetName="Frame" Property="BorderBrush" Value="{DynamicResource AccentBrush}"/><Setter TargetName="Frame" Property="BorderThickness" Value="2"/></Trigger>
+    <Trigger Property="IsKeyboardFocusWithin" Value="True"><Setter TargetName="Frame" Property="BorderBrush" Value="{DynamicResource AccentBrush}"/></Trigger>
     <Trigger Property="IsEnabled" Value="False"><Setter TargetName="Frame" Property="Opacity" Value="0.45"/></Trigger>
    </ControlTemplate.Triggers>
   </ControlTemplate></Setter.Value></Setter>
@@ -83,7 +84,7 @@
  <Style TargetType="ComboBox">
   <Style.Resources><Style TargetType="Border"><Setter Property="CornerRadius" Value="7"/></Style></Style.Resources>
   <Setter Property="Padding" Value="10,5"/><Setter Property="Margin" Value="0,3,0,10"/>
-  <Setter Property="Height" Value="34"/><Setter Property="VerticalAlignment" Value="Center"/>
+  <Setter Property="MinHeight" Value="36"/><Setter Property="VerticalAlignment" Value="Center"/>
   <Setter Property="VerticalContentAlignment" Value="Center"/>
   <Setter Property="Background" Value="{DynamicResource SurfaceBrush}"/>
   <Setter Property="Foreground" Value="{DynamicResource TextBrush}"/>

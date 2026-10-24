@@ -4,50 +4,46 @@ Windows-first local task handoffs for coding agents.
 
 [![CI](https://github.com/jason-namehard/agent-relay/actions/workflows/ci.yml/badge.svg)](https://github.com/jason-namehard/agent-relay/actions/workflows/ci.yml)
 
-**公开预览版：** [下载 v0.1.0-preview.5](https://github.com/jason-namehard/agent-relay/releases/tag/v0.1.0-preview.5) · [上手指南](docs/GETTING_STARTED.md) · [更新记录](CHANGELOG.md) · [参与贡献](CONTRIBUTING.md)
+**公开预览版：** [下载 v0.1.0-preview.6](https://github.com/jason-namehard/agent-relay/releases/tag/v0.1.0-preview.6) · [上手指南](docs/GETTING_STARTED.md) · [更新记录](CHANGELOG.md) · [参与贡献](CONTRIBUTING.md)
 
-Windows 包解压后双击 **`TryDemo.cmd`** 即可体验隔离演示，无需模型账号；结果是明确标注的本地样本。正式接入先登记路径、验证并授权，CLI/MCP 另需 .NET 10 runtime。
+Agent Relay 用于中转 Agent 之间的协作消息、请求与临时回稿，并展示交接进度。Agent 的名称、角色和任务由用户决定，Relay 只需要知道谁交给谁。最终成果及长期引用的文件应保存在项目目录；中转站临时文件会按保留策略清理。
 
-桌面支持英语、简体中文、繁体中文、日语、韩语和西班牙语，覆盖配置提示词、任务提示词、通知与配置解析错误。右上角和设置页均可即时切换语言；设置页提供四套莫兰迪配色，选择即保存，强调色可预览后单独保存。每个配置输入旁可复制提示词，让目标 Agent 以固定 JSON 回复，再粘贴解析代填；登记、验证与批准各自独立。见 [配置助手与外观](docs/CONFIGURATION_ASSISTANT.md)。
+Windows 包解压后双击 **`TryDemo.cmd`**，无需模型账号即可体验隔离演示。正式使用运行 **`gui/AgentRelay.Desktop.exe`**：在设置里选择中转站，在 Agent 管理中添加两个自定名称的节点，再从任务看板新建交接。手动复制无需填写宿主配置路径，也无需接通 CLI。
 
-Agent Relay 把任务交接变成可追踪的本机工作流：明确谁可以向谁派发，保存 Markdown 请求，等待显式完成事件，失败后可以检查证据并恢复。请求方和接收方负责推理，Relay 负责传递和记账。
+## 四个主页面
 
-```mermaid
-flowchart LR
-    A[Agent A] -->|directional permission| R[Relay CLI + SQLite]
-    R -->|AMQ or manual prompt| B[Agent B]
-    B -->|explicit complete / fail| R
-    R -->|result + continuation prompt| A
-```
+| 页面 | 用途 |
+| --- | --- |
+| 任务看板 | 新建交接，查看请求、回复及处理记录，复制当前所需提示词 |
+| Agent 管理 | 统一添加、编辑和移除节点；生成接入提示词并解析 Agent 回复；测试 CLI |
+| 连接图 | 查看每个方向的自动通知能力，启用或暂停连接 |
+| 设置 | 中转站位置、保留时间、语言、配色和通知；高级 CLI 接口扩充 |
 
-## 当前能力
+新建交接既可直接填写，也可复制提示词让任意 Agent 整理，再粘贴固定 JSON 回复一键代填。解析不会发送消息，创建前可检查发送方、接收方和内容。没有预设的前端、文档或评审角色。
 
-- 稳定 Agent ID、只读路径发现、手工纠正和路径验证。
-- A→B 有向权限；B 的完成回调不自动获得 B→A 派发权。
-- `auto`、`confirm`、`manual` 派发，持久任务、尝试、幂等和审计。
-- AMQ 公共 CLI 适配器；显式验证后自动入队，不建立常驻收件服务。
-- `codex-exec` 单次执行器：领取 AMQ 消息、启动独立只读 CLI、验证结构化声明并提交完成/失败。
-- 显式 `ack`、`start`、`complete`、`fail`；写文件不会自动完成任务。
-- 最多三次可证明未提交的运输重试；投递未知时停止自动重发。
-- 默认三天的受管 Markdown 文件 TTL、预览清理、重启恢复与持久 Inbox。
-- 精确 Codex 会话继续：`codex-queue` 保存提交回执，`codex-exec-resume` 验证原 UUID 的一次完成轮次。
-- Windows 本地通知、关闭程序后的点击激活、提示词窗口和一键复制；继续提交独立去重。
-- stdio MCP 的七个任务工具，启动时绑定 Agent 身份，与 CLI 共用方向权限和完成契约。
-- JSON/TOML 配置迁移的精确预览、来源版本登记、备份、明确批准、验证、独立停旧和回滚。
+连接图绿色箭头表示方案已启用，红色箭头表示有方案但暂停或尚未启用，灰色虚线无箭头表示缺少可用方案。A→B 表示 A 可经中转站传递文件并通过 CLI 通知 B；B→A 独立控制。自动路线不可用时仍可手动复制交接提示词。
 
-当前为 **0.1.0-preview.5**，覆盖 CLI、MCP 和 Windows GUI。原生 WPF 界面提供 Agent 登记、方向连接图、Inbox、任务证据、适配器验证、迁移审阅和设置；首次使用可直接体验隔离 Demo。核心 131 项自动回归与 Windows 125 项窗口交互验证通过；各入口共用同一个账本，无常驻服务或轮询依赖。
+桌面支持英语、简体中文、繁体中文、日语、韩语和西班牙语，提供四套莫兰迪配色与自定义强调色。配置录入集中在 Agent 添加/编辑窗口，技术字段放在高级区域。详见 [上手指南](docs/GETTING_STARTED.md) 和 [配置助手](docs/CONFIGURATION_ASSISTANT.md)。
+
+## 可选 CLI 接入
+
+在 **设置 → 高级：CLI 接口扩充** 复制提示词，交给了解目标软件调用方式的 Agent。导入返回的方案只保存配置，不执行命令。复杂桥接需要已有、可用的独立桥接程序；原生命令的输出若不符合回执协议，不能直接作为通用接入使用。
+
+在 **Agent 管理 → 测试 CLI** 检查调用方案，再发起短探针。机器回执通过后，由用户在目标软件中找到标识并确认可见；支持续接的方案还可测试同一会话。探针会真实调用目标 CLI，可能产生模型费用，包括宿主附带的上下文。测试通过仅记录本次环境与方案的结果，不保证未来会话均可见。
+
+正式桌面 CLI 交接默认创建新会话，不自动复用探针会话。提交成功不等于任务完成；Agent 仍需显式报告收到、开始、完成或失败。CLI 接口扩充并非适用于所有 Agent，手工交接始终可用。
 
 ## Windows 桌面界面
 
-Windows 分发包中运行 `gui/AgentRelay.Desktop.exe`。默认数据目录与 CLI 相同，也可显式指定：
+Windows 分发包中运行 `gui/AgentRelay.Desktop.exe`。默认数据目录为 `%LOCALAPPDATA%/AgentRelay`；设置页可迁移到空目录，也可显式指定：
 
 ```powershell
 ./gui/AgentRelay.Desktop.exe --home C:/relay-data
 ```
 
-界面启动做一次恢复；外部进程更新账本时，Home/Inbox 自动读取，编辑页面保留草稿并在独立底栏提示刷新，不覆盖刚完成操作的结果。连接图以绿色、红色、灰色区分允许、明确拒绝和不可用；4 个及以上 Agent 只绘制明确设置的权限，完整方向与默认拒绝仍可在下方表格查看。配置迁移显示精确片段，应用与回滚均需审阅、填写理由和明确批准。桌面交互见 [UI 规格](docs/UI_SPEC.md)，任务操作见 [Phase 5](docs/PHASE5.md)。
+迁移在没有活动交接和执行时进行，完成复制和校验后切换，旧目录保留。失败时解除文件占用后使用“迁移校验”继续。CLI/MCP 应使用当前中转站路径；已经复制给 Agent 的旧提示词需重新生成。
 
-![简体中文连接管理页面，使用独立测试登记数据](docs/images/preview3-connections-zh-CN.png)
+GUI 和通知程序自带运行库；CLI、MCP 需要 .NET 10 runtime。界面启动做一次恢复，外部进程更新账本后任务看板刷新，编辑页面保留草稿并提示刷新。关闭全部进程不会继续后台监控。详见 [UI 规格](docs/UI_SPEC.md)。
 
 从源码构建 Windows 组件：
 
@@ -58,7 +54,7 @@ pwsh ./scripts/check-licenses.ps1 -IncludeDesktop
 pwsh ./scripts/publish.ps1 -IncludeDesktop
 ```
 
-GUI 和通知程序自带运行库；CLI、MCP 仍需要 .NET 10 runtime。窗口交互测试只使用专用配置与模拟任务，不调用模型。
+下方命令行路线供需要 AMQ、MCP 或精确原会话续接的集成使用；桌面手工交接可直接按上手指南完成。
 
 ## 构建与验证
 
@@ -219,7 +215,7 @@ dotnet $relay --home $dataRoot cleanup --apply
 
 - 路径验证只证明文件存在、可读及登记关系，不声称宿主配置语法、认证和会话控制已通过验证。
 - 尚未注册 Windows Task Scheduler；所有进程退出后，截止时间在下次 `recover` 处理。通知被系统接受不保证横幅可见。
-- 真实会话恢复仅验证当前 Codex 版本；Claude 与其他宿主使用持久 Inbox 和复制提示词。
+- 内置精确会话恢复面向 Codex；其他宿主可使用经测试的 CLI 扩充方案或复制提示词。新扩充方案的同会话探针不自动绑定正式任务。
 - `delivery_unknown` 保留凭据供人工核对；当前不自动对账或重发。取消只停止 Relay 后续动作，不终止已经启动的宿主。
 - 清理覆盖登记产物；异常退出留下的未登记 workspace 文件按文件系统创建时间和当前 TTL 处理，不跟随目录链接。
 

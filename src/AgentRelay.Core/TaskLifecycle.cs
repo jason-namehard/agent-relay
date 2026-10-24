@@ -23,11 +23,12 @@ public sealed partial class RelayService
                 return previous.Task;
             }
             var requester = Agent(s, request.From);
-            RequirePaths(requester); RequirePaths(Agent(s, request.To));
+            if (request.AdapterId.StartsWith("cli:", StringComparison.Ordinal) && request.AdapterId != "cli:" + request.To)
+                throw new RelayException("cli_recipient_mismatch", "CLI 调用方案必须属于接收 Agent。");
+            RequireDispatchAccess(s, request.From, request.To, request.Mode, request.AdapterId);
             var resumer = s.Json<ResumerRecord>("SELECT json FROM resumers WHERE agent_id=$id", ("$id", request.From));
             if (request.OriginSession is { } target && resumer is not null)
                 CodexSessionResumer.RequireBinding(requester, resumer, target);
-            RequirePermission(s, request.From, request.To);
             var now = Now;
             var deadline = request.DeadlineAt ?? now.AddMinutes(settings.TaskTimeoutMinutes);
             if (deadline <= now) throw new RelayException("invalid_deadline", "截止时间必须在未来。");
@@ -62,8 +63,7 @@ public sealed partial class RelayService
             var task = s.Task(taskId);
             if (task.State != TaskState.AwaitingConfirmation) throw new RelayException("state_conflict", "任务未处于待批准状态。", 5);
             RequireLive(task);
-            RequirePermission(s, task.RequesterId, task.RecipientId);
-            RequirePaths(Agent(s, task.RequesterId)); RequirePaths(Agent(s, task.RecipientId));
+            RequireDispatchAccess(s, task.RequesterId, task.RecipientId, task.Mode, task.AdapterId);
             task.State = Available(s, task.AdapterId) ? TaskState.Created : TaskState.AwaitingManual;
             Queue(s, task); s.Save(task); s.Event(task, "task.approved", "operator", Now);
             return task;
@@ -199,8 +199,7 @@ public sealed partial class RelayService
             var task = s.Task(taskId);
             if (task.State is not (TaskState.Failed or TaskState.TimedOut or TaskState.DeliveryUnknown))
                 throw new RelayException("state_conflict", "只有失败、超时或投递未知的任务可重新执行。", 5);
-            RequirePaths(Agent(s, task.RequesterId)); RequirePaths(Agent(s, task.RecipientId));
-            RequirePermission(s, task.RequesterId, task.RecipientId);
+            RequireDispatchAccess(s, task.RequesterId, task.RecipientId, task.Mode, task.AdapterId);
             var input = s.Query("SELECT input_json FROM tasks WHERE id=$id", r => RelayJson.Read<DispatchRequest>(r.GetString(0)), ("$id", taskId)).Single();
             task.AttemptId = Guid.NewGuid().ToString(); task.ExecutionAttempt++;
             task.DeadlineAt = Now.AddMinutes(settings.TaskTimeoutMinutes);
@@ -278,8 +277,22 @@ public sealed partial class RelayService
     private bool Available(StoreSession s, string id)
     {
         if (adapters.ContainsKey(id)) return true;
+        if (id.StartsWith("cli:", StringComparison.Ordinal)) return ReadCliExtension(s, id[4..]) is { CanCreate: true };
         var adapter = s.Json<AdapterRecord>("SELECT json FROM adapters WHERE id=$id", ("$id", id));
         return adapter is { VerificationStatus: "passed" } && File.Exists(adapter.Executable);
+    }
+
+    private static void RequireDispatchAccess(StoreSession s, string from, string to, string mode, string adapter)
+    {
+        var sender = Agent(s, from);
+        var recipient = Agent(s, to);
+        if (mode == "manual") return;
+        RequirePermission(s, from, to);
+        if (!adapter.StartsWith("cli:", StringComparison.Ordinal))
+        {
+            RequirePaths(sender);
+            RequirePaths(recipient);
+        }
     }
 
     private static void Queue(StoreSession s, TaskRecord task)
