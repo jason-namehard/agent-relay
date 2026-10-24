@@ -22,7 +22,7 @@ internal static class Program
         var root=Path.GetFullPath(args[0]);if(Directory.Exists(root))throw new IOException("Fixture directory must be new.");
         Directory.CreateDirectory(root);var service=new RelayService(Path.Combine(root,"data"));service.Initialize();
         var config=Path.Combine(root,"config.toml");File.WriteAllText(config,"name = 'smoke fixture'\n");
-        foreach(var id in new[]{"agent-a","agent-b","agent-c"})service.Register(id,"fixture",config);
+        foreach(var (id,name) in new[]{("agent-a","自选节点甲"),("agent-b","自选节点乙"),("agent-c","自选节点丙")})service.Register(id,"fixture",config,displayName:name);
         service.ValidateAgent("agent-a");service.ValidateAgent("agent-b");
         service.SetPermission("agent-a","agent-b","allow");service.SetPermission("agent-b","agent-a","deny");service.SetPermission("agent-a","agent-c","allow");
         var task=service.DispatchAsync(new("agent-a","agent-b","## Review\nInspect the fixture.","manual","manual","smoke")).GetAwaiter().GetResult().Task;
@@ -53,8 +53,12 @@ internal static class Program
         Check(navigation.Items.Cast<ListBoxItem>().Select(i=>(string)i.Tag).SequenceEqual(new[]{"Home","Agents","Connections","Settings"}),"Exactly four main pages");
         Check(Find<DataGrid>(window,"TasksTable").Items.Count==2,"Board combines all handoffs");
         SelectTask(window,task.TaskId);
-        await Click(window,"Copy prompt for agent-a");
+        await Click(window,"Copy prompt for 自选节点甲");
         Check(Clipboard.GetText().Contains(task.TaskId)&&Clipboard.GetText().Contains(service.Status(task.TaskId).Task.ResultPath)&&Clipboard.GetText().Contains(service.Home),"Copied completed handoff includes identity, reply path and relay location");
+        Check(Clipboard.GetText().Contains("自选节点甲")&&Clipboard.GetText().Contains("自选节点乙"),"Completed handoff prompt identifies both user-selected Agent names");
+        SelectTask(window,waiting.TaskId);
+        await Click(window,"Copy prompt for 自选节点乙");
+        Check(Clipboard.GetText().Contains("自选节点甲")&&Clipboard.GetText().Contains("自选节点乙")&&Clipboard.GetText().Contains("--sender agent-b"),"Receiver prompt uses friendly names while callback arguments retain exact node IDs");
         await SaveImage(window,Path.Combine(root,"Board.png"));
 
         ((ComboBox)window.FindName("QuickLanguage")).SelectedValue="zh-CN";await Task.Delay(30);
@@ -63,6 +67,7 @@ internal static class Program
         var count=service.Agents().Count;
         await Modal<AgentEntryDialog>(window,"Add Agent",async dialog=>
         {
+            Check(((TextBlock)window.FindName("StatusText")).Text!=UiText.Translate("Working…","zh-CN"),"Agent form reports a waiting state instead of processing during modal input");
             Expand(dialog);
             Find<TextBox>(dialog,"AgentEntryReply").Text=Reply("agents",new(){["AgentName"]="自由命名甲",["AgentHost"]="manual"});
             Press(dialog,"AgentEntryParseReply");
@@ -89,6 +94,7 @@ internal static class Program
         var taskCount=service.Tasks().Count;
         await Modal<HandoffDialog>(window,"New handoff",async dialog=>
         {
+            Check(((TextBlock)window.FindName("StatusText")).Text!=UiText.Translate("Working…","en"),"Handoff form reports a waiting state instead of processing during modal input");
             Expand(dialog);
             Find<ComboBox>(dialog,"HandoffFrom").SelectedValue=manual.AgentId;
             Press(dialog,"HandoffCopyPrompt");
@@ -107,26 +113,28 @@ internal static class Program
         Check(service.Tasks().Count==taskCount+1,"Explicit create adds one manual handoff");
         var created=service.Tasks().Single(v=>v.Task.RequesterId==manual.AgentId).Task;
         Check(created.Mode=="manual"&&File.Exists(created.RequestPath),"Manual Agent can send a stored handoff");
-        await Click(window,"Copy prompt for agent-c");
+        await Click(window,"Copy prompt for 自选节点丙");
         Check(Clipboard.GetText().Contains(created.RequestPath)&&Clipboard.GetText().Contains(service.Home),"Manual prompt carries request path and relay location");
 
         Navigate("Connections");
-        Check(FindAll<System.Windows.Shapes.Path>(window).Count(p=>AutomationProperties.GetAutomationId(p).StartsWith("ConnectionStroke:"))==12,"Every direction remains visible with four nodes");
+        Check(FindAll<System.Windows.Shapes.Path>(window).Count(p=>AutomationProperties.GetAutomationId(p).StartsWith("ConnectionPair:"))==6,"Four nodes use six shared connection lines instead of twelve directed lines");
+        Check(new[]{"ConnectionLegendSingle","ConnectionLegendDouble","ConnectionLegendNone"}.All(id=>FindAll<FrameworkElement>(window).Any(e=>AutomationProperties.GetAutomationId(e)==id)),"Connection legend contains visible single-arrow, double-arrow and unavailable-line examples");
         Check(FindAll<System.Windows.Shapes.Path>(window).Where(p=>AutomationProperties.GetAutomationId(p).StartsWith("ConnectionStroke:")).All(p=>p.StrokeDashArray.Count>0),"Unconfigured routes use dashed gray lines");
-        Check(!FindAll<System.Windows.Shapes.Polygon>(window).Any(),"Unavailable routes have no arrowheads");
+        Check(!FindAll<System.Windows.Shapes.Polygon>(window).Any(p=>AutomationProperties.GetAutomationId(p).StartsWith("ConnectionArrow:")),"Unavailable routes have no arrowheads");
         SeedExtension(service,"agent-a",true);SeedExtension(service,"agent-b",true);
         Navigate("Home");Navigate("Connections");
-        var forward=ByAutomation<System.Windows.Shapes.Path>(window,"ConnectionEdge:agent-a:agent-b");
+        var forward=ByAutomation<System.Windows.Shapes.Path>(window,"ConnectionPair:agent-a:agent-b");
         forward.RaiseEvent(new MouseButtonEventArgs(Mouse.PrimaryDevice,0,MouseButton.Left){RoutedEvent=UIElement.MouseLeftButtonDownEvent});
-        await Click(window,"Pause connection");
+        Press(window,"PauseConnection_agent_a_agent_b");await Task.Delay(30);
         Check(service.Connections().Single(e=>e.From=="agent-a"&&e.To=="agent-b").Display=="Denied","Green arrow can pause its own direction");
         Check(service.Connections().Single(e=>e.From=="agent-b"&&e.To=="agent-a").Display=="Denied","Changing forward route leaves reverse route independent");
-        await Click(window,"Enable connection");
+        Press(window,"EnableConnection_agent_a_agent_b");await Task.Delay(30);
         Check(service.Connections().Single(e=>e.From=="agent-a"&&e.To=="agent-b").Display=="Allowed","Red arrow can enable its own direction");
         Check(ByAutomation<System.Windows.Shapes.Path>(window,"ConnectionStroke:agent-a:agent-b").StrokeDashArray.Count==0,"Available enabled route is a solid stroke");
         Check(ByAutomation<System.Windows.Shapes.Polygon>(window,"ConnectionArrow:agent-a:agent-b").Points.Count==3,"Available route has a geometric arrowhead");
-        Check(FindAll<Border>(window).Where(b=>AutomationProperties.GetAutomationId(b).StartsWith("ConnectionLabel:")).All(b=>b.Child is TextBlock text&&!text.Text.Contains('→')),"Connection labels contain state text without duplicate textual arrows");
+        Check(!FindAll<Border>(window).Any(b=>AutomationProperties.GetAutomationId(b).StartsWith("ConnectionLabel:")),"Shared connection lines do not repeat overlapping state labels");
         await SaveImage(window,Path.Combine(root,"Connections.png"));
+        await CheckGraphPairs(window,root);
 
         var probe=new CliProbeDialog(window,service,"agent-c","en");
         await Show(probe,dialog=>
@@ -196,6 +204,40 @@ internal static class Program
     }
 
     private static string Reply(string context,Dictionary<string,string> fields)=>RelayJson.Write(new{relay_setup_version=1,context,fields});
+    private static async Task CheckGraphPairs(Window owner,string root)
+    {
+        foreach(var count in new[]{2,3,4,6,8})
+        {
+            var agents=Enumerable.Range(0,count).Select(i=>new AgentRecord("node-"+i,"manual","",null,null,[],"manual_ready",null,"节点 "+(i+1))).ToArray();
+            var edges=(from a in agents from b in agents where a.AgentId!=b.AgentId
+                select new ConnectionView(a.AgentId,b.AgentId,"default_deny","manual","Unavailable","")).ToArray();
+            var graph=new ConnectionGraph(agents,edges,_=>{},"zh-CN",owner,id=>agents.Single(a=>a.AgentId==id).DisplayName!);
+            var fixture=new Window{Owner=owner,Width=1000,Height=740,Resources=owner.Resources,Background=owner.Background,Content=graph,WindowStartupLocation=WindowStartupLocation.CenterOwner};
+            fixture.Show();fixture.UpdateLayout();
+            Check(FindAll<System.Windows.Shapes.Path>(graph).Count(p=>AutomationProperties.GetAutomationId(p).StartsWith("ConnectionPair:"))==count*(count-1)/2,$"{count} nodes draw exactly one selectable line per pair");
+            Check(!FindAll<System.Windows.Shapes.Polygon>(graph).Any(p=>AutomationProperties.GetAutomationId(p).StartsWith("ConnectionArrow:")),$"{count}-node unavailable graph has no route arrowheads");
+            Check(!FindAll<Border>(graph).Any(b=>AutomationProperties.GetAutomationId(b).StartsWith("ConnectionLabel:")),$"{count}-node graph avoids repeated labels on lines");
+            if(count is 4 or 8)await SaveImage(fixture,Path.Combine(root,$"Connections-{count}-nodes.png"));
+            fixture.Close();
+        }
+        var pairAgents=new[]{new AgentRecord("left","manual","",null,null,[],"manual_ready",null,"左节点"),new AgentRecord("right","manual","",null,null,[],"manual_ready",null,"右节点")};
+        foreach(var (forward,reverse,arrows) in new[]{("Unavailable","Unavailable",0),("Allowed","Unavailable",1),("Allowed","Allowed",2),("Allowed","Denied",2)})
+        {
+            var edges=new[]{new ConnectionView("left","right","allow","CLI",forward,""),new ConnectionView("right","left","deny","CLI",reverse,"")};
+            ConnectionView? selected=null;
+            var graph=new ConnectionGraph(pairAgents,edges,edge=>selected=edge,"en",owner);
+            Check(FindAll<System.Windows.Shapes.Polygon>(graph).Count(p=>AutomationProperties.GetAutomationId(p).StartsWith("ConnectionArrow:"))==arrows,$"{forward}/{reverse} pair uses {arrows} route arrowheads");
+            var hit=ByAutomation<System.Windows.Shapes.Path>(graph,"ConnectionPair:left:right");
+            hit.RaiseEvent(new MouseButtonEventArgs(Mouse.PrimaryDevice,0,MouseButton.Left){RoutedEvent=UIElement.MouseLeftButtonDownEvent});
+            Check(selected?.From=="left"&&selected.To=="right","Clicking a shared pair selects its canonical direction for the two-direction detail pane");
+            if(reverse=="Denied")
+            {
+                var outgoing=ByAutomation<System.Windows.Shapes.Polygon>(graph,"ConnectionArrow:left:right");
+                var incoming=ByAutomation<System.Windows.Shapes.Polygon>(graph,"ConnectionArrow:right:left");
+                Check(outgoing.Fill==owner.FindResource("AllowedBrush")&&incoming.Fill==owner.FindResource("DeniedBrush"),"Mixed pair preserves independent green and red arrowheads");
+            }
+        }
+    }
     private static void SeedExtension(RelayService service,string id,bool confirmed)
     {
         var command=new CliCommand(Path.Combine(service.Home,"never-executed-fixture.exe"),["{prompt}"],null,null);

@@ -4,7 +4,7 @@ Windows-first local task handoffs for coding agents.
 
 [![CI](https://github.com/jason-namehard/agent-relay/actions/workflows/ci.yml/badge.svg)](https://github.com/jason-namehard/agent-relay/actions/workflows/ci.yml)
 
-**公开预览版：** [下载 v0.1.0-preview.6](https://github.com/jason-namehard/agent-relay/releases/tag/v0.1.0-preview.6) · [上手指南](docs/GETTING_STARTED.md) · [更新记录](CHANGELOG.md) · [参与贡献](CONTRIBUTING.md)
+**公开预览版：** [下载 v0.1.0-preview.7](https://github.com/jason-namehard/agent-relay/releases/tag/v0.1.0-preview.7) · [上手指南](docs/GETTING_STARTED.md) · [更新记录](CHANGELOG.md) · [参与贡献](CONTRIBUTING.md)
 
 Agent Relay 用于中转 Agent 之间的协作消息、请求与临时回稿，并展示交接进度。Agent 的名称、角色和任务由用户决定，Relay 只需要知道谁交给谁。最终成果及长期引用的文件应保存在项目目录；中转站临时文件会按保留策略清理。
 
@@ -21,7 +21,7 @@ Windows 包解压后双击 **`TryDemo.cmd`**，无需模型账号即可体验隔
 
 新建交接既可直接填写，也可复制提示词让任意 Agent 整理，再粘贴固定 JSON 回复一键代填。解析不会发送消息，创建前可检查发送方、接收方和内容。没有预设的前端、文档或评审角色。
 
-连接图绿色箭头表示方案已启用，红色箭头表示有方案但暂停或尚未启用，灰色虚线无箭头表示缺少可用方案。A→B 表示 A 可经中转站传递文件并通过 CLI 通知 B；B→A 独立控制。自动路线不可用时仍可手动复制交接提示词。
+连接图每对 Agent 共用一条线：单箭头表示单向有调用方案，双箭头表示双向有方案，双方均无方案时显示灰色虚线。箭头及相邻线段的绿色表示已启用，红色表示暂停或尚未启用；点击连线即可分别管理两个方向。自动路线不可用时仍可手动复制交接提示词。
 
 桌面支持英语、简体中文、繁体中文、日语、韩语和西班牙语，提供四套莫兰迪配色与自定义强调色。配置录入集中在 Agent 添加/编辑窗口，技术字段放在高级区域。详见 [上手指南](docs/GETTING_STARTED.md) 和 [配置助手](docs/CONFIGURATION_ASSISTANT.md)。
 

@@ -15,10 +15,13 @@ public sealed class CliProbeDialog : Window
     private readonly bool demo;
     private readonly EntryDialogLayout layout;
     private bool running;
+    private readonly Action<string>? reportActivity;
 
-    public CliProbeDialog(Window owner, RelayService service, string agentId, string language, bool demo=false)
+    public CliProbeDialog(Window owner, RelayService service, string agentId, string language, bool demo=false,
+        Action<string>? reportActivity=null)
     {
         this.service=service;this.agentId=agentId;this.language=language;this.demo=demo;
+        this.reportActivity=reportActivity;
         layout=new EntryDialogLayout(this,owner,T("Test CLI"),language);
         Closing+=(_,e)=>{if(running)e.Cancel=true;};
         Render();
@@ -32,11 +35,13 @@ public sealed class CliProbeDialog : Window
         System.Windows.Automation.AutomationProperties.SetAutomationId(button,name);
         button.Click+=async(_,_)=>
         {
-            running=true;layout.Body.IsEnabled=false;layout.Actions.IsEnabled=false;layout.Status.Text=T("Working…");
+            var activity=name is "ProbeCreate" or "ProbeResume"?"Running CLI probe…":"Saving visibility confirmation…";
+            running=true;layout.Body.IsEnabled=false;layout.Actions.IsEnabled=false;layout.Status.Text=T(activity);
+            reportActivity?.Invoke(activity);
             try{await action();Render();}
             catch(Exception error) when(error is RelayException or IOException or UnauthorizedAccessException or Win32Exception or ExternalException)
             {layout.Status.Text=T(error.Message);}
-            finally{running=false;layout.Body.IsEnabled=true;layout.Actions.IsEnabled=true;}
+            finally{running=false;layout.Body.IsEnabled=true;layout.Actions.IsEnabled=true;reportActivity?.Invoke("CLI test window open…");}
         };
         parent.Children.Add(button);return button;
     }

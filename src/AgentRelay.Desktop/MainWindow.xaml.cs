@@ -165,7 +165,9 @@ public partial class MainWindow : Window
     private string HandoffPrompt(TaskView view)
     {
         var task=view.Task;
-        var text=DesktopLocalizedContent.TaskPrompt(view,service.Artifacts(task.TaskId),preferences.Language);
+        var text=DesktopLocalizedContent.TaskPrompt(view,service.Artifacts(task.TaskId),preferences.Language,AgentName);
+        text+="\n"+T("Sender")+": "+AgentName(task.RequesterId)+" ("+task.RequesterId+")"+
+            "\n"+T("Recipient")+": "+AgentName(task.RecipientId)+" ("+task.RecipientId+")";
         text+="\n\nRelay home: "+service.Home+"\nRequest: "+task.RequestPath+"\nResult: "+task.ResultPath;
         if(task.State!=TaskState.AwaitingManual)return text;
         var executable=Path.GetFullPath(Path.Combine(AppContext.BaseDirectory,"..","relay.exe"));
@@ -198,6 +200,7 @@ public partial class MainWindow : Window
             var agents=service.Agents().Select(a=>new HandoffAgentOption(a.AgentId,a.DisplayName??a.AgentId)).ToArray();
             if(agents.Length<2)throw new RelayException("agents_required",T("Add at least two Agents first."));
             var dialog=new HandoffDialog(this,preferences.Language,agents,(from,to)=>service.Connections().Any(e=>e.From==from&&e.To==to&&e.Display=="Allowed") && service.CliExtension(to)?.CanCreate==true);
+            StatusText.Text=T("Waiting for handoff details…");
             if(dialog.ShowDialog()!=true){reviewCancelled=true;return;}
             var draft=dialog.Result!;
             var result=await service.DispatchAsync(new(draft.From,draft.To,draft.Content,draft.Automatic?"auto":"manual",draft.Automatic?"cli:"+draft.To:"manual",Guid.NewGuid().ToString()));
@@ -216,6 +219,7 @@ public partial class MainWindow : Window
         async Task Edit(AgentRecord? existing)
         {
             var dialog=new AgentEntryDialog(this,preferences.Language,existing);
+            StatusText.Text=T("Waiting for Agent details…");
             if(dialog.ShowDialog()!=true){reviewCancelled=true;return;}
             var draft=dialog.Result!;
             var id=existing?.AgentId ?? "agent-"+Guid.NewGuid().ToString("N")[..12];
@@ -234,9 +238,9 @@ public partial class MainWindow : Window
         });
         Add(actions,"Test CLI",()=>
         {
-            agentId=Selected().AgentId;new CliProbeDialog(this,service,agentId,preferences.Language,demo).ShowDialog();return Task.CompletedTask;
+            agentId=Selected().AgentId;ShowCliProbe(agentId);return Task.CompletedTask;
         });
-        var rows=service.Agents().Select(a=>new AgentRow(a,a.DisplayName??a.AgentId,a.Host,
+        var rows=service.Agents().Select(a=>new AgentRow(a,a.DisplayName??a.AgentId,a.Host=="manual"?T("Manual node"):a.Host,
             T(service.CliExtension(a.AgentId) is {CanResume:true}?"New session and resume verified":service.CliExtension(a.AgentId) is {CanCreate:true}?"New session verified":"Manual handoff"))).ToArray();
         table.ItemsSource=rows;page.Children.Add(table);
         table.SelectionChanged+=(_,_)=>{if(table.SelectedItem is AgentRow a)agentId=a.Source.AgentId;};
@@ -247,18 +251,24 @@ public partial class MainWindow : Window
 
     private StackPanel ConnectionsPage()
     {
-        var page=Page();Heading(page,"Directed connections","Green: enabled · Red: paused or not enabled · Gray dashed: no calling recipe");
-        page.Children.Add(Note("A → B means A can deliver files through Relay and notify B by CLI. The reverse direction is independent: a red or gray B → A route cannot automatically notify A. Manual copy remains available. These switches only control Relay routes."));
+        var page=Page();Heading(page,"Directed connections","One line per pair. Arrowheads show the available calling directions; each direction can be enabled or paused separately.");
+        page.Children.Add(Note("A → B means A can deliver files through Relay and notify B by CLI. A double arrow means both calling directions have a recipe. Green ends are enabled; red ends are paused or not enabled. A direction without an arrow has no recipe. Manual copy remains available; switches only control Relay routes."));
         var edges=service.Connections();
         var detail=Page();
         void Select(ConnectionView edge)
         {
             connectionFrom=edge.From;connectionTo=edge.To;detail.Children.Clear();
-            Heading(detail,AgentName(edge.From)+" → "+AgentName(edge.To),edge.Display=="Unavailable"?"No calling recipe. Copy a handoff prompt, or try an advanced CLI extension.":edge.Display=="Allowed"?"Automatic notification is enabled for this direction.":"A calling recipe is available; this direction is paused or not enabled.");
-            var actions=Row(detail);
-            if(edge.Display!="Unavailable") Add(actions,edge.Display=="Allowed"?"Pause connection":"Enable connection",()=>{service.SetPermission(edge.From,edge.To,edge.Display=="Allowed"?"deny":"allow");return Task.CompletedTask;});
-            else Add(actions,"CLI interface extensions",()=>{agentId=edge.To;Go("Settings");return Task.CompletedTask;});
-            Add(actions,"Manual handoff",()=>{Go("Home");return Task.CompletedTask;});
+            foreach(var direction in new[]{edge,edges.Single(e=>e.From==edge.To&&e.To==edge.From)})
+            {
+                Heading(detail,AgentName(direction.From)+" → "+AgentName(direction.To),direction.Display=="Unavailable"?"No calling recipe. Copy a handoff prompt, or try an advanced CLI extension.":direction.Display=="Allowed"?"Automatic notification is enabled for this direction.":"A calling recipe is available; this direction is paused or not enabled.");
+                var actions=Row(detail);
+                Button button;
+                if(direction.Display!="Unavailable") button=Add(actions,direction.Display=="Allowed"?"Pause connection":"Enable connection",()=>{service.SetPermission(direction.From,direction.To,direction.Display=="Allowed"?"deny":"allow");return Task.CompletedTask;});
+                else button=Add(actions,"CLI interface extensions",()=>{agentId=direction.To;Go("Settings");return Task.CompletedTask;});
+                button.Name=(direction.Display=="Unavailable"?"ExtendConnection":direction.Display=="Allowed"?"PauseConnection":"EnableConnection")+"_"+direction.From.Replace('-','_')+"_"+direction.To.Replace('-','_');
+                AutomationProperties.SetAutomationId(button,button.Name);
+            }
+            Add(Row(detail),"Manual handoff",()=>{Go("Home");return Task.CompletedTask;});
         }
         page.Children.Add(new ConnectionGraph(service.Agents(),edges,Select,preferences.Language,this,AgentName));
         page.Children.Add(detail);
@@ -297,8 +307,11 @@ public partial class MainWindow : Window
                 Add(actions,"Import completed reply",async()=>
                 {
                     var picker=new OpenFileDialog{Title=T("Import completed reply"),InitialDirectory=Path.GetDirectoryName(task.ResultPath),Filter="Markdown / Text|*.md;*.txt|All files|*.*"};
+                    StatusText.Text=T("Waiting for reply file selection…");
                     if(picker.ShowDialog(this)!=true){reviewCancelled=true;return;}
+                    StatusText.Text=T("Waiting for confirmation…");
                     if(MessageBox.Show(this,T("Confirm that the recipient finished this handoff and this file is its reply."),T("Import completed reply"),MessageBoxButton.OKCancel)!=MessageBoxResult.OK){reviewCancelled=true;return;}
+                    StatusText.Text=T("Importing reply…");
                     var artifact=service.RegisterArtifact(task.TaskId,task.AttemptId,"result",picker.FileName);
                     service.Complete(task.TaskId,task.AttemptId,task.RecipientId,Guid.NewGuid().ToString(),artifact.Path);
                     await service.ProcessContinuationsAsync(task.TaskId);
@@ -401,12 +414,18 @@ public partial class MainWindow : Window
         Add(extensionActions,"Copy extension prompt",()=>{Clipboard.SetText(service.CliRecipePrompt(Selected()));return Task.CompletedTask;},false);
         Add(extensionActions,"Paste Agent Reply",()=>{recipe.Text=Clipboard.GetText();return Task.CompletedTask;},false);
         Add(extensionActions,"Import calling recipe",()=>{service.ImportCliRecipe(Selected(),recipe.Text);return Task.CompletedTask;});
-        Add(extensionActions,"Test CLI",()=>{new CliProbeDialog(this,service,Selected(),preferences.Language,demo).ShowDialog();return Task.CompletedTask;});
+        Add(extensionActions,"Test CLI",()=>{ShowCliProbe(Selected());return Task.CompletedTask;});
         extensions.Children.Add(Note("Import saves a recipe without running it. Review the executable and arguments in the test dialog before making a real call."));
         page.Children.Add(new Expander{Header=T("Advanced: CLI interface extensions"),Content=extensions,IsExpanded=agentId is not null,Margin=new(0,16,0,8)});
         return page;
     }
 
+
+    private void ShowCliProbe(string id)
+    {
+        StatusText.Text=T("CLI test window open…");
+        new CliProbeDialog(this,service,id,preferences.Language,demo,message=>StatusText.Text=T(message)).ShowDialog();
+    }
 
     private string? Review(string title,string preview)
     {

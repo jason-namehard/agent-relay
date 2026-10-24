@@ -212,8 +212,10 @@ public sealed class CliRecipeDeliveryAdapter(CliExtensionRecord extension) : IDe
     {
         if (!extension.CanCreate || task.RecipientId != extension.AgentId)
             return new("rejected", null, "接收 Agent 的 CLI 新会话能力未验证。");
+        var agents = new RelayService(home).Agents();
+        string Name(string id) => agents.SingleOrDefault(a => a.AgentId == id)?.DisplayName ?? id;
         var prompt = $"""
-            Agent Relay handoff from {task.RequesterId} to {task.RecipientId}.
+            Agent Relay handoff from {Name(task.RequesterId)} ({task.RequesterId}) to {Name(task.RecipientId)} ({task.RecipientId}).
             Relay home: {home}
             Task ID: {task.TaskId}
             Attempt ID: {task.AttemptId}

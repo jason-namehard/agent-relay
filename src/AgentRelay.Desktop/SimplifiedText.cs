@@ -5,6 +5,18 @@ internal static class SimplifiedText
     public static void AddTo(Dictionary<string, string[]> entries)
     {
         void Add(string en, string cn, string tw, string ja, string ko, string es) => entries[en] = [en, cn, tw, ja, ko, es];
+        Add("Request", "请求内容", "請求內容", "依頼内容", "요청 내용", "Solicitud");
+        Add("Manual node", "手动节点", "手動節點", "手動ノード", "수동 노드", "Nodo manual");
+        Add("Waiting for handoff details…", "等待填写交接内容…", "等待填寫交接內容…", "引き継ぎ内容の入力待ち…", "전달 내용 입력 대기 중…", "Esperando los datos del envío…");
+        Add("Waiting for Agent details…", "等待填写 Agent 信息…", "等待填寫 Agent 資訊…", "Agent 情報の入力待ち…", "Agent 정보 입력 대기 중…", "Esperando los datos del agente…");
+        Add("Waiting for reply file selection…", "等待选择回稿文件…", "等待選擇回稿檔案…", "返信ファイルの選択待ち…", "응답 파일 선택 대기 중…", "Esperando la selección de la respuesta…");
+        Add("Waiting for confirmation…", "等待确认…", "等待確認…", "確認待ち…", "확인 대기 중…", "Esperando confirmación…");
+        Add("Importing reply…", "正在导入回稿…", "正在匯入回稿…", "返信を取り込み中…", "응답 가져오는 중…", "Importando respuesta…");
+        Add("CLI test window open…", "请在 CLI 测试窗口继续操作…", "請在 CLI 測試視窗繼續操作…", "CLI テスト画面で操作してください…", "CLI 테스트 창에서 계속하세요…", "Continúa en la ventana de prueba CLI…");
+        Add("Running CLI probe…", "正在执行 CLI 探针…", "正在執行 CLI 探針…", "CLI プローブを実行中…", "CLI 테스트 실행 중…", "Ejecutando prueba CLI…");
+        Add("Saving visibility confirmation…", "正在保存可见性确认…", "正在儲存可見性確認…", "表示の確認を保存中…", "표시 확인 저장 중…", "Guardando confirmación de visibilidad…");
+        Add("One line per pair. Arrowheads show the available calling directions; each direction can be enabled or paused separately.", "每对 Agent 共用一条线。箭头表示有调用方案的方向，各方向可独立启用或暂停。", "每對 Agent 共用一條線。箭頭表示有呼叫方案的方向，各方向可獨立啟用或暫停。", "Agent の組ごとに線は 1 本です。矢印は呼び出し可能な方向を示し、方向ごとに有効化・停止できます。", "Agent 쌍마다 선 하나를 표시합니다. 화살표는 호출 방법이 있는 방향이며 각 방향을 따로 활성화하거나 중지할 수 있습니다.", "Una línea por pareja. Las flechas indican las direcciones con método disponible; cada dirección se activa o pausa por separado.");
+        Add("A → B means A can deliver files through Relay and notify B by CLI. A double arrow means both calling directions have a recipe. Green ends are enabled; red ends are paused or not enabled. A direction without an arrow has no recipe. Manual copy remains available; switches only control Relay routes.", "A → B 表示 A 可通过 Relay 传递文件并用 CLI 通知 B；双向箭头表示两个方向都有调用方案。绿色端点已启用，红色端点已暂停或尚未启用，无箭头的方向缺少方案。手动复制始终可用，开关只影响 Relay 内的线路。", "A → B 表示 A 可透過 Relay 傳遞檔案並以 CLI 通知 B；雙向箭頭表示兩個方向都有呼叫方案。綠色端點已啟用，紅色端點已暫停或尚未啟用，無箭頭的方向缺少方案。手動複製始終可用，開關僅影響 Relay 內的線路。", "A → B は Relay でファイルを渡し、CLI で B に通知できることを示します。両矢印は両方向に設定がある状態です。緑は有効、赤は停止中または未有効、矢印なしは設定なしです。手動コピーは利用でき、スイッチは Relay の経路だけに適用されます。", "A → B는 Relay로 파일을 전달하고 CLI로 B에 알릴 수 있다는 뜻입니다. 양방향 화살표는 두 방향 모두 호출 방법이 있음을 나타냅니다. 녹색 끝은 활성, 빨간색 끝은 중지 또는 미활성, 화살표가 없는 방향은 방법이 없습니다. 수동 복사는 항상 가능하며 스위치는 Relay 경로에만 적용됩니다.", "A → B indica que A puede entregar archivos y avisar a B por CLI mediante Relay. La doble flecha indica métodos en ambas direcciones. Verde: activa; rojo: pausada o sin activar; sin flecha: sin método. La copia manual sigue disponible; los controles solo afectan a Relay.");
         Add("Save", "保存", "儲存", "保存", "저장", "Guardar");
         Add("Calling recipe", "调用方案", "呼叫方案", "呼び出し設定", "호출 설정", "Método de llamada");
         Add("Close", "关闭", "關閉", "閉じる", "닫기", "Cerrar");

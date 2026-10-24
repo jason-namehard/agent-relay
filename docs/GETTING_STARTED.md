@@ -2,12 +2,12 @@
 
 ## 下载和启动
 
-从 [GitHub Releases](https://github.com/jason-namehard/agent-relay/releases/tag/v0.1.0-preview.6) 下载：
+从 [GitHub Releases](https://github.com/jason-namehard/agent-relay/releases/tag/v0.1.0-preview.7) 下载：
 
 | 包 | 用途 | 运行要求 |
 | --- | --- | --- |
-| `AgentRelay-v0.1.0-preview.6-windows-x64.zip` | Windows 桌面、演示、CLI、MCP、通知 | GUI/通知自带运行库；CLI/MCP 需要 .NET 10 runtime |
-| `AgentRelay-v0.1.0-preview.6-cli-mcp.zip` | Windows/Linux CLI 或 stdio MCP | .NET 10 runtime |
+| `AgentRelay-v0.1.0-preview.7-windows-x64.zip` | Windows 桌面、演示、CLI、MCP、通知 | GUI/通知自带运行库；CLI/MCP 需要 .NET 10 runtime |
+| `AgentRelay-v0.1.0-preview.7-cli-mcp.zip` | Windows/Linux CLI 或 stdio MCP | .NET 10 runtime |
 
 完整解压到固定目录后运行。`Source code.zip` 是源码。请保留 `licenses/` 并阅读 `DISTRIBUTION_TERMS.md`；当前未提供安装器和代码签名。
 
@@ -37,11 +37,11 @@
 
 | 连接样式 | 含义 |
 | --- | --- |
-| 绿色箭头 | 有可用方案，该方向已启用 |
-| 红色箭头 | 有可用方案，该方向暂停或尚未启用 |
-| 灰色虚线，无箭头 | 缺少可用方案，未建立链接 |
+| 单箭头线 | 只有箭头所指方向有调用方案 |
+| 双箭头线 | 两个方向都有调用方案 |
+| 灰色虚线，无箭头 | 两个方向均缺少可用方案 |
 
-A→B 代表 A 可以传递文件并通过 CLI 通知 B，反方向独立。只有 A→B 为绿色时，B 不因此获得自动通知 A 的能力；手动复制仍可使用。
+A→B 代表有从 A 传递文件并通过 CLI 通知 B 的方案。箭头及其相邻线段绿色表示已启用，红色表示暂停或尚未启用。双向线可以一端绿、一端红；点击一条线，下方分别控制两个方向。线上不重复显示状态标签，悬停可查看详细状态；手动复制仍可使用。
 
 ## 中转站和常见问题
 

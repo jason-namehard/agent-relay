@@ -6,7 +6,8 @@ namespace AgentRelay.Desktop;
 
 public static class DesktopLocalizedContent
 {
-    public static string TaskPrompt(TaskView view, IReadOnlyCollection<ArtifactRecord> artifacts, string language)
+    public static string TaskPrompt(TaskView view, IReadOnlyCollection<ArtifactRecord> artifacts, string language,
+        Func<string,string>? agentName = null)
     {
         var task = view.Task;
         string Format(string source, params object[] values) => string.Format(CultureInfo.InvariantCulture, UiText.Translate(source, language), values);
@@ -20,7 +21,7 @@ public static class DesktopLocalizedContent
             return Format("Task {0} exceeded its deadline without a valid completion result. Run recover or inspect the evidence; do not dispatch again automatically.", task.TaskId);
         if (task.State == TaskState.AwaitingManual)
             return Format("Task {0} awaits manual submission to {1}. Request: {2}; attempt: {3}; write the result to: {4}. Explicitly ack after receiving, then complete/fail when finished.",
-                task.TaskId, task.RecipientId, task.RequestPath, task.AttemptId, task.ResultPath);
+                task.TaskId, agentName is null ? task.RecipientId : agentName(task.RecipientId), task.RequestPath, task.AttemptId, task.ResultPath);
         if (task.State is TaskState.Succeeded or TaskState.Failed)
         {
             var available = artifacts.Any(a => a.Path == task.ResultPath && a.State == "available" && a.ExpiresAt > DateTimeOffset.UtcNow) && File.Exists(task.ResultPath);

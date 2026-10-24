@@ -12,72 +12,90 @@ public sealed class ConnectionGraph : Viewbox
 {
     public ConnectionGraph(IReadOnlyList<AgentRecord> agents,IReadOnlyList<ConnectionView> edges,Action<ConnectionView> select,string language,Window owner,Func<string,string>? displayName=null)
     {
-        string T(string text)=>UiText.Translate(text,language);
         string Name(string id)=>displayName is null?id:displayName(id);
         Brush B(string key)=>(Brush)owner.FindResource(key);
-        Stretch=Stretch.Uniform; StretchDirection=StretchDirection.DownOnly; HorizontalAlignment=HorizontalAlignment.Left; Margin=new(0,0,0,12);
+        Brush Color(ConnectionView edge)=>edge.Display switch
+        {
+            "Allowed"=>B("AllowedBrush"),"Denied"=>B("DeniedBrush"),"Unavailable"=>B("UnavailableBrush"),
+            _=>throw new ArgumentOutOfRangeException(nameof(edges),edge.Display,"Unknown connection display state.")
+        };
+        Stretch=Stretch.Uniform;StretchDirection=StretchDirection.DownOnly;HorizontalAlignment=HorizontalAlignment.Left;Margin=new(0,0,0,12);
         AutomationProperties.SetAutomationId(this,"ConnectionGraph");
-        var canvas=new Canvas{Width=820,Height=380,Background=B("SurfaceBrush")};Child=canvas;
-        if(agents.Count==0){canvas.Children.Add(new TextBlock{Text=T("Register agents to view directed connections."),Margin=new(20)});return;}
-        var positions=agents.Select((a,i)=>(a.AgentId,Point:new Point(410+310*Math.Cos(-Math.PI/2+2*Math.PI*i/agents.Count),190+145*Math.Sin(-Math.PI/2+2*Math.PI*i/agents.Count))))
+        var body=new StackPanel{Width=820};Child=body;
+        var canvas=new Canvas{Width=820,Height=380,Background=B("SurfaceBrush")};body.Children.Add(canvas);
+        var ordered=agents.OrderBy(a=>a.AgentId,StringComparer.Ordinal).ToArray();
+        var directions=edges.ToDictionary(e=>(e.From,e.To));
+        var positions=ordered.Select((a,i)=>(a.AgentId,Point:new Point(410+310*Math.Cos(-Math.PI/2+2*Math.PI*i/ordered.Length),190+145*Math.Sin(-Math.PI/2+2*Math.PI*i/ordered.Length))))
             .ToDictionary(p=>p.AgentId,p=>p.Point);
-        foreach(var edge in edges)
+        if(ordered.Length==0)canvas.Children.Add(new TextBlock{Text=UiText.Translate("Register agents to view directed connections.",language),Margin=new(20)});
+        for(var i=0;i<ordered.Length;i++)
+        for(var j=i+1;j<ordered.Length;j++)
         {
-            var a=positions[edge.From];var b=positions[edge.To];var delta=b-a;delta.Normalize();
-            var normal=new Vector(-delta.Y,delta.X);
-            var control=new Point((a.X+b.X)/2,(a.Y+b.Y)/2)+normal*110;
-            var start=NodeBoundary(a,control-a);var end=NodeBoundary(b,control-b);
-            var geometry=new PathGeometry([new PathFigure(start,[new QuadraticBezierSegment(control,end,true)],false)]);
-            var color=edge.Display switch {"Allowed"=>B("AllowedBrush"),"Denied"=>B("DeniedBrush"),"Unavailable"=>B("UnavailableBrush"),_=>throw new ArgumentOutOfRangeException(nameof(edges),edge.Display,"Unknown connection display state.")};
-            var state=StateText(edge.Display,language);
-            var tooltip=$"{Name(edge.From)} → {Name(edge.To)}\n{state}\n{T(edge.Reason)}";
-            var hitPath=new System.Windows.Shapes.Path{Data=geometry,Stroke=Brushes.Transparent,StrokeThickness=18,
-                Cursor=Cursors.Hand,ToolTip=tooltip,Tag=edge,Focusable=true};
-            AutomationProperties.SetAutomationId(hitPath,$"ConnectionEdge:{edge.From}:{edge.To}");
-            AutomationProperties.SetName(hitPath,$"{Name(edge.From)} → {Name(edge.To)}: {state}");
-            hitPath.MouseLeftButtonDown+=(_,e)=>{select(edge);e.Handled=true;};
-            hitPath.KeyDown+=(_,e)=>{if(e.Key is Key.Enter or Key.Space){select(edge);e.Handled=true;}};
-            canvas.Children.Add(hitPath);
-            var path=new System.Windows.Shapes.Path{Data=geometry,Stroke=color,StrokeThickness=2.5,IsHitTestVisible=false};
-            AutomationProperties.SetAutomationId(path,$"ConnectionStroke:{edge.From}:{edge.To}");
-            if(edge.Display=="Unavailable")path.StrokeDashArray=new DoubleCollection([4,4]);
-            canvas.Children.Add(path);
-            if(edge.Display!="Unavailable")
+            var from=ordered[i].AgentId;var to=ordered[j].AgentId;
+            var forward=directions[(from,to)];var reverse=directions[(to,from)];
+            var hasForward=forward.Display!="Unavailable";var hasReverse=reverse.Display!="Unavailable";
+            var a=positions[from];var b=positions[to];var direction=b-a;direction.Normalize();
+            var start=NodeBoundary(a,b-a);var end=NodeBoundary(b,a-b);
+            var midpoint=new Point((start.X+end.X)/2,(start.Y+end.Y)/2);
+            var tooltip=$"{Name(from)} → {Name(to)}: {GraphText.State(forward.Display,language)}\n{Name(to)} → {Name(from)}: {GraphText.State(reverse.Display,language)}";
+            var hit=new System.Windows.Shapes.Path{Data=new LineGeometry(start,end),Stroke=Brushes.Transparent,StrokeThickness=18,
+                Cursor=Cursors.Hand,ToolTip=tooltip,Tag=forward,Focusable=true};
+            AutomationProperties.SetAutomationId(hit,$"ConnectionPair:{from}:{to}");
+            AutomationProperties.SetName(hit,tooltip);
+            hit.MouseLeftButtonDown+=(_,e)=>{select(forward);e.Handled=true;};
+            hit.KeyDown+=(_,e)=>{if(e.Key is Key.Enter or Key.Space){select(forward);e.Handled=true;}};
+            canvas.Children.Add(hit);
+            void Stroke(Point first,Point last,Brush color,string id,bool dashed=false)
             {
-                var tangent=end-control;tangent.Normalize();var side=new Vector(-tangent.Y,tangent.X);
-                var arrow=new Polygon{Points=new PointCollection([end,end-tangent*12+side*5,end-tangent*12-side*5]),Fill=color,IsHitTestVisible=false};
-                AutomationProperties.SetAutomationId(arrow,$"ConnectionArrow:{edge.From}:{edge.To}");
-                canvas.Children.Add(arrow);
+                var line=new System.Windows.Shapes.Path{Data=new LineGeometry(first,last),Stroke=color,StrokeThickness=2.5,IsHitTestVisible=false};
+                if(dashed)line.StrokeDashArray=new DoubleCollection([4,4]);
+                AutomationProperties.SetAutomationId(line,id);canvas.Children.Add(line);
             }
-            var midpoint=new Point((start.X+2*control.X+end.X)/4,(start.Y+2*control.Y+end.Y)/4);
-            var label=new Border{Background=B("SurfaceBrush"),CornerRadius=new(4),Padding=new(5,2,5,2),Cursor=Cursors.Hand,ToolTip=tooltip,
-                Child=new TextBlock{Text=state,Foreground=color,FontSize=12}};
-            AutomationProperties.SetAutomationId(label,$"ConnectionLabel:{edge.From}:{edge.To}");
-            label.MouseLeftButtonDown+=(_,e)=>{select(edge);e.Handled=true;};
-            label.Measure(new Size(double.PositiveInfinity,double.PositiveInfinity));
-            Canvas.SetLeft(label,midpoint.X-label.DesiredSize.Width/2);Canvas.SetTop(label,midpoint.Y-label.DesiredSize.Height/2);
-            Panel.SetZIndex(label,1);canvas.Children.Add(label);
+            if(hasForward&&hasReverse)
+            {
+                Stroke(start,midpoint,Color(reverse),$"ConnectionStroke:{to}:{from}");
+                Stroke(midpoint,end,Color(forward),$"ConnectionStroke:{from}:{to}");
+            }
+            else if(hasForward)Stroke(start,end,Color(forward),$"ConnectionStroke:{from}:{to}");
+            else if(hasReverse)Stroke(start,end,Color(reverse),$"ConnectionStroke:{to}:{from}");
+            else Stroke(start,end,B("UnavailableBrush"),$"ConnectionStroke:{from}:{to}",true);
+            if(hasForward)AddArrow(canvas,end,direction,Color(forward),$"ConnectionArrow:{from}:{to}");
+            if(hasReverse)AddArrow(canvas,start,-direction,Color(reverse),$"ConnectionArrow:{to}:{from}");
         }
-        foreach(var agent in agents)
+        foreach(var agent in ordered)
         {
-            var p=positions[agent.AgentId];var name=Name(agent.AgentId);var node=new Border{Width=150,MinHeight=42,Padding=new(8,7,8,7),Background=B("SurfaceAltBrush"),
+            var p=positions[agent.AgentId];var name=Name(agent.AgentId);
+            var node=new Border{Width=150,MinHeight=42,Padding=new(8,7,8,7),Background=B("SurfaceAltBrush"),
                 BorderBrush=B("BorderBrush"),BorderThickness=new(1),CornerRadius=new(12),ToolTip=$"{name}\n{agent.AgentId}"};
             AutomationProperties.SetAutomationId(node,$"ConnectionNode:{agent.AgentId}");
             node.Child=new TextBlock{Text=name,TextAlignment=TextAlignment.Center,TextTrimming=TextTrimming.CharacterEllipsis,VerticalAlignment=VerticalAlignment.Center,Foreground=B("TextBrush")};
             Canvas.SetLeft(node,p.X-75);Canvas.SetTop(node,p.Y-21);Panel.SetZIndex(node,2);canvas.Children.Add(node);
         }
+        var legend=new WrapPanel{Margin=new(12,12,12,4)};
+        AutomationProperties.SetAutomationId(legend,"ConnectionLegend");body.Children.Add(legend);
+        foreach(var kind in new[]{"single","double","none"})
+        {
+            var row=new StackPanel{Orientation=Orientation.Horizontal,Margin=new(0,0,22,10)};
+            AutomationProperties.SetAutomationId(row,"ConnectionLegend"+char.ToUpperInvariant(kind[0])+kind[1..]);
+            var sample=new Canvas{Width=68,Height=24,Margin=new(0,0,8,0)};
+            var color=kind=="none"?B("UnavailableBrush"):B("AllowedBrush");
+            var line=new Line{X1=8,Y1=12,X2=60,Y2=12,Stroke=color,StrokeThickness=2.5};
+            if(kind=="none")line.StrokeDashArray=new DoubleCollection([4,4]);sample.Children.Add(line);
+            if(kind!="none")AddArrow(sample,new Point(60,12),new Vector(1,0),color);
+            if(kind=="double")AddArrow(sample,new Point(8,12),new Vector(-1,0),color);
+            row.Children.Add(sample);row.Children.Add(new TextBlock{Text=GraphText.Legend(kind,language),VerticalAlignment=VerticalAlignment.Center,Foreground=B("TextBrush")});
+            legend.Children.Add(row);
+        }
+        body.Children.Add(new TextBlock{Text=GraphText.Legend("colors",language),TextWrapping=TextWrapping.Wrap,Foreground=B("MutedBrush"),Margin=new(12,0,12,10)});
     }
 
-    private static string StateText(string display,string language)=>(display,language) switch
+    private static void AddArrow(Canvas canvas,Point tip,Vector direction,Brush color,string? id=null)
     {
-        ("Allowed","zh-CN")=>"已启用",("Denied","zh-CN")=>"已暂停",("Unavailable","zh-CN")=>"未建立连接",
-        ("Allowed","zh-TW")=>"已啟用",("Denied","zh-TW")=>"已暫停",("Unavailable","zh-TW")=>"未建立連線",
-        ("Allowed","ja")=>"有効",("Denied","ja")=>"一時停止",("Unavailable","ja")=>"未接続",
-        ("Allowed","ko")=>"사용 중",("Denied","ko")=>"일시 중지",("Unavailable","ko")=>"연결되지 않음",
-        ("Allowed","es")=>"Activa",("Denied","es")=>"En pausa",("Unavailable","es")=>"Sin conexión",
-        ("Allowed","en")=>"Enabled",("Denied","en")=>"Paused",("Unavailable","en")=>"Not connected",
-        _=>throw new ArgumentOutOfRangeException(nameof(language),language,"Unsupported connection label.")
-    };
+        var side=new Vector(-direction.Y,direction.X);
+        var arrow=new Polygon{Points=new PointCollection([tip,tip-direction*11+side*4.5,tip-direction*11-side*4.5]),Fill=color,IsHitTestVisible=false};
+        if(id is not null)AutomationProperties.SetAutomationId(arrow,id);
+        canvas.Children.Add(arrow);
+    }
 
     private static Point NodeBoundary(Point center,Vector direction)
     {
