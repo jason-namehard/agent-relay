@@ -1,88 +1,86 @@
-# Agent 录入、交接生成与 CLI 扩充
+# Agent 配置、按需规则与文件回执
 
-## 统一 Agent 录入
+## 统一节点录入
 
-Agent 管理中的添加/编辑窗口是节点资料的唯一录入位置。名称必填，角色由用户决定；宿主可选，留空表示手工接入。配置路径、CLI 路径、版本和指令文件位于高级区域，内部 ID 自动生成。
+节点仅需自选名称；宿主、配置路径、CLI、版本与指令文件按实际情况提供。接入提示词区分会话记录、配置文件和 CLI 调用方法，要求只读调查帮助和非敏感设置，不先执行模型调用。
 
-在窗口中复制接入提示词，交给目标 Agent，粘贴其完整回复后解析，再检查保存。助手不执行回复中的命令，不代替 CLI 探针。手工交接可以不提供配置路径。
+Agent 可将完整配置保存为 JSON 后，通过发布包的本机接口填写：
+
+```json
+{"name":"我的助手","host":"manual","config_path":null,"cli_path":null,"host_version":null,"instruction_paths":[]}
+```
+
+```powershell
+dotnet .\relay.dll --home <中转站目录> agent setup --manifest <配置JSON路径>
+# 更新既有节点时额外提供 --id <节点ID>
+```
+
+新节点 ID 自动生成。直写成功后无需再在新增窗口重复保存；无法运行 CLI 时，将 JSON 粘贴到 Agent 录入窗口解析，只填写草稿，由用户保存。未知路径留 null，不用会话日志代替配置文件。旧 `relay_setup_version/context/fields` 录入协议仍可解析。
+
+## 一行常驻规则
+
+Agent 管理中选择宿主实际加载的指令文件，预览后明确确认才写入。Relay 在自有标记区块内加入一行：需要交接文件或收到交接时，先阅读稳定入口。详细规则放在中转站之外的稳定指引文件中，迁移后刷新当前位置与节点目录。
+
+这一行仍占用少量上下文；详细内容按需读取，不保证任意宿主都会自动触发。用户后续编辑会保留。每次安装保留原始备份，移除仅剥离本工具区块，不用旧备份覆盖整份用户文件。
+
+```powershell
+dotnet .\relay.dll --home <中转站目录> guidance preview --agent <节点ID> --file <指令文件>
+dotnet .\relay.dll --home <中转站目录> guidance install --agent <节点ID> --file <指令文件> --approve
+dotnet .\relay.dll --home <中转站目录> guidance remove --all
+```
+
+删除便携目录不会执行卸载程序，删除前需在 GUI 或 CLI 移除规则。
+
+## A 输出文件交接 JSON
+
+让 A 先写好文件，再输出如下对象供用户粘贴。`from`、`to` 是已登记 ID 或唯一名称；`file` 是存在且可读的绝对路径；`message` 为可选的一句工作要求，不放完整正文。
+
+```json
+{"from":"节点甲","to":"节点乙","file":"C:/work/handoff.md","message":"请检查并按结论修改"}
+```
+
+示例路径须换成真实文件。Markdown、压缩包等均按文件处理。用户点击“解析并创建交接”时记录本次任务；发送方和接收方不能相同。相同源文件的同方向活动交接会复用，不重复创建。
+
+也可手动选节点与文件，不要求先写规则。窗口只有复制格式和解析操作，没有额外的“粘贴回复”按钮。
+
+## B 写回执，软件更新状态
+
+复制给 B 的短提示只指向上下文文件。该文件与回执在任务的隐藏 `.relay` 子目录中；上下文给出当前文件、工作要求、回稿位置、回执位置及模板，不把协议正文反复复制到用户消息里。
+
+回执结构：
 
 ```json
 {
-  "relay_setup_version": 1,
-  "context": "agents",
-  "fields": {
-    "AgentName": "我的 Agent",
-    "AgentHost": "codex",
-    "AgentConfig": "",
-    "AgentCli": "",
-    "AgentVersion": "",
-    "AgentInstructions": ""
-  }
+  "task_id":"上下文中的任务ID",
+  "attempt_id":"上下文中的尝试ID",
+  "sender":"当前等待的节点ID",
+  "turn":0,
+  "status":"done",
+  "needs_reply":false,
+  "result_file":null,
+  "next_action":null
 }
 ```
 
-字段名固定，按窗口复制的模板返回。可选值未知时留空；空白不覆盖已有输入。路径如填写应为绝对路径，多条指令文件每行一个。
+任务 ID、尝试 ID、发送节点与轮次必须采用当前上下文原值。可先写 `received` 或 `working` 表示收到/处理，再写 `done` 或 `failed`。旧轮次不覆盖新轮次，错误或未写完的 JSON 不会当作完成。
 
-## 生成一条交接
+- `done` 且 `needs_reply: false`：任务结束，无需回复寒暄或重复确认。
+- `done` 且 `needs_reply: true`：必须给出真实 `result_file` 与具体 `next_action`；任务继续等待另一方，界面提供相应复制按钮。
+- `failed`：任务失败，说明待处理原因；不能自动开启新一轮。
+- 达到四轮上限：停止继续传递，交由用户判断。
 
-任务看板的新建交接窗口提供独立的内容生成助手。复制的提示词包含已登记节点 ID 与名称，让 Agent 将意图整理为发送方、接收方和正文：
-
-```json
-{
-  "relay_setup_version": 1,
-  "context": "handoff",
-  "fields": {
-    "From": "已登记的发送方ID",
-    "To": "已登记的接收方ID",
-    "Content": "完整交接内容"
-  }
-}
-```
-
-发送方和接收方必须存在且不同，正文不能空白。解析只代填并选择手动模式，检查后才能创建；不会根据回复自动授权或发送。软件不分配前端、文档、评审等角色。
-
-两类助手均要求完整 JSON 对象，也接受单个完整 `json` 代码围栏。最大 64 KiB UTF-8，拒绝重复键、未知字段、错误上下文、版本及非字符串字段。整个回复通过后才代填，不部分应用错误回复。
+GUI 通过文件事件读取回执，启动和手动刷新也会补读。普通文件快照只能记录变更，不能代替 Agent 的明确完成声明。GUI 关闭后没有常驻监视进程，重新打开会读取待处理回执。
 
 ## 高级 CLI 接口扩充
 
-设置中的高级区域用于登记已经存在的 CLI 或桥接方案。选择节点后复制扩充提示词，交给了解调用方法的 Agent，再将完整 JSON 导入。此格式与上述表单协议不同：
+新 GUI 文件交接当前为手动路线，以下能力与它分开。原有 CLI/MCP 自动消息投递仍可使用已验证调用方案。
 
-```json
-{
-  "version": 1,
-  "name": "本机桥接方案",
-  "host": "与所选节点一致的宿主",
-  "create": {
-    "executable": "C:/tools/relay-bridge.exe",
-    "arguments": ["create", "--prompt", "{prompt}"],
-    "input": null,
-    "working_directory": null
-  },
-  "resume": null,
-  "dependencies": [],
-  "supported_versions": "",
-  "source": "",
-  "license": "",
-  "limitations": ""
-}
+调用方案包含 `version/name/host/create/resume/dependencies/supported_versions/source/license/limitations`；命令含 `executable`、`arguments` 数组、可选 `input` 和 `working_directory`。`{prompt}` 为必需模板变量，续接还需 `{session_id}`。完整结构以界面复制的实际协议为准。
+
+```powershell
+dotnet .\relay.dll --home <中转站目录> cli-recipe import --agent <节点ID> --manifest <调用方案JSON>
 ```
 
-这是结构示例，不是随包提供的桥接程序。每个参数独立传入，不拼接 shell 命令。`{prompt}` 必须出现在参数或标准输入模板中；可选 `{relay_home}` 表示当前中转站。`resume` 使用同样的命令结构，且必须包含 `{session_id}`；不支持续接时填 `null`。
+导入只保存，不执行、安装或启用。JSON 不是通用桥接器：目标必须已有可用 CLI 或独立桥接程序，其 stdout 回执为 `{"session_id":"真实标识","reply":"真实回复","accepted":true}`。探针核对短标识，机器通过后还需用户在真实宿主中确认可见。续接必须返回原会话 ID 并单独确认。真实调用可能收费，不能保证缓存或所有未来会话可见。
 
-CLI 或桥接程序的标准输出须为一个 JSON 回执：
-
-```json
-{"session_id":"真实会话标识","reply":"Agent 的真实回复","accepted":true}
-```
-
-探针要求 `reply` 精确返回短标识；桥接器不能自行伪造回复。正式交接的 `accepted=true` 仅代表接收，不代表完成。原生 CLI 不符合此协议时，需要已有且可用的独立桥接程序；导入不会生成、安装或执行桥接代码。重新导入方案会清除原探针确认。
-
-在测试 CLI 窗口检查方案后运行新会话探针，机器通过且用户在目标软件找到标识并确认后，才启用新会话能力。同会话探针另行验证原会话 ID 和可见标识。正式桌面交接默认使用新会话，不自动复用探针会话；探针结果不是所有未来调用的可见性保证。
-
-CLI 接口扩充用于接入经验证的第三方命令行或桥接方案。可用性取决于目标软件开放的接口、版本、运行环境及会话管理能力，并非所有 Agent 均支持自动调用或原会话续接。扩充方案须完成检查与测试后方可启用；未接通时仍可使用手动交接。
-
-## 语言与外观
-
-支持 English、简体中文、繁體中文、日本語、한국어、Español。语言和四套莫兰迪配色选择后保存；强调色可预览并单独保存。语义色不随强调色改变。新单行输入采用最小高度与内容对齐，长内容可选择、滚动和复制，多行说明换行。
-
-协议字段、用户正文、路径和外部诊断保留原文。偏好存入当前中转站 `desktop.preferences.json`，不修改宿主配置。
+字段、路径、正文与外部诊断保持原样。不要把用户实际会话记录、认证或私有路径提交到公开仓库。

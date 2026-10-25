@@ -13,7 +13,8 @@ public sealed partial class RelayService
     public RelayService VerifyRelocation()
     {
         var pending = Path.Combine(Home, RelocationPendingFile);
-        if (!File.Exists(pending)) return this;
+        if (!File.Exists(pending))
+            throw new RelayException("relocation_no_pending", $"没有待继续的目录迁移。迁移校验不会更换中转站；请先选择更换中转站文件夹。当前目录：{Home}");
         return Relocate(RelayJson.Read<RelayRelocationRequest>(File.ReadAllText(pending)).Target);
     }
 
@@ -23,7 +24,8 @@ public sealed partial class RelayService
         target = Path.TrimEndingDirectorySeparator(Path.GetFullPath(target));
         var source = Path.TrimEndingDirectorySeparator(Home);
         var comparison = OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
-        if (string.Equals(source, target, comparison)) return this;
+        if (string.Equals(source, target, comparison))
+            throw new RelayException("relocation_same_directory", "选择的目录就是当前中转站，未执行迁移。请为更换中转站选择另一个空目录。");
         if (Within(source, target, comparison) || Within(target, source, comparison))
             throw new RelayException("relocation_target_invalid", "新旧中转站目录不能相互包含。");
         var request = new RelayRelocationRequest(source, target);
@@ -129,6 +131,8 @@ public sealed partial class RelayService
         {
             task.RequestPath = Move(task.RequestPath);
             task.ResultPath = Move(task.ResultPath);
+            task.ManualCurrentFile = task.ManualCurrentFile is null ? null : Move(task.ManualCurrentFile);
+            task.ManualSourceFile = task.ManualSourceFile is null ? null : Move(task.ManualSourceFile);
             return task;
         }
         void Rewrite<T>(string table, string column, Func<T, T> transform) where T : class

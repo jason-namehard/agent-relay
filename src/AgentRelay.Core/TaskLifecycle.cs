@@ -92,6 +92,8 @@ public sealed partial class RelayService
         return Callback(taskId, attemptId, sender, key,
             new { operation = failed ? "fail" : "complete", path = full, errorCode, errorMessage, sideEffectsPossible }, (s, task) =>
         {
+            if (task.IsFileHandoff)
+                throw new RelayException("manual_receipt_required", "文件交接请按交接提示写回执，无需导入或生成另一份回稿快照。");
             if (task.State is not (TaskState.AwaitingManual or TaskState.Dispatching or TaskState.Dispatched or TaskState.DeliveryUnknown or
                 TaskState.Acknowledged or TaskState.Running or TaskState.TimedOut or TaskState.Cancelled))
                 throw new RelayException("state_conflict", "该状态不能提交最终结果。", 5);
@@ -197,6 +199,8 @@ public sealed partial class RelayService
         store.Write(s =>
         {
             var task = s.Task(taskId);
+            if (task.IsFileHandoff)
+                throw new RelayException("manual_new_handoff_required", "文件交接不会自动重发，请确认结果后另建交接。");
             if (task.State is not (TaskState.Failed or TaskState.TimedOut or TaskState.DeliveryUnknown))
                 throw new RelayException("state_conflict", "只有失败、超时或投递未知的任务可重新执行。", 5);
             RequireDispatchAccess(s, task.RequesterId, task.RecipientId, task.Mode, task.AdapterId);
@@ -234,6 +238,7 @@ public sealed partial class RelayService
 
     private TaskView View(TaskRecord task, StoreSession? session = null)
     {
+        if (task.IsFileHandoff) return ManualView(task);
         var overdue = !Terminal(task.State) && task.DeadlineAt <= Now;
         var ready = task.State is TaskState.Succeeded or TaskState.Failed;
         ArtifactRecord? ResultArtifact(StoreSession s) => s.Json<ArtifactRecord>("SELECT json FROM artifacts WHERE path=$path", ("$path", task.ResultPath));

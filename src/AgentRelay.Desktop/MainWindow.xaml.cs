@@ -60,10 +60,11 @@ public partial class MainWindow : Window
             source = HwndSource.FromHwnd(new WindowInteropHelper(this).Handle);
             source.AddHook(ReceiveLedgerMessage);
         };
-        Closed += (_, _) => source?.RemoveHook(ReceiveLedgerMessage);
+        Closed += (_, _) => {receiptWatcher?.Dispose();source?.RemoveHook(ReceiveLedgerMessage);};
         Loaded += async (_, _) =>
         {
             Navigation.SelectedIndex = 0;
+            WatchReceipts();
             await Run(() => Task.CompletedTask, "Ready");
         };
     }
@@ -103,7 +104,23 @@ public partial class MainWindow : Window
         try
         {
             await action();
+            var receipts=service.ImportManualReceipts();
+            string? notificationHint=null;
+            foreach(var updatedId in receipts.UpdatedTaskIds)
+            {
+                var updated=service.Status(updatedId).Task;
+                if(updated.State is not(TaskState.AwaitingReply or TaskState.Succeeded or TaskState.Failed or TaskState.TimedOut))continue;
+                if(updated.State==TaskState.AwaitingReply)_=FilePrompt(updated);
+                if(service.DesktopExecutable() is { } notifier)
+                {
+                    var notified=await new DesktopNotifier(notifier).NotifyAsync(service.Home,updated,CancellationToken.None);
+                    if(notified.State!="submitted")notificationHint=notified.Detail??T("Desktop notification unavailable");
+                }
+            }
             if (refresh && !reviewCancelled) { RenderPage(); LedgerHint.Text = ""; }
+            if(receipts.Errors.Length>0)LedgerHint.Text=T("Receipt needs attention")+": "+receipts.Errors[0].Message;
+            else if(receipts.UpdatedTaskIds.Length>0)LedgerHint.Text=T("Handoff receipts updated");
+            if(notificationHint is not null)LedgerHint.Text+=" · "+notificationHint;
             if (reportStatus) StatusText.Text = ErrorBanner.Visibility == Visibility.Visible ? T("Action failed") :
                 reviewCancelled ? T("Action cancelled · No changes") : T(success);
         }
@@ -120,6 +137,7 @@ public partial class MainWindow : Window
         {
             busy = false; PageContent.IsEnabled = true; Navigation.IsEnabled = true; RefreshButton.IsEnabled = true; QuickLanguage.IsEnabled = true;
             if (refreshPending) { refreshPending = false; QueueRefresh(); }
+            if(receiptRefreshQueued)_=Dispatcher.BeginInvoke(new Action(async()=>await ReadReceipts()));
         }
     }
 
@@ -199,11 +217,11 @@ public partial class MainWindow : Window
         {
             var agents=service.Agents().Select(a=>new HandoffAgentOption(a.AgentId,a.DisplayName??a.AgentId)).ToArray();
             if(agents.Length<2)throw new RelayException("agents_required",T("Add at least two Agents first."));
-            var dialog=new HandoffDialog(this,preferences.Language,agents,(from,to)=>service.Connections().Any(e=>e.From==from&&e.To==to&&e.Display=="Allowed") && service.CliExtension(to)?.CanCreate==true);
+            var dialog=new FileHandoffDialog(this,service,preferences.Language);
             StatusText.Text=T("Waiting for handoff details…");
             if(dialog.ShowDialog()!=true){reviewCancelled=true;return;}
             var draft=dialog.Result!;
-            var result=await service.DispatchAsync(new(draft.From,draft.To,draft.Content,draft.Automatic?"auto":"manual",draft.Automatic?"cli:"+draft.To:"manual",Guid.NewGuid().ToString()));
+            var result=await Task.Run(()=>service.CreateFileHandoff(draft));
             taskId=result.Task.TaskId;
         });
         Add(actions,"Open relay folder",()=>{Process.Start(new ProcessStartInfo(service.Home){UseShellExecute=true});return Task.CompletedTask;},false);
@@ -221,18 +239,21 @@ public partial class MainWindow : Window
         var table=Table("AgentsTable",("Name","Name"),("Host","Host"),("CLI capability","Capability"),("Handoffs","Activity"));
         async Task Edit(AgentRecord? existing)
         {
-            var dialog=new AgentEntryDialog(this,preferences.Language,existing);
+            var dialog=new AgentEntryDialog(this,preferences.Language,existing,service);
             StatusText.Text=T("Waiting for Agent details…");
             if(dialog.ShowDialog()!=true){reviewCancelled=true;return;}
             var draft=dialog.Result!;
             var id=existing?.AgentId ?? "agent-"+Guid.NewGuid().ToString("N")[..12];
             if(string.IsNullOrWhiteSpace(draft.ConfigPath)) service.RegisterManual(id,draft.Host,draft.Name,draft.CliPath,draft.HostVersion,draft.InstructionPaths);
             else service.Register(id,draft.Host,draft.ConfigPath,draft.CliPath,draft.HostVersion,draft.InstructionPaths,draft.Name);
-            agentId=id;await Task.CompletedTask;
+            service.RefreshGuidance();agentId=id;await Task.CompletedTask;
         }
         Add(actions,"Add Agent",()=>Edit(null));
         AgentRecord Selected()=>table.SelectedItem is AgentRow a?a.Source:throw new RelayException("selection_required",T("Select an Agent."));
         Add(actions,"Edit Agent",()=>Edit(Selected()));
+        Add(actions,"Install handoff rule",()=>{InstallRules(Selected().AgentId);return Task.CompletedTask;});
+        Add(actions,"Remove handoff rule",()=>{service.RemoveGuidance(Selected().AgentId);return Task.CompletedTask;});
+        Add(actions,"Copy Agent setup instructions",()=>{Clipboard.SetText(service.AgentSetupPrompt(Selected().AgentId,AgentEntryDialog.ResolveRelayCommand()));return Task.CompletedTask;},false);
         Add(actions,"Remove Agent",()=>
         {
             var agent=Selected();
@@ -240,7 +261,7 @@ public partial class MainWindow : Window
                 throw new RelayException("agent_busy",T("This Agent has unfinished handoffs. Complete or cancel them before removing it."));
             StatusText.Text=T("Waiting for confirmation…");
             if(MessageBox.Show(this,T("Remove this Agent from Relay? Existing task history is kept."),agent.DisplayName??agent.AgentId,MessageBoxButton.OKCancel,MessageBoxImage.Question)!=MessageBoxResult.OK){reviewCancelled=true;return Task.CompletedTask;}
-            service.RemoveAgent(agent.AgentId);agentId=null;return Task.CompletedTask;
+            service.RemoveAgent(agent.AgentId);service.RemoveGuidance(agent.AgentId);agentId=null;return Task.CompletedTask;
         });
         Add(actions,"Test CLI",()=>
         {
@@ -254,6 +275,7 @@ public partial class MainWindow : Window
         table.SelectionChanged+=(_,_)=>{if(table.SelectedItem is AgentRow a)agentId=a.Source.AgentId;};
         table.SelectedItem=rows.SingleOrDefault(a=>a.Source.AgentId==agentId)??rows.FirstOrDefault();
         page.Children.Add(Note("Add or edit an Agent to copy one setup prompt and parse its reply. CLI testing is optional; manual handoff is always available."));
+        page.Children.Add(Note("Install the rule in the instruction file your host actually loads. The one-line rule uses a little context; details are read on demand. Existing sessions may need to reread the file or restart."));
         return page;
     }
 
@@ -285,15 +307,15 @@ public partial class MainWindow : Window
         return page;
     }
 
-    private sealed record TaskRow(string TaskId,string Route,string Mode,string State,DateTimeOffset Created);
+    private sealed record TaskRow(string TaskId,string Route,string Mode,string State,DateTimeOffset Created,string StateCode);
     private void TaskPane(StackPanel page,IEnumerable<TaskView> views)
     {
-        var rows=views.OrderByDescending(v=>v.Task.CreatedAt).Select(v=>new TaskRow(v.Task.TaskId,AgentName(v.Task.RequesterId)+" → "+AgentName(v.Task.RecipientId),T(v.Task.Mode=="manual"?"Manual handoff":"CLI"),v.Task.State.ToString(),v.Task.CreatedAt.ToLocalTime())).ToArray();
+        var rows=views.OrderByDescending(v=>v.Task.CreatedAt).Select(v=>new TaskRow(v.Task.TaskId,AgentName(v.Task.RequesterId)+" → "+AgentName(v.Task.RecipientId),T(v.Task.Mode=="manual"?"Manual handoff":"CLI"),v.Task.Mode=="manual"?FileState(v.Task):v.Task.State.ToString(),v.Task.CreatedAt.ToLocalTime(),v.Task.State.ToString())).ToArray();
         var table=Table("TasksTable",("Route","Route"),("Delivery","Mode"),("State","State"),("Created","Created"));table.Height=230;
         var stateStyle=new Style(typeof(TextBlock),(Style)FindResource("TableTextStyle"));
         foreach(var state in new[]{"Succeeded","Failed","TimedOut","DeliveryUnknown","Running","Acknowledged"})
         {
-            var trigger=new DataTrigger{Binding=new Binding("State"),Value=state};
+            var trigger=new DataTrigger{Binding=new Binding("StateCode"),Value=state};
             trigger.Setters.Add(new Setter(TextBlock.ForegroundProperty,state=="Succeeded"?Theme("AllowedBrush"):state is "Running" or "Acknowledged"?Brush("#8C691F"):Theme("DeniedBrush")));
             stateStyle.Triggers.Add(trigger);
         }
@@ -304,6 +326,7 @@ public partial class MainWindow : Window
         {
             pane.Children.Clear();if(table.SelectedItem is not TaskRow row)return;
             taskId=row.TaskId;var view=service.Status(taskId);var task=view.Task;
+            if(task.IsFileHandoff){FileTaskPane(pane,view);return;}
             var success=task.State==TaskState.Succeeded;
             Heading(pane,row.Route,T(task.State.ToString())+(task.ErrorMessage is null?"":" · "+task.ErrorMessage));
             var actions=Row(pane);
@@ -383,17 +406,21 @@ public partial class MainWindow : Window
         palette.SelectionChanged+=async(_,_)=>{if(palette.SelectedValue is string selected && selected!=preferences.Palette)await ChangeAppearance(preferences with{Palette=selected});};
         Heading(page,"Relay storage","This folder holds temporary handoff files and the local ledger.");
         var location=Output("RelayLocation",60);location.Text=service.Home;page.Children.Add(location);
+        if(migrationSummary is not null)page.Children.Add(Note(migrationSummary));
         var storageActions=Row(page);
         Add(storageActions,"Change relay folder",()=>
         {
             var picker=new OpenFolderDialog{Title=T("Choose relay folder")};
             if(picker.ShowDialog(this)!=true){reviewCancelled=true;return Task.CompletedTask;}
-            var next=service.Relocate(picker.FolderName);
+            var previousHome=service.Home;var next=service.Relocate(picker.FolderName);
             service=next;HomePath.Text=service.Home;
+            service.RefreshGuidance();WatchReceipts();
+            RecordMigration(previousHome);
             if(!demo)RelayLocation.Save(service.Home);
             return Task.CompletedTask;
         });
-        Add(storageActions,"Check migration",()=>{service=service.VerifyRelocation();if(!demo)RelayLocation.Save(service.Home);HomePath.Text=service.Home;return Task.CompletedTask;});
+        Add(storageActions,"Check migration",()=>{var previousHome=service.Home;service=service.VerifyRelocation();service.RefreshGuidance();WatchReceipts();RecordMigration(previousHome);if(!demo)RelayLocation.Save(service.Home);HomePath.Text=service.Home;return Task.CompletedTask;});
+        page.Children.Add(Note("Migration copies all current relay files before switching. The old folder remains a backup; retention cleanup only manages the current relay folder. Migration check retries an unfinished migration; it does not move files by itself."));
         var settings=service.Settings();var form=new WrapPanel();page.Children.Add(form);
         var ttl=Field(form,"Artifact TTL (days)","TtlDays",180);ttl.Text=settings.ArtifactTtlDays.ToString(CultureInfo.InvariantCulture);
         var advanced=Page();var advancedForm=new WrapPanel();advanced.Children.Add(advancedForm);
@@ -433,11 +460,16 @@ public partial class MainWindow : Window
         fields.Add(recipe.Name,recipe);
         var extensionActions=Row(extensions);
         Add(extensionActions,"Copy extension prompt",()=>{Clipboard.SetText(service.CliRecipePrompt(Selected()));return Task.CompletedTask;},false);
-        Add(extensionActions,"Paste Agent Reply",()=>{recipe.Text=Clipboard.GetText();return Task.CompletedTask;},false);
         Add(extensionActions,"Import calling recipe",()=>{service.ImportCliRecipe(Selected(),recipe.Text);return Task.CompletedTask;});
         Add(extensionActions,"Test CLI",()=>{ShowCliProbe(Selected());return Task.CompletedTask;});
         extensions.Children.Add(Note("Import saves a recipe without running it. Review the executable and arguments in the test dialog before making a real call."));
         page.Children.Add(new Expander{Header=T("Advanced: CLI interface extensions"),Content=extensions,IsExpanded=agentId is not null,Margin=new(0,16,0,8)});
+        Add(Row(page),"Remove all handoff rules",()=>
+        {
+            if(MessageBox.Show(this,T("Remove Relay's marked rules from registered instruction files? Your other instructions will be kept. Do this before deleting the portable software folder."),T("Remove all handoff rules"),MessageBoxButton.OKCancel)==MessageBoxResult.OK)service.RemoveAllGuidance();
+            else reviewCancelled=true;
+            return Task.CompletedTask;
+        });
         return page;
     }
 

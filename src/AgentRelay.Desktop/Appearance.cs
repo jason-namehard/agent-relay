@@ -63,6 +63,7 @@ public static class Appearance
 
     public static void Apply(Window window, DesktopPreferences preferences)
     {
+        window.FontFamily=new FontFamily(preferences.Language is "zh-CN" or "zh-TW" ? "Microsoft YaHei UI, Segoe UI" : "Segoe UI");
         Validate(preferences);
         var colors = preferences.Palette switch
         {

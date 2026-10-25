@@ -34,7 +34,7 @@ public sealed class RelayException(string code, string message, int exitCode = 2
 public enum TaskState
 {
     Created, AwaitingConfirmation, AwaitingManual, Dispatching, Dispatched,
-    Acknowledged, Running, Succeeded, Failed, TimedOut, DeliveryUnknown, Cancelled
+    Acknowledged, Running, Succeeded, Failed, TimedOut, DeliveryUnknown, Cancelled, AwaitingReply
 }
 
 public sealed record AgentRecord(string AgentId, string Host, string ConfigPath, string? CliPath,
@@ -70,6 +70,13 @@ public sealed class TaskRecord
     public string? ErrorCode { get; set; }
     public string? ErrorMessage { get; set; }
     public bool? SideEffectsPossible { get; set; }
+    public bool IsFileHandoff { get; set; }
+    public string? AwaitingAgentId { get; set; }
+    public int ManualTurn { get; set; }
+    public string? ManualCurrentFile { get; set; }
+    public string? ManualNextAction { get; set; }
+    public string? ManualReceiptJson { get; set; }
+    public string? ManualSourceFile { get; set; }
 }
 
 public sealed record TaskView(TaskRecord Task, bool DeadlineExceeded, string NextAction, string Prompt,

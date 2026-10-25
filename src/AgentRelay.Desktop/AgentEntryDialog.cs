@@ -12,7 +12,7 @@ public sealed class AgentEntryDialog : Window
 {
     public AgentEntryDraft? Result { get; private set; }
 
-    public AgentEntryDialog(Window owner, string language, AgentRecord? existing = null)
+    public AgentEntryDialog(Window owner, string language, AgentRecord? existing = null, RelayService? service = null)
     {
         var ui = new EntryDialogLayout(this, owner, EntryText.Get(existing is null ? "Add Agent" : "Edit Agent", language), language);
         ui.Body.Children.Add(ui.Note("Name is required; all other information is optional."));
@@ -34,12 +34,23 @@ public sealed class AgentEntryDialog : Window
             ["AgentCli"] = cli, ["AgentVersion"] = version, ["AgentInstructions"] = instructions
         };
         ui.Assistant(ui.Body, "Fill with an Agent", "Copy the prompt, send it to your Agent, then paste its complete reply here.", "AgentEntry",
-            () => SetupAssistant.CreatePrompt("agents", fields.ToDictionary(f => f.Key, f => f.Value.Text), language), reply =>
+            () => service is null ? SetupAssistant.CreatePrompt("agents", fields.ToDictionary(f => f.Key, f => f.Value.Text), language)
+                : service.AgentSetupPrompt(existing?.AgentId, ResolveRelayCommand()), reply =>
             {
-                var values = SetupAssistant.Parse(reply, "agents", fields.Keys.ToArray());
-                if (values.Count == 0) throw new RelayException("setup_invalid_fields", "The setup response fields must contain at least one requested field.");
-                foreach (var (key, value) in values.Where(pair => !string.IsNullOrWhiteSpace(pair.Value))) fields[key].Text = value;
-                advanced.IsExpanded = values.Any(pair => pair.Key is "AgentConfig" or "AgentCli" or "AgentVersion" or "AgentInstructions" && !string.IsNullOrWhiteSpace(pair.Value));
+                if (reply.Contains("\"relay_setup_version\"", StringComparison.Ordinal))
+                {
+                    var values = SetupAssistant.Parse(reply, "agents", fields.Keys.ToArray());
+                    if (values.Count == 0) throw new RelayException("setup_invalid_fields", "The setup response fields must contain at least one requested field.");
+                    foreach (var (key, value) in values.Where(pair => !string.IsNullOrWhiteSpace(pair.Value))) fields[key].Text = value;
+                }
+                else
+                {
+                    var manifest = RelayService.ParseAgentSetupManifest(reply);
+                    name.Text = manifest.Name; host.Text = manifest.Host; config.Text = manifest.ConfigPath ?? "";
+                    cli.Text = manifest.CliPath ?? ""; version.Text = manifest.HostVersion ?? "";
+                    instructions.Text = string.Join(Environment.NewLine, manifest.InstructionPaths ?? []);
+                }
+                advanced.IsExpanded = new[] { config.Text, cli.Text, version.Text, instructions.Text }.Any(value => !string.IsNullOrWhiteSpace(value));
                 ui.Status.Text = ui.T("Reply parsed. Review the filled fields before saving.");
             });
         ui.Button(ui.Actions, "Save", "SaveAgentEntry", () =>
@@ -55,5 +66,22 @@ public sealed class AgentEntryDialog : Window
             DialogResult = true;
         }, true);
         var cancel = ui.Button(ui.Actions, "Cancel", "CancelAgentEntry", () => DialogResult = false); cancel.IsCancel = true;
+    }
+
+    internal static string? ResolveRelayCommand()
+    {
+        static string Quote(string value) => "'" + value.Replace("'", "''", StringComparison.Ordinal) + "'";
+        var published = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "relay.exe"));
+        if (File.Exists(published)) return "& " + Quote(published);
+        // Source runs use an actual built CLI; never fabricate an executable path.
+        for (var directory = new DirectoryInfo(AppContext.BaseDirectory); directory is not null; directory = directory.Parent)
+        {
+            if (!File.Exists(Path.Combine(directory.FullName, "AgentRelay.slnx"))) continue;
+            var cli = Path.Combine(directory.FullName, "src", "AgentRelay.Cli", "bin", "Release", "net10.0", "relay.dll");
+            if (!File.Exists(cli)) return null;
+            var runtime = Environment.GetEnvironmentVariable("DOTNET_HOST_PATH");
+            return runtime is not null && File.Exists(runtime) ? "& " + Quote(runtime) + " " + Quote(cli) : "dotnet " + Quote(cli);
+        }
+        return null;
     }
 }

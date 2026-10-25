@@ -98,7 +98,8 @@ internal static class Program
                 }
                 var notification = new AppNotificationBuilder()
                     .AddArgument("action", "view").AddArgument("home", home).AddArgument("task", task).AddArgument("attempt", view.Task.AttemptId)
-                    .AddText("Agent Relay · 任务需要继续")
+                    .AddText(view.Task.IsFileHandoff && view.Task.State==TaskState.Succeeded ? "Agent Relay · 交接已完成" :
+                        view.Task.IsFileHandoff && view.Task.State is TaskState.Failed or TaskState.TimedOut ? "Agent Relay · 交接需要处理" : "Agent Relay · 任务需要继续")
                     .AddText($"{view.Task.RequesterId} ← {view.Task.RecipientId} · {view.Task.State}")
                     .AddText("结果与继续提示词已保存。")
                     .AddButton(new AppNotificationButton("复制继续提示词")

@@ -69,6 +69,7 @@ internal static class Program
         await Click(window,"Remove Agent");
         Check(service.Agents().Any(a=>a.AgentId=="agent-b") && ((Border)window.FindName("ErrorBanner")).Visibility==Visibility.Visible && ((TextBox)window.FindName("ErrorText")).Text.Contains("未完成交接"),"Removing an active Agent is blocked before any confirmation dialog");
         Check(!FindAll<TextBox>(window).Any(b=>b.Name.StartsWith("AgentEntry")||b.Name.EndsWith("SetupReply")),"Agent page has no competing setup form");
+        Check(FindAll<Button>(window).Any(b=>Equals(b.Tag,"Install handoff rule"))&&FindAll<Button>(window).Any(b=>Equals(b.Tag,"Remove handoff rule")),"Agent page exposes explicit installation and removal of handoff rules");
         var count=service.Agents().Count;
         await Modal<AgentEntryDialog>(window,"Add Agent",async dialog=>
         {
@@ -97,29 +98,60 @@ internal static class Program
         Navigate("Home");
         ((ComboBox)window.FindName("QuickLanguage")).SelectedValue="en";await Task.Delay(30);
         var taskCount=service.Tasks().Count;
-        await Modal<HandoffDialog>(window,"New handoff",async dialog=>
+        var source=Path.Combine(root,"handoff.zip");File.WriteAllBytes(source,[1,2,3,4]);
+        await Modal<FileHandoffDialog>(window,"New handoff",async dialog=>
         {
             Check(((TextBlock)window.FindName("StatusText")).Text!=UiText.Translate("Working…","en"),"Handoff form reports a waiting state instead of processing during modal input");
             Expand(dialog);
-            Find<ComboBox>(dialog,"HandoffFrom").SelectedValue=manual.AgentId;
-            Press(dialog,"HandoffCopyPrompt");
-            Check(Clipboard.GetText().Contains("任意节点甲")&&Clipboard.GetText().Contains(manual.AgentId),"Handoff prompt includes user names and stable node IDs");
-            Find<TextBox>(dialog,"HandoffReply").Text=Reply("handoff",new(){["From"]=manual.AgentId,["To"]="agent-c",["Content"]="请读取交接内容，不预设角色。"});
-            Press(dialog,"HandoffParseReply");
-            Check((string)Find<ComboBox>(dialog,"HandoffFrom").SelectedValue==manual.AgentId&&Find<TextBox>(dialog,"HandoffContent").Text.Contains("不预设角色"),"Handoff reply selects sender, recipient and message");
-            Check(service.Tasks().Count==taskCount&&dialog.Result is null,"Handoff parse does not send or create a task");
-            Check(!Find<RadioButton>(dialog,"HandoffAutomatic").IsEnabled&&Find<RadioButton>(dialog,"HandoffManual").IsChecked==true,"Missing CLI route defaults to manual");
-            Find<TextBox>(dialog,"HandoffReply").Text=Reply("handoff",new(){["From"]=manual.AgentId,["To"]=manual.AgentId,["Content"]="invalid"});
-            Press(dialog,"HandoffParseReply");
-            Check((string)Find<ComboBox>(dialog,"HandoffTo").SelectedValue=="agent-c","Invalid same-node reply does not partially overwrite draft");
+            Press(dialog,"CopyFileHandoffFormat");
+            Check(Clipboard.GetText().Contains("file")&&Clipboard.GetText().Contains("任意节点甲"),"File handoff instructions explain the compact JSON and registered node names");
+            Find<TextBox>(dialog,"FileHandoffReply").Text="{bad";Press(dialog,"ParseFileHandoff");
+            Check(dialog.Result is null&&service.Tasks().Count==taskCount,"Malformed handoff JSON cannot create a task");
+            Find<TextBox>(dialog,"FileHandoffReply").Text=RelayJson.Write(new{from=manual.AgentId,to=manual.AgentId,file=source});
+            Press(dialog,"ParseFileHandoff");
+            Check(dialog.Result is null&&service.Tasks().Count==taskCount,"Same-node file handoff is rejected before creation");
+            Check(!FindAll<Button>(dialog).Any(b=>b.Name.Contains("Paste",StringComparison.Ordinal)),"File handoff accepts ordinary text paste without a redundant Paste button");
+            Find<TextBox>(dialog,"FileHandoffReply").Text=RelayJson.Write(new{from=manual.AgentId,to="agent-c",file=source,message="检查文件并决定是否需要回传。"});
             await SaveImage(dialog,Path.Combine(root,"Handoff.png"));
-            Press(dialog,"CreateHandoff");
+            Press(dialog,"ParseFileHandoff");
         });
-        Check(service.Tasks().Count==taskCount+1,"Explicit create adds one manual handoff");
-        var created=service.Tasks().Single(v=>v.Task.RequesterId==manual.AgentId).Task;
-        Check(created.Mode=="manual"&&File.Exists(created.RequestPath),"Manual Agent can send a stored handoff");
+        await Wait(()=>service.Tasks().Count==taskCount+1);
+        var created=service.Tasks().Single(v=>v.Task.ManualSourceFile==source).Task;
+        Check(created.IsFileHandoff&&created.Mode=="manual"&&File.Exists(created.RequestPath),"Parsing and creating registers one manual file handoff without CLI setup");
+        var pendingRow=Find<DataGrid>(window,"TasksTable").Items.Cast<object>().Single(r=>(string)r.GetType().GetProperty("TaskId")!.GetValue(r)! == created.TaskId);
+        Check(((string)pendingRow.GetType().GetProperty("State")!.GetValue(pendingRow)!).Contains("自选节点丙",StringComparison.Ordinal),"Pending handoff status names the actual Agent that must receive and reply");
+        Check(File.ReadAllBytes(source).SequenceEqual(File.ReadAllBytes(created.RequestPath)),"Binary file content survives handoff creation");
+        Check(Directory.GetFiles(Path.GetDirectoryName(created.RequestPath)!).Length==1,"Binary handoff creates one visible managed file without wrapper snapshots");
+        Check(!FindAll<Button>(window).Any(b=>Equals(b.Tag,"Import completed reply")||Equals(b.Tag,"Retry")),"New file handoff does not require manual result import or retry controls");
         await Click(window,"Copy prompt for 自选节点丙");
-        Check(Clipboard.GetText().Contains(created.RequestPath)&&Clipboard.GetText().Contains(service.Home),"Manual prompt carries request path and relay location");
+        Check(Clipboard.GetText().Length<500&&Clipboard.GetText().Contains(created.TaskId)&&Clipboard.GetText().Contains("context.json"),"Receiver prompt is a short pointer to task context instead of a long protocol transcript");
+        var context=RelayJson.Read<System.Text.Json.JsonElement>(File.ReadAllText(Path.Combine(Path.GetDirectoryName(service.ManualReceiptPath(created))!,"context.json")));
+        Check(context.GetProperty("current_file").GetString()==created.RequestPath && context.GetProperty("receipt_template").GetProperty("sender").GetString()=="agent-c","Task context agrees with the installed rule and exact receipt identity");
+        var replyFile=Path.Combine(root,"b-reply.md");File.WriteAllText(replyFile,"Select option 2 before finalizing.");
+        File.WriteAllText(service.ManualReceiptPath(created),RelayJson.Write(new ManualReceipt(created.TaskId,created.AttemptId,"agent-c",0,"done",true,replyFile,"选择第二个选项并确认最终方案")));
+        await Wait(()=>service.Status(created.TaskId).Task.State==TaskState.AwaitingReply);
+        Check(service.Status(created.TaskId).Task.AwaitingAgentId==manual.AgentId,"Agent receipt automatically keeps the task ongoing and selects the requester for necessary followup");
+        await Wait(()=>FindAll<Button>(window).Any(b=>Equals(b.Tag,"Copy prompt for 任意节点甲")));
+        await Click(window,"Copy prompt for 任意节点甲");
+        Check(Clipboard.GetText().Length<500,"Followup prompt remains short and changes its target Agent");
+        Check(Directory.GetFiles(Path.GetDirectoryName(created.RequestPath)!).Length==2,"Reply adds one file without creating duplicate result snapshots");
+        File.WriteAllText(service.ManualReceiptPath(created),RelayJson.Write(new ManualReceipt(created.TaskId,created.AttemptId,manual.AgentId,1,"done",false)));
+        await Wait(()=>service.Status(created.TaskId).Task.State==TaskState.Succeeded);
+        Check(service.Status(created.TaskId).Task.State==TaskState.Succeeded,"Requester final receipt automatically completes the existing task without another paste or import");
+        await SaveImage(window,Path.Combine(root,"Manual-completed.png"));
+
+        var directSource=Path.Combine(root,"direct.md");File.WriteAllText(directSource,"No followup is needed after review.");
+        var beforeDirect=service.Tasks().Count;
+        await Modal<FileHandoffDialog>(window,"New handoff",dialog=>
+        {
+            Find<TextBox>(dialog,"FileHandoffReply").Text=RelayJson.Write(new{from=manual.AgentId,to="agent-c",file=directSource});
+            Press(dialog,"ParseFileHandoff");return Task.CompletedTask;
+        });
+        await Wait(()=>service.Tasks().Count==beforeDirect+1);
+        var direct=service.Tasks().Single(v=>v.Task.ManualSourceFile==directSource).Task;
+        File.WriteAllText(service.ManualReceiptPath(direct),RelayJson.Write(new ManualReceipt(direct.TaskId,direct.AttemptId,"agent-c",0,"done",false)));
+        await Wait(()=>service.Status(direct.TaskId).Task.State==TaskState.Succeeded);
+        Check(service.Status(direct.TaskId).Task.ManualTurn==0,"Receipt that needs no reply ends the handoff immediately without returning to its sender");
 
         Navigate("Connections");
         Check(FindAll<System.Windows.Shapes.Path>(window).Count(p=>AutomationProperties.GetAutomationId(p).StartsWith("ConnectionPair:"))==6,"Four nodes use six shared connection lines instead of twelve directed lines");

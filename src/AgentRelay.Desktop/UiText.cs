@@ -375,6 +375,7 @@ public static class UiText
         entries.Add("deny", entries["Deny"]);
         entries.Add("default_deny", entries["Default deny"]);
         SimplifiedText.AddTo(entries);
+        ManualUiText.AddTo(entries);
         return entries;
     }
 }

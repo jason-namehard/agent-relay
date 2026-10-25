@@ -91,6 +91,10 @@ public static class RelayCli
             ["id!", "host", "config-path!", "cli-path", "host-version", "instruction-path"],
             (s, v) => s.Register(v.Get("id"), v.Optional("host") ?? "manual", v.Get("config-path"),
                 v.Optional("cli-path"), v.Optional("host-version"), v.Optional("instruction-path") is { } path ? [path] : []));
+        Sync(agent, "setup", "从 JSON 填写节点信息；不执行宿主或安装桥接", ["manifest!", "id"],
+            (s, v) => { s.Initialize(); return s.SetupAgentFromJson(File.ReadAllText(v.Get("manifest")), v.Optional("id")); });
+        Sync(agent, "setup-prompt", "说明 Agent 如何调查并填写自己的节点信息", ["id"],
+            (s, v) => new { prompt = s.AgentSetupPrompt(v.Optional("id")) });
         Sync(agent, "validate", "验证已登记路径存在、可读；不启动宿主", ["id!"], (s, v) => s.ValidateAgent(v.Get("id")));
         Add(agent, "verify-executor", "验证 Codex 原生 CLI 版本及非交互契约，不调用模型", ["id!"],
             async (s, v) => await s.VerifyExecutorAsync(v.Get("id"), v.CancellationToken));
@@ -98,6 +102,30 @@ public static class RelayCli
         Add(agent, "verify-resumer", "验证精确会话继续接口；exec-resume 会启动模型轮次", ["id!", "kind!"],
             async (s, v) => await s.VerifyResumerAsync(v.Get("id"), v.Get("kind"), v.CancellationToken));
         Sync(agent, "resumers", "显示已验证的会话继续适配器", [], (s, _) => s.Resumers());
+
+        var cliRecipe = Group("cli-recipe", "保存已有 CLI 调用方案，不执行或启用");
+        Sync(cliRecipe, "import", "从 JSON 保存指定 Agent 的调用方案", ["agent!", "manifest!"],
+            (s, v) => s.ImportCliRecipe(v.Get("agent"), File.ReadAllText(v.Get("manifest"))));
+
+        var guidance = Group("guidance", "管理按需读取的 Agent 交接规则");
+        Sync(guidance, "list", "列出本中转站安装的接入规则", [], (s, _) => s.GuidanceRegistrations());
+        Sync(guidance, "prompt", "生成一句按需读取规则及其详细指引", ["agent!"],
+            (s, v) => new { rule = s.GuidancePrompt(v.Get("agent")), instructions = s.StableInstructionPath(v.Get("agent")) });
+        Sync(guidance, "preview", "预览将加入指定指令文件的一句规则", ["agent!", "file!"],
+            (s, v) => s.PreviewGuidance(v.Get("agent"), v.Get("file")));
+        Sync(guidance, "install", "用户明确批准后写入带标记的一句规则", ["agent!", "file!", "approve?"], (s, v) =>
+        {
+            if (!v.Flag("approve")) throw new RelayException("approval_required", "请先向用户说明指令文件和规则内容；确认后加 --approve。");
+            return s.InstallGuidance(v.Get("agent"), v.Get("file"));
+        });
+        Sync(guidance, "remove", "只移除 Relay 自己的规则，保留其他内容", ["agent", "all?"], (s, v) =>
+        {
+            var id = v.Optional("agent");
+            if (v.Flag("all") == (id is not null)) throw new RelayException("invalid_arguments", "指定 --agent 或 --all 中的一项。");
+            return new { removed = v.Flag("all") ? s.RemoveAllGuidance() : s.RemoveGuidance(id!) };
+        });
+        Sync(guidance, "refresh", "刷新稳定入口中的节点目录和当前中转站位置", [], (s, _) =>
+        { s.RefreshGuidance(); return new { status = "updated" }; });
 
         var permission = Group("permission", "有向通信权限，未配置默认拒绝");
         Sync(permission, "set", "只改变指定方向", ["from!", "to!", "decision!"], (s, v) => s.SetPermission(v.Get("from"), v.Get("to"), v.Get("decision")));

@@ -84,7 +84,6 @@ internal sealed class EntryDialogLayout
         var buttons = new WrapPanel(); panel.Children.Add(buttons);
         var reply = Input(prefix + "Reply", multiline: true); reply.MaxLength = SetupAssistant.MaxResponseBytes;
         Button(buttons, "Copy prompt", prefix + "CopyPrompt", () => { Clipboard.SetText(prompt()); Status.Text = T("Prompt copied."); });
-        Button(buttons, "Paste reply", prefix + "PasteReply", () => reply.Text = Clipboard.GetText());
         Button(buttons, "Parse and fill", prefix + "ParseReply", () => parse(reply.Text), true);
         panel.Children.Add(reply);
         return reply;

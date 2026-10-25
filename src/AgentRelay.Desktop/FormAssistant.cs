@@ -17,8 +17,6 @@ public sealed class FormAssistant : Expander
         var buttons = new WrapPanel(); panel.Children.Add(buttons);
         var copy = new Button { Content = T("Copy Setup Prompt"), Name = "CopySetupPrompt", Tag = "Copy Setup Prompt" };
         AutomationProperties.SetAutomationId(copy, context + "CopySetupPrompt"); buttons.Children.Add(copy);
-        var paste = new Button { Content = T("Paste Agent Reply"), Name = "PasteAgentReply", Tag = "Paste Agent Reply" };
-        AutomationProperties.SetAutomationId(paste, context + "PasteAgentReply"); buttons.Children.Add(paste);
         var parse = new Button { Content = T("Parse and Fill"), Name = "ParseandFill", Tag = "Parse and Fill" };
         parse.SetResourceReference(StyleProperty,"PrimaryButtonStyle");
         AutomationProperties.SetAutomationId(parse, context + "ParseandFill"); buttons.Children.Add(parse);
@@ -31,7 +29,6 @@ public sealed class FormAssistant : Expander
             Clipboard.SetText(SetupAssistant.CreatePrompt(context, fields.ToDictionary(f => f.Key, f => f.Value.Text), language));
             return Task.CompletedTask;
         }, T("Copied setup prompt. Paste it into the Agent you want to register."));
-        paste.Click += async (_, _) => await run(() => { reply.Text = Clipboard.GetText(); return Task.CompletedTask; }, T("Ready"));
         parse.Click += async (_, _) => await run(() =>
         {
             var values = SetupAssistant.Parse(reply.Text, context, fields.Keys.ToArray());
