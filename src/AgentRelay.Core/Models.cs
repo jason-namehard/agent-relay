@@ -77,6 +77,10 @@ public sealed class TaskRecord
     public string? ManualNextAction { get; set; }
     public string? ManualReceiptJson { get; set; }
     public string? ManualSourceFile { get; set; }
+    public int? CliFileTurn { get; set; }
+    public string? CliFileStatus { get; set; }
+    public string? CliFileSessionId { get; set; }
+    public string? CliFileError { get; set; }
 }
 
 public sealed record TaskView(TaskRecord Task, bool DeadlineExceeded, string NextAction, string Prompt,

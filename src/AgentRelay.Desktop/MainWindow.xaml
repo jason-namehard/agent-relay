@@ -1,7 +1,7 @@
 <Window x:Class="AgentRelay.Desktop.MainWindow"
  xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
  xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
- Title="Agent Relay" Width="1120" Height="780" MinWidth="900" MinHeight="620"
+ Title="Agent Relay" Icon="Assets/AgentRelay.ico" Width="1120" Height="780" MinWidth="900" MinHeight="620"
  WindowStartupLocation="CenterScreen" Background="{DynamicResource PageBrush}" FontFamily="Segoe UI" FontSize="13" Foreground="{DynamicResource TextBrush}">
  <Window.Resources>
   <ResourceDictionary><ResourceDictionary.MergedDictionaries><ResourceDictionary Source="ThemeResources.xaml"/></ResourceDictionary.MergedDictionaries></ResourceDictionary>

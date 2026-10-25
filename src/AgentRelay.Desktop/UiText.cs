@@ -376,6 +376,9 @@ public static class UiText
         entries.Add("default_deny", entries["Default deny"]);
         SimplifiedText.AddTo(entries);
         ManualUiText.AddTo(entries);
+        TaskControlUiText.AddTo(entries);
+        WorkflowUiText.AddTo(entries);
+        AgentEntryUiText.AddTo(entries);
         return entries;
     }
 }

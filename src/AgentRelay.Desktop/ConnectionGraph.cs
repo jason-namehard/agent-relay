@@ -10,7 +10,7 @@ namespace AgentRelay.Desktop;
 
 public sealed class ConnectionGraph : Viewbox
 {
-    public ConnectionGraph(IReadOnlyList<AgentRecord> agents,IReadOnlyList<ConnectionView> edges,Action<ConnectionView> select,string language,Window owner,Func<string,string>? displayName=null)
+    public ConnectionGraph(IReadOnlyList<AgentRecord> agents,IReadOnlyList<ConnectionView> edges,Action<ConnectionView> select,string language,Window owner,Func<string,string>? displayName=null,IReadOnlyDictionary<string,CliExtensionRecord>? extensions=null)
     {
         string Name(string id)=>displayName is null?id:displayName(id);
         Brush B(string key)=>(Brush)owner.FindResource(key);
@@ -68,7 +68,16 @@ public sealed class ConnectionGraph : Viewbox
             var node=new Border{Width=150,MinHeight=42,Padding=new(8,7,8,7),Background=B("SurfaceAltBrush"),
                 BorderBrush=B("BorderBrush"),BorderThickness=new(1),CornerRadius=new(12),ToolTip=$"{name}\n{agent.AgentId}"};
             AutomationProperties.SetAutomationId(node,$"ConnectionNode:{agent.AgentId}");
-            node.Child=new TextBlock{Text=name,TextAlignment=TextAlignment.Center,TextTrimming=TextTrimming.CharacterEllipsis,VerticalAlignment=VerticalAlignment.Center,Foreground=B("TextBrush")};
+            var content=new DockPanel();
+            var cli=extensions?.GetValueOrDefault(agent.AgentId);
+            var state=cli is null?"cli-missing":cli.CreateProbe is {MachinePassed:false}?"cli-failed":cli.CanCreate?"cli-ready":"cli-registered";
+            var indicator=new Ellipse{Width=9,Height=9,Margin=new(0,0,7,0),VerticalAlignment=VerticalAlignment.Center,
+                Fill=B(state=="cli-missing"?"UnavailableBrush":state=="cli-failed"?"DeniedBrush":"AllowedBrush"),ToolTip=GraphText.Legend(state,language)};
+            AutomationProperties.SetAutomationId(indicator,$"CliIndicator:{agent.AgentId}");
+            AutomationProperties.SetName(indicator,GraphText.Legend(state,language));
+            DockPanel.SetDock(indicator,Dock.Left);content.Children.Add(indicator);
+            content.Children.Add(new TextBlock{Text=name,TextAlignment=TextAlignment.Center,TextTrimming=TextTrimming.CharacterEllipsis,VerticalAlignment=VerticalAlignment.Center,Foreground=B("TextBrush")});
+            node.Child=content;
             Canvas.SetLeft(node,p.X-75);Canvas.SetTop(node,p.Y-21);Panel.SetZIndex(node,2);canvas.Children.Add(node);
         }
         var legend=new WrapPanel{Margin=new(12,12,12,4)};

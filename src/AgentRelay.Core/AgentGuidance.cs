@@ -7,7 +7,7 @@ namespace AgentRelay.Core;
 public sealed record GuidanceRegistration(string AgentId, string InstructionFile, string InstructionPath,
     string BackupRelativePath, DateTimeOffset InstalledAt);
 public sealed record GuidancePreview(string AgentId, string InstructionFile, string InstructionPath, string Rule);
-public sealed record AgentSetupManifest(string Name, string Host, string? ConfigPath = null,
+public sealed record AgentSetupManifest(string Name, string Host = "manual", string? ConfigPath = null,
     string? CliPath = null, string? HostVersion = null, string[]? InstructionPaths = null);
 internal sealed record GuidanceState(string WorkspaceKey, string RelayHome, GuidanceRegistration[] Registrations);
 
@@ -72,20 +72,33 @@ public sealed partial class RelayService
     {
         if (id is not null && !Agents().Any(a => a.AgentId == id))
             throw new RelayException("agent_not_found", "未找到该 Agent。", 3);
+        var requestId = Guid.NewGuid().ToString("N");
+        var registered = Agents().Select(agent => new { agent_id = agent.AgentId, name = agent.DisplayName ?? agent.AgentId });
+        var intent = id is null
+            ? "这是新建节点请求：不要使用任何已有节点 ID，不传 --id，不修改或覆盖目录中的节点。登记命令会自动生成全新的 agent_id。即使名称相似，也不能擅自复用已有节点。"
+            : "这是用户明确指定的节点资料更新：仅更新 " + id + "，不要操作其他节点。";
         var setup = relayCommand is null
-            ? "当前安装位置没有可确认的 Relay CLI。不要猜测程序路径或尝试执行；只返回下方完整 JSON，由用户在 Relay 中解析。"
+            ? "当前安装位置没有可确认的 Relay CLI。不要猜测程序路径或尝试执行；向用户说明无法自动登记，可在 Relay 的新建 Agent 页面按字段手动填写。不要让用户回粘整段配置。"
             : $"将下方 JSON 保存到临时文件，再运行：\n{relayCommand} --home \"{Home}\" agent setup --manifest <该 JSON 文件的绝对路径>" +
-                (id is null ? "" : " --id " + id) + "\n需要 .NET 10 runtime；命令不可运行时只返回完整 JSON，不安装依赖，不猜其他程序路径。";
+                (id is null ? "" : " --id " + id) + "\n需要 .NET 10 runtime；命令不可运行时说明原因，不安装依赖，不猜其他程序路径。";
+        var recipeTemplate = new CliRecipe(1, "方案名称", "本次调查的宿主",
+            new CliCommand("已核实的程序路径", ["{prompt}"], null, null), null, [], "", "", "", "", "text");
         var recipe = relayCommand is null
-            ? "若已查证可用的调用方式，将调查结果交给用户在 Relay 的“CLI 接口扩充”中处理。"
-            : $"若已核实一个可用 CLI/桥接程序，先让用户在 Relay 的“CLI 接口扩充”查看调用协议，再保存方案：\n{relayCommand} --home \"{Home}\" cli-recipe import --agent <已登记的 Agent ID> --manifest <调用方案 JSON 路径>";
+            ? "若已查证可用的调用方式，告诉用户程序路径、参数和输出格式，供手动配置。"
+            : $"若已核实可用 CLI，将调用方案保存为临时 JSON，直接导入：\n{relayCommand} --home \"{Home}\" cli-recipe import --agent <本次登记命令返回的 Agent ID> --manifest <调用方案 JSON 路径>\n只使用本次命令返回的 ID。原生 JSON、JSONL 或文本由 Relay 适配，不要求宿主输出 Relay 专用回执。调用参数每项一个，不拼 shell 字符串；arguments 或 input 必须含 {{prompt}}。resume 无法确认则填 null，支持时须含 {{session_id}}。environment 可设非敏感环境变量。\noutput_format 可选：" +
+                string.Join("、", CliRecipes.OutputFormats) + "。DSH 用 dsh-jsonl；Zcode 按输出选 zcode-json 或 zcode-jsonl；Hermes 用 hermes-jsonl；CodeBuddy/WorkBuddy 的兼容 JSON 用 claude-json；仅最终文本用 text；已存在的专用桥用 relay-json。格式应与已查证的实际输出一致，未知不要编造。模板：\n" + RelayJson.Write(recipeTemplate);
         return $$"""
+            Agent Relay 一键配置请求：{{requestId}}
+            {{intent}}
+            当前节点目录（只用于避免重复和覆盖，不是本次写入目标）：
+            {{RelayJson.Write(registered)}}
+            {{(relayCommand is null ? "" : "执行登记前先运行 " + relayCommand + " --home \"" + Home + "\" agent list，读取最新目录。")}}
             请调查你自己的本机宿主与会话信息，区分会话记录、配置文件、CLI 程序和续接接口，不要把日志路径当作调用方案。
             仅读取帮助、公开文档和不含密钥的设置。先用已有 CLI 的 --help/version 查证是否支持创建可见会话、按 session ID 续接，以及如何传入消息；不要启动模型、安装程序或修改宿主设置。
             {{setup}}
             直写接口成功后，只向用户报告已登记的节点名称和返回的 agent_id；无需再粘贴相同 JSON 或在“新增”窗口重复保存，以免重复登记。
-            {"name":"用户可识别的名称","host":"宿主名称","config_path":null,"cli_path":null,"host_version":null,"instruction_paths":[]}
-            未知信息保留 null 或空数组，不猜路径，不返回认证信息。name、host 必填；其余字段选填。会话 ID 与记录位置可另作调查备注，不能作为 config_path。
+            {"name":"用户可识别的名称","host":"可识别的内部宿主类型，未知填manual","config_path":null,"cli_path":null,"host_version":null,"instruction_paths":[]}
+            用户只需要一个名称。host 是内部适配资料，不另外要求用户提供软件名称。未知信息保留 null 或空数组，不猜路径，不返回认证信息；name 必填。会话 ID 与记录位置不能作为 config_path。
             {{recipe}}
             导入只保存，不执行或启用方案。没有可用接口时明确说明，使用手动交接即可。
             """;

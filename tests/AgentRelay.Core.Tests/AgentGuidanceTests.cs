@@ -68,8 +68,25 @@ public sealed class AgentGuidanceTests
         StringAssert.Contains(direct, " --id agent-a");
         StringAssert.Contains(direct, ".NET 10 runtime");
         var fallback = service.AgentSetupPrompt("agent-a", null);
-        StringAssert.Contains(fallback, "只返回下方完整 JSON");
+        StringAssert.Contains(fallback, "按字段手动填写");
         Assert.DoesNotContain(" agent setup --manifest", fallback, StringComparison.Ordinal);
+    }
+
+    [TestMethod]
+    public void NewSetupPromptsHaveUniqueRequestsAndNeverTargetSelectedNodes()
+    {
+        var first = service.AgentSetupPrompt(relayCommand: "relay");
+        var second = service.AgentSetupPrompt(relayCommand: "relay");
+        Assert.AreNotEqual(first, second);
+        StringAssert.Contains(first, "agent list");
+        StringAssert.Contains(first, "节点甲");
+        StringAssert.Contains(first, "不要使用任何已有节点 ID");
+        Assert.DoesNotContain("--manifest <该 JSON 文件的绝对路径> --id", first, StringComparison.Ordinal);
+        StringAssert.Contains(first, "本次登记命令返回的 Agent ID");
+        var agent = service.SetupAgentFromJson("""{"name":"仅有一个名称"}""");
+        Assert.AreEqual("manual", agent.Host);
+        Assert.AreEqual("仅有一个名称", agent.DisplayName);
+        Assert.DoesNotContain(agent.AgentId, new[] { "agent-a", "agent-b" });
     }
 
     [TestMethod]

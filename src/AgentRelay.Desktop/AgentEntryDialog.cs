@@ -7,62 +7,69 @@ namespace AgentRelay.Desktop;
 
 public sealed record AgentEntryDraft(string Name, string Host, string ConfigPath, string? CliPath,
     string? HostVersion, string[] InstructionPaths);
+public sealed record AgentCliDraft(string Executable, string[] Arguments, string? Input, string OutputFormat, string? WorkingDirectory);
 
 public sealed class AgentEntryDialog : Window
 {
     public AgentEntryDraft? Result { get; private set; }
+    public AgentCliDraft? CliResult { get; private set; }
 
     public AgentEntryDialog(Window owner, string language, AgentRecord? existing = null, RelayService? service = null)
     {
-        var ui = new EntryDialogLayout(this, owner, EntryText.Get(existing is null ? "Add Agent" : "Edit Agent", language), language);
+        var ui = new EntryDialogLayout(this, owner, EntryText.Get(existing is null ? "New Agent" : "Edit Agent", language), language);
         ui.Body.Children.Add(ui.Note("Name is required; all other information is optional."));
         var name = ui.Field(ui.Body, "Agent name", "AgentEntryName", existing?.DisplayName ?? existing?.AgentId ?? "");
         ui.Body.Children.Add(ui.Note("Choose any name. Roles are defined by you."));
-        var host = ui.Field(ui.Body, "Host / application", "AgentEntryHost", existing?.Host ?? "");
         var advancedPanel = new StackPanel { Margin = new(10) };
         var advanced = new Expander { Header = ui.T("Advanced connection details"), Content = advancedPanel, Margin = new(0, 4, 0, 12) };
         ui.Body.Children.Add(advanced);
         advancedPanel.Children.Add(ui.Note("Manual handoff works without configuration paths. CLI capabilities are tested separately."));
         var config = ui.Field(advancedPanel, "Configuration path", "AgentEntryConfig", existing?.ConfigPath ?? "");
-        var cli = ui.Field(advancedPanel, "CLI executable path", "AgentEntryCli", existing?.CliPath ?? "");
-        var version = ui.Field(advancedPanel, "Host version", "AgentEntryVersion", existing?.HostVersion ?? "");
+        var version = ui.Field(advancedPanel, "CLI version (optional)", "AgentEntryVersion", existing?.HostVersion ?? "");
         var instructions = ui.Field(advancedPanel, "Instruction files (one per line)", "AgentEntryInstructions",
             existing is null ? "" : string.Join(Environment.NewLine, existing.InstructionPaths), true);
-        var fields = new Dictionary<string, TextBox>
-        {
-            ["AgentName"] = name, ["AgentHost"] = host, ["AgentConfig"] = config,
-            ["AgentCli"] = cli, ["AgentVersion"] = version, ["AgentInstructions"] = instructions
-        };
-        ui.Assistant(ui.Body, "Fill with an Agent", "Copy the prompt, send it to your Agent, then paste its complete reply here.", "AgentEntry",
-            () => service is null ? SetupAssistant.CreatePrompt("agents", fields.ToDictionary(f => f.Key, f => f.Value.Text), language)
-                : service.AgentSetupPrompt(existing?.AgentId, ResolveRelayCommand()), reply =>
-            {
-                if (reply.Contains("\"relay_setup_version\"", StringComparison.Ordinal))
-                {
-                    var values = SetupAssistant.Parse(reply, "agents", fields.Keys.ToArray());
-                    if (values.Count == 0) throw new RelayException("setup_invalid_fields", "The setup response fields must contain at least one requested field.");
-                    foreach (var (key, value) in values.Where(pair => !string.IsNullOrWhiteSpace(pair.Value))) fields[key].Text = value;
-                }
-                else
-                {
-                    var manifest = RelayService.ParseAgentSetupManifest(reply);
-                    name.Text = manifest.Name; host.Text = manifest.Host; config.Text = manifest.ConfigPath ?? "";
-                    cli.Text = manifest.CliPath ?? ""; version.Text = manifest.HostVersion ?? "";
-                    instructions.Text = string.Join(Environment.NewLine, manifest.InstructionPaths ?? []);
-                }
-                advanced.IsExpanded = new[] { config.Text, cli.Text, version.Text, instructions.Text }.Any(value => !string.IsNullOrWhiteSpace(value));
-                ui.Status.Text = ui.T("Reply parsed. Review the filled fields before saving.");
-            });
+        var cliPanel = new StackPanel { Margin = new(10) };
+        var cliSection = new Expander { Header = ui.T("CLI calling method (optional)"), Content = cliPanel, Margin = new(0, 4, 0, 12) };
+        ui.Body.Children.Add(cliSection);
+        cliPanel.Children.Add(ui.Note("Record a program alone, or add arguments containing {prompt} to save a testable calling method. Put one argument on each line."));
+        var priorRecipe = existing is null ? null : service?.CliExtension(existing.AgentId)?.Recipe;
+        var cli = ui.Field(cliPanel, "CLI executable path", "AgentEntryCli", priorRecipe?.Create.Executable ?? existing?.CliPath ?? "");
+        var arguments = ui.Field(cliPanel, "CLI arguments (one per line)", "AgentEntryCliArguments",
+            priorRecipe is null ? "" : string.Join(Environment.NewLine, priorRecipe.Create.Arguments), true);
+        var input = ui.Field(cliPanel, "Standard input template (optional)", "AgentEntryCliInput", priorRecipe?.Create.Input ?? "", true);
+        var outputFormat = new ComboBox { Name = "AgentEntryOutputFormat", MinHeight = 40,
+            ItemsSource = CliRecipes.OutputFormats };
+        System.Windows.Automation.AutomationProperties.SetAutomationId(outputFormat, outputFormat.Name);
+        outputFormat.SelectedItem = priorRecipe is null ? "text" : CliRecipes.OutputFormatFor(priorRecipe);
+        cliPanel.Children.Add(new Label { Content = ui.T("CLI output format"), Target = outputFormat, Padding = new(0, 0, 0, 2) });
+        cliPanel.Children.Add(outputFormat);
+        var working = ui.Field(cliPanel, "CLI working directory", "AgentEntryWorkingDirectory", priorRecipe?.Create.WorkingDirectory ?? "");
+        advanced.IsExpanded = existing is not null && new[] { config.Text, version.Text, instructions.Text }
+            .Any(value => !string.IsNullOrWhiteSpace(value));
+        cliSection.IsExpanded = existing is not null && !string.IsNullOrWhiteSpace(cli.Text);
         ui.Button(ui.Actions, "Save", "SaveAgentEntry", () =>
         {
             if (string.IsNullOrWhiteSpace(name.Text)) throw new RelayException("agent_name_required", "Enter an Agent name.");
             var configPath = config.Text.Trim(); var cliPath = cli.Text.Trim();
             var instructionPaths = instructions.Text.Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
             if ((configPath.Length > 0 && !Path.IsPathFullyQualified(configPath)) ||
-                (cliPath.Length > 0 && !Path.IsPathFullyQualified(cliPath)) || instructionPaths.Any(p => !Path.IsPathFullyQualified(p)))
+                instructionPaths.Any(p => !Path.IsPathFullyQualified(p)) ||
+                (!string.IsNullOrWhiteSpace(working.Text) && !Path.IsPathFullyQualified(working.Text.Trim())))
                 throw new RelayException("agent_path_required", "Use a full path for optional configuration and executable files.");
-            Result = new(name.Text.Trim(), string.IsNullOrWhiteSpace(host.Text) ? "manual" : host.Text.Trim(), configPath,
-                cliPath.Length == 0 ? null : cliPath, string.IsNullOrWhiteSpace(version.Text) ? null : version.Text.Trim(), instructionPaths);
+            var commandArguments = arguments.Text.Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+            if (cliPath.Length > 0 && !Path.IsPathFullyQualified(cliPath) && commandArguments.Length == 0 && string.IsNullOrWhiteSpace(input.Text))
+                throw new RelayException("cli_arguments_required", ui.T("A PATH command needs calling arguments; to record only a program, use its full path."));
+            if (commandArguments.Length > 0 || !string.IsNullOrWhiteSpace(input.Text))
+            {
+                if (cliPath.Length == 0) throw new RelayException("cli_executable_required", ui.T("Enter a CLI program before its arguments."));
+                if (!commandArguments.Any(argument => argument.Contains("{prompt}", StringComparison.Ordinal)) && !input.Text.Contains("{prompt}", StringComparison.Ordinal))
+                    throw new RelayException("cli_prompt_required", ui.T("CLI arguments must include {prompt}."));
+                CliResult = new(cliPath, commandArguments, string.IsNullOrWhiteSpace(input.Text) ? null : input.Text, (string)outputFormat.SelectedItem,
+                    string.IsNullOrWhiteSpace(working.Text) ? null : working.Text.Trim());
+            }
+            Result = new(name.Text.Trim(), existing?.Host ?? "manual", configPath,
+                cliPath.Length > 0 && Path.IsPathFullyQualified(cliPath) ? cliPath : null,
+                string.IsNullOrWhiteSpace(version.Text) ? null : version.Text.Trim(), instructionPaths);
             DialogResult = true;
         }, true);
         var cancel = ui.Button(ui.Actions, "Cancel", "CancelAgentEntry", () => DialogResult = false); cancel.IsCancel = true;
@@ -73,15 +80,22 @@ public sealed class AgentEntryDialog : Window
         static string Quote(string value) => "'" + value.Replace("'", "''", StringComparison.Ordinal) + "'";
         var published = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "relay.exe"));
         if (File.Exists(published)) return "& " + Quote(published);
+        var publishedDll = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "relay.dll"));
+        if (File.Exists(publishedDll)) return RuntimeCommand() + " " + Quote(publishedDll);
         // Source runs use an actual built CLI; never fabricate an executable path.
         for (var directory = new DirectoryInfo(AppContext.BaseDirectory); directory is not null; directory = directory.Parent)
         {
             if (!File.Exists(Path.Combine(directory.FullName, "AgentRelay.slnx"))) continue;
             var cli = Path.Combine(directory.FullName, "src", "AgentRelay.Cli", "bin", "Release", "net10.0", "relay.dll");
             if (!File.Exists(cli)) return null;
-            var runtime = Environment.GetEnvironmentVariable("DOTNET_HOST_PATH");
-            return runtime is not null && File.Exists(runtime) ? "& " + Quote(runtime) + " " + Quote(cli) : "dotnet " + Quote(cli);
+            return RuntimeCommand() + " " + Quote(cli);
         }
         return null;
+
+        static string RuntimeCommand()
+        {
+            var runtime = Environment.GetEnvironmentVariable("DOTNET_HOST_PATH");
+            return runtime is not null && File.Exists(runtime) ? "& " + Quote(runtime) : "dotnet";
+        }
     }
 }

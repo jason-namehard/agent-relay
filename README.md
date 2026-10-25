@@ -9,10 +9,10 @@ A local handoff desk for people working with several AI agents. Pass a file from
 
 ## Quick start — Windows x64
 
-Public preview: `0.1.0-preview.10`. In Windows PowerShell 5.1 or PowerShell 7, download and extract the whole package into a new folder:
+Public preview: `0.1.0-preview.11`. In Windows PowerShell 5.1 or PowerShell 7, download and extract the whole package into a new folder:
 
 ```powershell
-$version = 'v0.1.0-preview.10'
+$version = 'v0.1.0-preview.11'
 $zip = "AgentRelay-$version-windows-x64.zip"
 $download = Join-Path $PWD $zip
 $ProgressPreference = 'SilentlyContinue'
@@ -22,7 +22,7 @@ Set-Location ".\AgentRelay-$version"
 .\gui\AgentRelay.Desktop.exe
 ```
 
-Or download from [Releases](https://github.com/jason-namehard/agent-relay/releases/tag/v0.1.0-preview.10). `TryDemo.cmd` opens isolated samples without model calls; they do not prove real host integration. GUI and notifications bundle their runtime. CLI/MCP require [.NET 10 runtime](https://dotnet.microsoft.com/download/dotnet/10.0). There is no installer or code signing; Windows may show a security warning.
+Or download from [Releases](https://github.com/jason-namehard/agent-relay/releases/tag/v0.1.0-preview.11). Start the executable above to configure real Agents. `TryDemo.cmd` opens isolated samples and blocks real CLI calls; Settings can keep that workspace and switch it to normal use. GUI and notifications bundle their runtime. CLI/MCP require [.NET 10 runtime](https://dotnet.microsoft.com/download/dotnet/10.0). There is no installer or code signing; Windows may show a security warning.
 
 <details>
 <summary>Verify the uploaded GitHub asset</summary>
@@ -43,14 +43,14 @@ Independent local and CI builds are not claimed to be byte-for-byte reproducible
 
 ## A file handoff in practice
 
-1. **Add A and B** in Agents. Choose your own names; roles and CLI paths are optional.
+1. **Configure A and B** in Agents. Choose **One-click setup**, then paste the copied prompt into a new conversation with the Agent to register. It inspects its environment and submits configuration directly. Each prompt creates a fresh registration request. **New Agent** provides separate manual fields; only a name is required.
 2. **Optionally install the handoff rule.** Choose the instruction file the host actually loads, inspect the one-line addition and confirm. Detailed instructions are read when needed; existing sessions may need to reread their instructions.
 3. **Ask A to write a file for B.** The installed rule can make A return short handoff JSON. Without a rule, append the format copied from New handoff to your request. Paste the JSON and choose **Parse and create handoff**, or select a file yourself.
-4. **Copy the prompt for B** and paste it into B's real session. The short prompt points to task context containing the file, work request and receipt template.
+4. **Deliver the prompt to B.** Relay sends through CLI when B has a verified calling method and the A → B connection is enabled. Otherwise, choose **Copy prompt for B** and paste it into B's real session. The short prompt points to the file, work request and receipt template.
 5. **B writes a receipt.** While the app is open, receipt file events update the task. Startup and Refresh also read outstanding receipts; no manual reply import is required for this workflow.
-6. **Continue only if work remains.** `done` with `needs_reply: false` ends the task. A return needs a real result file and concrete `next_action`; Relay then offers the prompt for the other agent. After four turns it stops further relay for a human decision.
+6. **Continue only if work remains.** `done` with `needs_reply: false` ends the task. A return needs a real result file and concrete `next_action`; Relay sends the next turn through its enabled, verified CLI route or offers the prompt for the other agent. After four turns it stops further relay for a human decision.
 
-The new GUI **file handoff is manual** in this release. Existing CLI/MCP automatic message delivery and advanced probes remain separate; the file dialog does not offer automatic delivery.
+While an Agent is processing, the board tells you to wait for its receipt. A CLI submission is recorded once per turn; if delivery is unconfirmed, inspect the target session before sending manually. File delivery creates a new target session; same-session probing is a separate capability test.
 
 Files changing do not establish completion: explicit receipts do. External files are copied into managed storage; managed files are reused without redundant wrappers or result snapshots. Control JSON lives under a hidden `.relay` directory. Keep permanent deliverables in your project; expired managed files can be removed through cleanup.
 
@@ -58,18 +58,21 @@ Files changing do not establish completion: explicit receipts do. External files
 
 | Area | Current behaviour |
 | --- | --- |
-| Task board | File handoffs, named waiting/working states, next-person copy action and history |
-| Agent entry | User names, optional paths, JSON draft parsing or a local configuration endpoint |
+| Task board | Manual or verified CLI file delivery, named waiting/working states, cancellation, confirmed deletion and manual completion |
+| Agent entry | One name, one-click configuration, separate manual fields and a local configuration endpoint |
 | Handoff rules | User-approved one-line entry, details on demand, removal preserving other edits |
-| Connection map | One line per pair; arrows show recipe directions, green/red show enabled/paused |
-| CLI extensions | Save existing recipes without executing them; separate new-session and resume probes |
+| Connection map | Direction arrows and switches; node dots distinguish a recorded method, a failed probe and no method |
+| CLI extensions | Native JSON/JSONL/text output adapters; separate new-session and resume probes |
 | Settings | Relay location, retention, notifications, six languages, four palettes and accent colour |
+| Windows tray | Minimize to tray, Open to restore, Exit to close; the window close button exits normally |
 
 GUI/notifications are Windows x64. Core CLI/MCP have Windows/Linux CI coverage and require .NET 10. There is no macOS desktop package, cloud relay or background service after all processes close. CLI output and most detailed documents are currently Chinese.
 
 ### Agent setup and rule removal
 
-The setup prompt explains how to inspect CLI help and non-secret settings, then submit configuration through `agent setup --manifest`. The GUI supplies an actual CLI command when found; otherwise the agent returns JSON for parsing. A session ID or conversation log is not an invocation method. JSON cannot create a missing bridge, and no untested host compatibility is claimed.
+The Agents toolbar contains **New Agent**, **Edit Agent**, **Delete Agent**, **Agent CLI test** and **One-click setup**. Setup inspects CLI help and non-secret settings, reads the latest node directory, then submits through `agent setup --manifest` and imports a calling method when available. New setup never targets the selected node's ID. Edit changes the node you selected. If the local interface cannot run, use the manual fields rather than pasting a configuration block into the GUI.
+
+Relay adapts supported native JSON, JSONL and final text outputs; the host does not have to emit Relay's private receipt format. A recorded method is ready to test, not yet verified. Run a short probe and confirm its session is visible, then enable the required direction in Connections. A green node dot means a method is recorded; its tooltip states verification status. Red means a failed probe, grey means no method. A session log or CLI executable path alone is not a complete calling method.
 
 The one-line rule consumes a little persistent context. Detailed instructions are read on demand; triggering depends on host compliance. Choose the actual host instruction file, not an assumed filename. Stable instruction links are refreshed after relocation.
 
@@ -114,6 +117,7 @@ Scripts accept `-Dotnet <path>`. Packages go to `artifacts/packages`; existing a
 
 - Real host creation, visibility and continuation need testing in that host. Simulated bridges do not establish real integration; actual probes may incur model fees.
 - Invalid or incomplete receipts need attention; saving a result alone never completes a task. Old message tasks retain their earlier CLI/MCP protocol.
+- Deleting a task requires confirmation and removes its ledger history, retaining files for retention cleanup. Manually marking complete records a user decision; neither action verifies the Agent's work or stops an already running Agent.
 - Relocation requires no unfinished task, including a return awaiting the other agent. Files and ledger are copied before switching. The old root is a backup and is not automatically cleaned; Check migration only resumes a recorded pending move.
 - Notification saving has automated coverage; real Notification Center pop-ups and 125%/150% scaling still need manual checks.
 - Agents must have access to the relay files; arbitrary remote or sandboxed sessions may not.

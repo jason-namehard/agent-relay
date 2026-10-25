@@ -164,4 +164,69 @@ public sealed class CliExtensionTests
         Assert.IsFalse(service.CliExtension("agent-b")!.CanCreate);
         Assert.ThrowsExactly<RelayException>(() => service.ConfirmCliProbe("agent-b", first.ProbeId, true));
     }
+
+    private static CliCommand NativeCommand(string output, int exitCode = 0) => new("pwsh",
+        ["-NoLogo", "-NoProfile", "-NonInteractive", "-Command",
+            "[Console]::InputEncoding=[Text.UTF8Encoding]::new($false);[Console]::OutputEncoding=[Text.UTF8Encoding]::new($false);" +
+            "$p=[Console]::In.ReadToEnd();$m=[regex]::Match($p,'RELAY-[A-Z0-9]+').Value;" +
+            "$o=[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('" +
+            Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes(output)) + "'));" +
+            "[Console]::Out.Write($o.Replace('{marker}',$m));exit " + exitCode], "{prompt}", null);
+
+    [TestMethod]
+    [DataRow("dsh-jsonl", "{\"type\":\"session\",\"sessionId\":\"native-session\"}\n{\"type\":\"status\",\"phase\":\"turn_end\",\"reason\":{\"kind\":\"completed\"}}\n{\"type\":\"final\",\"text\":\"{marker}\"}")]
+    [DataRow("zcode-json", "{\"type\":\"result\",\"sessionId\":\"native-session\",\"response\":\"{marker}\"}")]
+    [DataRow("hermes-jsonl", "{\"type\":\"system\",\"subtype\":\"init\",\"session_id\":\"\"}\n{\"type\":\"text\",\"text\":\"partial\"}\n{\"type\":\"result\",\"session_id\":\"native-session\",\"exit_code\":0,\"text\":\"{marker}\"}")]
+    [DataRow("claude-json", "{\"type\":\"result\",\"subtype\":\"success\",\"is_error\":false,\"session_id\":\"native-session\",\"result\":\"{marker}\"}")]
+    public async Task NativeOutputCanBeProbedWithoutASeparateBridge(string format, string output)
+    {
+        Import(Recipe(create: NativeCommand(output)) with { OutputFormat = format });
+        var probe = await service.RunCliProbeAsync("agent-b", "create");
+        Assert.IsTrue(probe.MachinePassed, probe.Error);
+        Assert.AreEqual("native-session", probe.SessionId);
+        Assert.IsFalse(service.CliExtension("agent-b")!.CanCreate);
+        Assert.IsTrue(service.ConfirmCliProbe("agent-b", probe.ProbeId, true).CanCreate);
+    }
+
+    [TestMethod]
+    [DataRow("dsh-jsonl", "{\"type\":\"session\",\"sessionId\":\"s\"}\n{\"type\":\"status\",\"phase\":\"turn_end\",\"reason\":{\"kind\":\"error\"}}\n{\"type\":\"final\",\"text\":\"{marker}\"}")]
+    [DataRow("hermes-jsonl", "{\"type\":\"result\",\"session_id\":\"s\",\"exit_code\":1,\"text\":\"{marker}\"}")]
+    [DataRow("claude-json", "{\"type\":\"result\",\"subtype\":\"error_during_execution\",\"is_error\":true,\"session_id\":\"s\",\"result\":\"{marker}\"}")]
+    [DataRow("zcode-json", "{\"type\":\"result\",\"sessionId\":\"s\",\"response\":\"{marker}\"")]
+    public async Task NativeFailureOrPartialOutputCannotPass(string format, string output)
+    {
+        Import(Recipe(create: NativeCommand(output)) with { OutputFormat = format });
+        var probe = await service.RunCliProbeAsync("agent-b", "create");
+        Assert.IsFalse(probe.MachinePassed);
+        Assert.IsFalse(service.CliExtension("agent-b")!.CanCreate);
+    }
+
+    [TestMethod]
+    public async Task PlainTextProbeDoesNotInventASessionIdentity()
+    {
+        Import(Recipe(create: NativeCommand("{marker}"), resume: Command(resume: true)) with { OutputFormat = "text" });
+        var probe = await service.RunCliProbeAsync("agent-b", "create");
+        Assert.IsTrue(probe.MachinePassed, probe.Error);
+        Assert.IsNull(probe.SessionId);
+        var extension = service.ConfirmCliProbe("agent-b", probe.ProbeId, true);
+        Assert.IsTrue(extension.CanCreate);
+        Assert.IsFalse(extension.CanResume);
+        await Assert.ThrowsExactlyAsync<RelayException>(() => service.RunCliProbeAsync("agent-b", "resume"));
+    }
+
+    [TestMethod]
+    public void UnsupportedOutputFormatIsRejectedBeforeImport()
+    {
+        Assert.ThrowsExactly<RelayException>(() => Import(Recipe() with { OutputFormat = "guess-any-json" }));
+        Assert.IsNull(service.CliExtension("agent-b"));
+    }
+
+    [TestMethod]
+    public void ExistingZcodeNativeRecipeSelectsItsDocumentedOutput()
+    {
+        var native = Recipe() with { Create = new CliCommand("node", ["/app/zcode.cjs", "-p", "{prompt}", "--json"], null, null) };
+        Assert.AreEqual("zcode-json", CliRecipes.OutputFormatFor(native));
+        Assert.AreEqual("relay-json", CliRecipes.OutputFormatFor(Recipe()));
+        Assert.AreEqual("text", CliRecipes.OutputFormatFor(native with { OutputFormat = "text" }));
+    }
 }

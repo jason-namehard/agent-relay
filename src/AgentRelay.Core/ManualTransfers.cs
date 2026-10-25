@@ -42,7 +42,9 @@ public static class ManualTransfers
         }
         catch (JsonException error)
         {
-            throw new RelayException("manual_json_invalid", "交接或回执 JSON 格式不正确：" + error.Message);
+            var failure = new RelayException("manual_json_invalid", "交接或回执 JSON 不完整，或字段名称、类型不符合格式。请重新复制完整 JSON；回执请按当前任务上下文中的模板重写。");
+            failure.Data["technical_detail"] = error.Message;
+            throw failure;
         }
     }
 

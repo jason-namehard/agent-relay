@@ -10,6 +10,10 @@ internal static class GraphText
     }
     private static readonly IReadOnlyDictionary<string,string[]> Labels=new Dictionary<string,string[]>
     {
+        ["cli-missing"]=["No CLI calling method registered.","尚未登记 CLI 调用方案。","尚未登記 CLI 呼叫方案。","CLI 呼び出し方法未登録。","CLI 호출 설정이 없습니다.","Sin método CLI registrado."],
+        ["cli-failed"]=["CLI method registered; the latest probe failed. Inspect the test result.","已登记 CLI 调用方案，最近一次探针失败；请查看测试结果。","已登記 CLI 呼叫方案，最近一次探針失敗；請查看測試結果。","CLI 登録済み。直近のテスト失敗。","CLI 설정됨. 최근 테스트 실패.","CLI registrado; falló la última prueba."],
+        ["cli-registered"]=["CLI method registered; probe and session visibility still need confirmation.","已登记 CLI 调用方案，尚待探针及会话可见性确认。","已登記 CLI 呼叫方案，尚待探針及工作階段可見性確認。","CLI 登録済み。テストと表示確認待ち。","CLI 등록됨. 테스트 및 세션 확인 필요.","CLI registrado; faltan prueba y confirmación de sesión."],
+        ["cli-ready"]=["CLI method verified and session visibility confirmed. Enable a direction to deliver files automatically.","CLI 调用已验证且会话可见性已确认；启用连接方向后可自动投递文件提示。","CLI 呼叫已驗證且工作階段可見性已確認；啟用連線方向後可自動投遞檔案提示。","CLI 検証・表示確認済み。方向を有効にすると自動配信。","CLI 검증 및 세션 확인됨. 연결 활성화 시 자동 전달.","CLI verificado y sesión confirmada; activa una dirección para la entrega automática."],
         ["single"]=["One arrow: one-way calling recipe","单箭头：有单向调用方案","單箭頭：有單向呼叫方案","片矢印：一方向の呼び出し方法あり","단일 화살표: 단방향 호출 설정","Una flecha: método en un sentido"],
         ["double"]=["Two arrows: recipes in both directions","双箭头：有双向调用方案","雙箭頭：有雙向呼叫方案","両矢印：双方向の呼び出し方法あり","양쪽 화살표: 양방향 호출 설정","Dos flechas: métodos en ambos sentidos"],
         ["none"]=["Gray dashed: no recipe in either direction","灰色虚线：双方均无调用方案","灰色虛線：雙方均無呼叫方案","灰色破線：両方向とも呼び出し方法なし","회색 점선: 양방향 호출 설정 없음","Gris discontinua: sin método en ningún sentido"],

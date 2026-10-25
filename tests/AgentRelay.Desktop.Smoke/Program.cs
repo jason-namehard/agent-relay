@@ -1,5 +1,7 @@
 using System.Diagnostics;
 using System.IO;
+using System.Runtime.InteropServices;
+using System.Text;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Automation;
@@ -50,6 +52,7 @@ internal static class Program
         var navigation=(ListBox)window.FindName("Navigation");
         void Navigate(string page){navigation.SelectedItem=navigation.Items.Cast<ListBoxItem>().Single(i=>(string)i.Tag==page);window.UpdateLayout();}
         await Wait(()=>((TextBlock)window.FindName("StatusText")).Text!="Working…");
+        await CheckTray(window);
         Check(navigation.Items.Cast<ListBoxItem>().Select(i=>(string)i.Tag).SequenceEqual(new[]{"Home","Agents","Connections","Settings"}),"Exactly four main pages");
         Check(Find<DataGrid>(window,"TasksTable").Items.Count==2,"Board combines all handoffs");
         SelectTask(window,task.TaskId);
@@ -66,31 +69,36 @@ internal static class Program
         var registry=Find<DataGrid>(window,"AgentsTable");
         registry.SelectedItem=registry.Items.Cast<object>().Single(r=>(string)r.GetType().GetProperty("Name")!.GetValue(r)! == "自选节点乙");
         Check((string)registry.SelectedItem.GetType().GetProperty("Activity")!.GetValue(registry.SelectedItem)! == "有未完成交接","Registry identifies Agents with unfinished handoffs");
-        await Click(window,"Remove Agent");
+        await Click(window,"Delete Agent");
         Check(service.Agents().Any(a=>a.AgentId=="agent-b") && ((Border)window.FindName("ErrorBanner")).Visibility==Visibility.Visible && ((TextBox)window.FindName("ErrorText")).Text.Contains("未完成交接"),"Removing an active Agent is blocked before any confirmation dialog");
         Check(!FindAll<TextBox>(window).Any(b=>b.Name.StartsWith("AgentEntry")||b.Name.EndsWith("SetupReply")),"Agent page has no competing setup form");
+        var agentToolbar=(Panel)FindAll<Button>(window).Single(b=>Equals(b.Tag,"New Agent")).Parent;
+        Check(agentToolbar.Children.OfType<Button>().Select(b=>(string)b.Tag).SequenceEqual(new[]{"New Agent","Edit Agent","Delete Agent","Agent CLI test","One-click setup"}),"Agent toolbar contains exactly five primary configuration actions");
+        Check(FindAll<Button>(window).Single(b=>Equals(b.Tag,"Agent CLI test")).IsEnabled,"CLI test remains available to explain missing calling methods instead of silently disabling itself");
         Check(FindAll<Button>(window).Any(b=>Equals(b.Tag,"Install handoff rule"))&&FindAll<Button>(window).Any(b=>Equals(b.Tag,"Remove handoff rule")),"Agent page exposes explicit installation and removal of handoff rules");
         var count=service.Agents().Count;
-        await Modal<AgentEntryDialog>(window,"Add Agent",async dialog=>
+        await Modal<AgentEntryDialog>(window,"New Agent",async dialog=>
         {
             Check(((TextBlock)window.FindName("StatusText")).Text!=UiText.Translate("Working…","zh-CN"),"Agent form reports a waiting state instead of processing during modal input");
             Expand(dialog);
-            Find<TextBox>(dialog,"AgentEntryReply").Text=Reply("agents",new(){["AgentName"]="自由命名甲",["AgentHost"]="manual"});
-            Press(dialog,"AgentEntryParseReply");
-            Check(Find<TextBox>(dialog,"AgentEntryName").Text=="自由命名甲"&&service.Agents().Count==count,"Parsing Agent reply fills draft without registration");
-            Find<TextBox>(dialog,"AgentEntryReply").Text="{bad";
-            Press(dialog,"AgentEntryParseReply");
-            Check(Find<TextBox>(dialog,"AgentEntryName").Text=="自由命名甲","Invalid Agent reply preserves draft");
+            Check(!FindAll<TextBox>(dialog).Any(b=>b.Name is "AgentEntryHost" or "AgentEntryReply"),"Manual Agent entry has one name and no redundant host-name or AI reply field");
+            Check(!FindAll<Button>(dialog).Any(b=>b.Name.Contains("ParseReply",StringComparison.Ordinal)||b.Name.Contains("CopyPrompt",StringComparison.Ordinal)),"Manual Agent entry has no competing AI configuration buttons");
+            Find<TextBox>(dialog,"AgentEntryName").Text="自由命名甲";
+            Find<TextBox>(dialog,"AgentEntryConfig").Text="relative-config.toml";
+            Press(dialog,"SaveAgentEntry");
+            Check(dialog.Result is null&&Find<TextBox>(dialog,"AgentEntryName").Text=="自由命名甲"&&service.Agents().Count==count,"Invalid manual path preserves the named draft and creates no Agent");
+            Find<TextBox>(dialog,"AgentEntryConfig").Text="";
+            Check(Find<TextBox>(dialog,"AgentEntryCliArguments").AcceptsReturn&&Find<ComboBox>(dialog,"AgentEntryOutputFormat").Items.Count>=6,"CLI entry separates executable, arguments and output format into explicit controls");
             await CheckGlyphs(dialog,Find<TextBox>(dialog,"AgentEntryName"));
             await SaveImage(dialog,Path.Combine(root,"AgentEntry-zh.png"));
             Press(dialog,"CancelAgentEntry");
         });
         Check(service.Agents().Count==count,"Cancelled Agent entry writes nothing");
-        await Modal<AgentEntryDialog>(window,"Add Agent",dialog=>
+        await Modal<AgentEntryDialog>(window,"New Agent",dialog=>
         {
             Expand(dialog);
-            Find<TextBox>(dialog,"AgentEntryReply").Text=Reply("agents",new(){["AgentName"]="任意节点甲"});
-            Press(dialog,"AgentEntryParseReply");Press(dialog,"SaveAgentEntry");return Task.CompletedTask;
+            Find<TextBox>(dialog,"AgentEntryName").Text="任意节点甲";
+            Press(dialog,"SaveAgentEntry");return Task.CompletedTask;
         });
         var manual=service.Agents().Single(a=>a.DisplayName=="任意节点甲");
         Check(manual.ConfigPath==""&&manual.Host=="manual","Name alone registers a manual Agent without configuration paths");
@@ -107,6 +115,7 @@ internal static class Program
             Check(Clipboard.GetText().Contains("file")&&Clipboard.GetText().Contains("任意节点甲"),"File handoff instructions explain the compact JSON and registered node names");
             Find<TextBox>(dialog,"FileHandoffReply").Text="{bad";Press(dialog,"ParseFileHandoff");
             Check(dialog.Result is null&&service.Tasks().Count==taskCount,"Malformed handoff JSON cannot create a task");
+            Check(FindAll<TextBlock>(dialog).Any(t=>t.Text.Contains("complete JSON",StringComparison.Ordinal))&&!FindAll<TextBlock>(dialog).Any(t=>t.Text.Contains("BytePositionInLine",StringComparison.Ordinal)),"Malformed JSON explains how to recover without displaying a runtime exception transcript");
             Find<TextBox>(dialog,"FileHandoffReply").Text=RelayJson.Write(new{from=manual.AgentId,to=manual.AgentId,file=source});
             Press(dialog,"ParseFileHandoff");
             Check(dialog.Result is null&&service.Tasks().Count==taskCount,"Same-node file handoff is rejected before creation");
@@ -127,6 +136,10 @@ internal static class Program
         Check(Clipboard.GetText().Length<500&&Clipboard.GetText().Contains(created.TaskId)&&Clipboard.GetText().Contains("context.json"),"Receiver prompt is a short pointer to task context instead of a long protocol transcript");
         var context=RelayJson.Read<System.Text.Json.JsonElement>(File.ReadAllText(Path.Combine(Path.GetDirectoryName(service.ManualReceiptPath(created))!,"context.json")));
         Check(context.GetProperty("current_file").GetString()==created.RequestPath && context.GetProperty("receipt_template").GetProperty("sender").GetString()=="agent-c","Task context agrees with the installed rule and exact receipt identity");
+        File.WriteAllText(service.ManualReceiptPath(created),RelayJson.Write(new ManualReceipt(created.TaskId,created.AttemptId,"agent-c",0,"working",false)));
+        await Wait(()=>service.Status(created.TaskId).Task.State==TaskState.Running);
+        await Wait(()=>FindAll<TextBlock>(window).Any(t=>t.Text==string.Format(UiText.Translate("Waiting for {0} to finish and write its receipt. Do not send the same request again.","en"),"自选节点丙")));
+        Check(!FindAll<TextBlock>(window).Any(t=>t.Text.StartsWith("Next: copy the prompt",StringComparison.Ordinal)),"Processing handoff asks the user to wait rather than repeat the delivery");
         var replyFile=Path.Combine(root,"b-reply.md");File.WriteAllText(replyFile,"Select option 2 before finalizing.");
         File.WriteAllText(service.ManualReceiptPath(created),RelayJson.Write(new ManualReceipt(created.TaskId,created.AttemptId,"agent-c",0,"done",true,replyFile,"选择第二个选项并确认最终方案")));
         await Wait(()=>service.Status(created.TaskId).Task.State==TaskState.AwaitingReply);
@@ -152,14 +165,20 @@ internal static class Program
         File.WriteAllText(service.ManualReceiptPath(direct),RelayJson.Write(new ManualReceipt(direct.TaskId,direct.AttemptId,"agent-c",0,"done",false)));
         await Wait(()=>service.Status(direct.TaskId).Task.State==TaskState.Succeeded);
         Check(service.Status(direct.TaskId).Task.ManualTurn==0,"Receipt that needs no reply ends the handoff immediately without returning to its sender");
+        await CheckTaskOperatorActions(window,service,manual.AgentId,root);
 
         Navigate("Connections");
+        Check(FindAll<System.Windows.Shapes.Ellipse>(window).Count(e=>AutomationProperties.GetAutomationId(e).StartsWith("CliIndicator:",StringComparison.Ordinal))==4,"Each Agent has a separate CLI capability indicator");
+        var missingIndicator=ByAutomation<System.Windows.Shapes.Ellipse>(window,"CliIndicator:agent-c");
+        Check(missingIndicator.Fill==window.FindResource("UnavailableBrush")&&missingIndicator.ToolTip.ToString()!.Contains("No CLI calling method"),"Missing CLI methods use a gray indicator with an explicit registration explanation");
         Check(FindAll<System.Windows.Shapes.Path>(window).Count(p=>AutomationProperties.GetAutomationId(p).StartsWith("ConnectionPair:"))==6,"Four nodes use six shared connection lines instead of twelve directed lines");
         Check(new[]{"ConnectionLegendSingle","ConnectionLegendDouble","ConnectionLegendNone"}.All(id=>FindAll<FrameworkElement>(window).Any(e=>AutomationProperties.GetAutomationId(e)==id)),"Connection legend contains visible single-arrow, double-arrow and unavailable-line examples");
         Check(FindAll<System.Windows.Shapes.Path>(window).Where(p=>AutomationProperties.GetAutomationId(p).StartsWith("ConnectionStroke:")).All(p=>p.StrokeDashArray.Count>0),"Unconfigured routes use dashed gray lines");
         Check(!FindAll<System.Windows.Shapes.Polygon>(window).Any(p=>AutomationProperties.GetAutomationId(p).StartsWith("ConnectionArrow:")),"Unavailable routes have no arrowheads");
         SeedExtension(service,"agent-a",true);SeedExtension(service,"agent-b",true);
         Navigate("Home");Navigate("Connections");
+        var readyIndicator=ByAutomation<System.Windows.Shapes.Ellipse>(window,"CliIndicator:agent-a");
+        Check(readyIndicator.Fill==window.FindResource("AllowedBrush")&&readyIndicator.ToolTip.ToString()!.Contains("verified"),"Verified CLI indicator is green and distinguishes verification from registration");
         var forward=ByAutomation<System.Windows.Shapes.Path>(window,"ConnectionPair:agent-a:agent-b");
         forward.RaiseEvent(new MouseButtonEventArgs(Mouse.PrimaryDevice,0,MouseButton.Left){RoutedEvent=UIElement.MouseLeftButtonDownEvent});
         Press(window,"PauseConnection_agent_a_agent_b");await Task.Delay(30);
@@ -172,12 +191,13 @@ internal static class Program
         Check(!FindAll<Border>(window).Any(b=>AutomationProperties.GetAutomationId(b).StartsWith("ConnectionLabel:")),"Shared connection lines do not repeat overlapping state labels");
         await SaveImage(window,Path.Combine(root,"Connections.png"));
         await CheckGraphPairs(window,root);
+        CheckGraphCliStates(window);
 
         var probe=new CliProbeDialog(window,service,"agent-c","en");
         await Show(probe,dialog=>
         {
             Check(!FindAll<Button>(dialog).Any(b=>b.Name=="ProbeCreate"),"No recipe provides explanation without a misleading run button");
-            Check(FindAll<TextBlock>(dialog).Any(t=>t.Text.Contains("No CLI recipe")),"No recipe points to advanced extensions");
+            Check(FindAll<TextBlock>(dialog).Any(t=>t.Text.Contains("One-click setup",StringComparison.Ordinal)&&t.Text.Contains("Edit Agent",StringComparison.Ordinal)&&t.Text.Contains("not a failed probe",StringComparison.Ordinal)),"Missing CLI method explains setup options without presenting it as a failed test");
             Press(dialog,"CloseCliProbe");return Task.CompletedTask;
         });
         SeedExtension(service,"agent-c",false);
@@ -203,6 +223,7 @@ internal static class Program
         });
 
         Navigate("Settings");
+        Check(!FindAll<TextBox>(window).Any(box=>box.Name=="CliRecipeReply")&&!FindAll<ComboBox>(window).Any(box=>box.Name=="ExtensionAgent"),"Settings links to Agent configuration instead of duplicating CLI entry fields");
         await CheckProbeProgress(window,service,root);
         var notification=Find<CheckBox>(window,"EnableDesktopNotifications");
         notification.BringIntoView();window.UpdateLayout();
@@ -257,7 +278,87 @@ internal static class Program
         empty.Close();
     }
 
-    private static string Reply(string context,Dictionary<string,string> fields)=>RelayJson.Write(new{relay_setup_version=1,context,fields});
+    private static async Task CheckTray(MainWindow window)
+    {
+        const System.Reflection.BindingFlags flags=System.Reflection.BindingFlags.Instance|System.Reflection.BindingFlags.NonPublic;
+        var installed=(bool)typeof(MainWindow).GetField("trayInstalled",flags)!.GetValue(window)!;
+        Check(installed,"Main window installs a system tray entry");
+        window.WindowState=WindowState.Minimized;
+        await Wait(()=>!window.IsVisible);
+        Check(!window.IsVisible,"Minimizing hides the window to its tray entry");
+        typeof(MainWindow).GetMethod("OpenFromTray",flags)!.Invoke(window,null);
+        await Wait(()=>window.IsVisible&&window.WindowState==WindowState.Normal);
+        Check(window.IsVisible&&window.WindowState==WindowState.Normal,"Tray Open restores the hidden window");
+    }
+
+    private static async Task CheckTaskOperatorActions(MainWindow window,RelayService service,string from,string root)
+    {
+        var source=Path.Combine(root,"operator-action.md");File.WriteAllText(source,"Work that the user may end manually.");
+        var task=service.CreateFileHandoff(new(from,"agent-c",source)).Task;
+        await Click(window,"Refresh");SelectTask(window,task.TaskId);
+        await ConfirmAction(window,"Mark handoff complete",false);
+        Check(service.Status(task.TaskId).Task.State==TaskState.AwaitingManual,"Cancelling manual completion preserves the active handoff");
+        await ConfirmAction(window,"Mark handoff complete",true);
+        Check(service.Status(task.TaskId).Task.State==TaskState.Succeeded&&service.Status(task.TaskId).Task.ResumeStatus=="operator_completed","Confirmed manual completion stops waiting and records an operator decision");
+        Check(FindAll<TextBlock>(window).Any(t=>t.Text.Contains("Agent completion was not verified",StringComparison.Ordinal)),"Manually completed handoff identifies its result as an operator decision");
+        await ConfirmAction(window,"Delete task",false);
+        Check(service.Tasks().Any(v=>v.Task.TaskId==task.TaskId),"Cancelling deletion retains the task and history");
+        await ConfirmAction(window,"Delete task",true);
+        Check(service.Tasks().All(v=>v.Task.TaskId!=task.TaskId)&&service.Audit(task.TaskId).Count==0,"Confirmed deletion removes the task and its history from the board");
+        Check(File.Exists(source)&&File.Exists(task.RequestPath),"Deleting a task preserves original and managed files");
+        var active=service.CreateFileHandoff(new(from,"agent-c",source)).Task;
+        await Click(window,"Refresh");SelectTask(window,active.TaskId);
+        await ConfirmAction(window,"Delete task",true);
+        Check(service.Tasks().All(v=>v.Task.TaskId!=active.TaskId),"User can confirm deletion of an unfinished handoff");
+    }
+
+    private static async Task ConfirmAction(MainWindow owner,string button,bool accept)
+    {
+        var handle=new System.Windows.Interop.WindowInteropHelper(owner).Handle;
+        var thread=GetWindowThreadProcessId(handle,out _);
+        var response=Task.Run(async()=>
+        {
+            for(var attempt=0;attempt<100;attempt++)
+            {
+                nint dialog=0;
+                EnumThreadWindows(thread,(candidate,_)=>
+                {
+                    var className=new StringBuilder(128);GetClassName(candidate,className,className.Capacity);
+                    if(className.ToString()=="#32770"&&GetWindow(candidate,4)==handle){dialog=candidate;return false;}
+                    return true;
+                },0);
+                if(dialog!=0){SendMessage(dialog,0x111,accept?1:2,0);return;}
+                await Task.Delay(50);
+            }
+            throw new TimeoutException("Expected confirmation dialog did not appear.");
+        });
+        await Click(owner,button);await response;
+    }
+
+    private static void CheckGraphCliStates(Window owner)
+    {
+        var agents=Enumerable.Range(0,3).Select(i=>new AgentRecord("status-"+i,"manual","",null,null,[],"manual_ready",null,"Status "+i)).ToArray();
+        var edges=(from a in agents from b in agents where a.AgentId!=b.AgentId select new ConnectionView(a.AgentId,b.AgentId,"default_deny","manual","Unavailable","")).ToArray();
+        var command=new CliCommand("never-executed-fixture",["{prompt}"],null,null);
+        var recipe=new CliRecipe(1,"Status fixture","fixture",command,null,[],"fixture","local test","MIT","Never executed.");
+        var records=new Dictionary<string,CliExtensionRecord>
+        {
+            ["status-0"]=new("status-0","registered",recipe,null,null),
+            ["status-1"]=new("status-1","failed",recipe,new("failed","create","fixture",null,false,false,"fixture failure",DateTimeOffset.UtcNow),null)
+        };
+        var graph=new ConnectionGraph(agents,edges,_=>{},"en",owner,extensions:records);
+        var registered=ByAutomation<System.Windows.Shapes.Ellipse>(graph,"CliIndicator:status-0");
+        var failed=ByAutomation<System.Windows.Shapes.Ellipse>(graph,"CliIndicator:status-1");
+        Check(registered.Fill==owner.FindResource("AllowedBrush")&&registered.ToolTip.ToString()!.Contains("still need confirmation"),"Registered CLI method has a green indicator without claiming a successful probe");
+        Check(failed.Fill==owner.FindResource("DeniedBrush")&&failed.ToolTip.ToString()!.Contains("probe failed"),"Failed CLI probe has a red indicator and a test-result explanation");
+    }
+
+    private delegate bool EnumThreadWindowCallback(nint window,nint state);
+    [DllImport("user32.dll")] private static extern uint GetWindowThreadProcessId(nint window,out uint process);
+    [DllImport("user32.dll")] [return:MarshalAs(UnmanagedType.Bool)] private static extern bool EnumThreadWindows(uint thread,EnumThreadWindowCallback callback,nint state);
+    [DllImport("user32.dll",EntryPoint="GetClassNameW",CharSet=CharSet.Unicode)] private static extern int GetClassName(nint window,StringBuilder className,int count);
+    [DllImport("user32.dll")] private static extern nint GetWindow(nint window,uint command);
+    [DllImport("user32.dll",EntryPoint="SendMessageW")] private static extern nint SendMessage(nint window,uint message,nint wParam,nint lParam);
     private static async Task CheckProbeProgress(MainWindow window,RelayService service,string root)
     {
         const string id="progress-agent";
@@ -274,10 +375,10 @@ internal static class Program
             """);
         var command=new CliCommand("pwsh",["-NoLogo","-NoProfile","-NonInteractive","-File",script,started,release,fail],"{prompt}",null);
         service.ImportCliRecipe(id,RelayJson.Write(new CliRecipe(1,"Progress fixture","fixture",command,null,[],"fixture","local test","MIT","No model calls.")));
-        // Refresh the Agent choice after adding the isolated progress-test node.
-        await Click(window,"Refresh");
-        Find<ComboBox>(window,"ExtensionAgent").SelectedValue=id;
-        await Modal<CliProbeDialog>(window,"Test CLI",async dialog=>
+        await Click(window,"One-click setup");
+        var agents=Find<DataGrid>(window,"AgentsTable");
+        agents.SelectedItem=agents.Items.Cast<object>().Single(row=>((AgentRecord)row.GetType().GetProperty("Source")!.GetValue(row)!).AgentId==id);
+        await Modal<CliProbeDialog>(window,"Agent CLI test",async dialog=>
         {
             try
             {
@@ -302,6 +403,9 @@ internal static class Program
             }
             Press(dialog,"CloseCliProbe");
         });
+        var navigation=(ListBox)window.FindName("Navigation");
+        navigation.SelectedItem=navigation.Items.Cast<ListBoxItem>().Single(item=>(string)item.Tag=="Settings");
+        window.UpdateLayout();
     }
     private static async Task CheckGraphPairs(Window owner,string root)
     {

@@ -28,7 +28,7 @@ public sealed partial class RelayService
     public static bool NeedsAttention(TaskView view) => view.DeadlineExceeded ||
         view.Task.State is TaskState.Failed or TaskState.TimedOut or TaskState.DeliveryUnknown ||
         view.Task.ErrorCode == "execution_unknown" ||
-        (view.Task.State == TaskState.Succeeded && view.Task.ResumeStatus is not ("submitted" or "completed"));
+        (view.Task.State == TaskState.Succeeded && !view.Task.IsFileHandoff && view.Task.ResumeStatus is not ("submitted" or "completed" or "operator_completed"));
 
     public HomeSummary Summary()
     {

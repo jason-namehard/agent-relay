@@ -106,6 +106,11 @@ public static class RelayCli
         var cliRecipe = Group("cli-recipe", "保存已有 CLI 调用方案，不执行或启用");
         Sync(cliRecipe, "import", "从 JSON 保存指定 Agent 的调用方案", ["agent!", "manifest!"],
             (s, v) => s.ImportCliRecipe(v.Get("agent"), File.ReadAllText(v.Get("manifest"))));
+        Add(cliRecipe, "probe", "发起一次极短真实 CLI 探针，可能产生模型费用", ["agent!", "operation!", "approve?"], async (s, v) =>
+        {
+            if (!v.Flag("approve")) throw new RelayException("approval_required", "真实探针可能产生模型费用；明确同意后加 --approve。");
+            return await s.RunCliProbeAsync(v.Get("agent"), v.Get("operation"), v.CancellationToken);
+        });
 
         var guidance = Group("guidance", "管理按需读取的 Agent 交接规则");
         Sync(guidance, "list", "列出本中转站安装的接入规则", [], (s, _) => s.GuidanceRegistrations());

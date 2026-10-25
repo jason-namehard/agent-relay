@@ -55,7 +55,7 @@ public partial class MainWindow
         return task.State switch
         {
             TaskState.AwaitingManual=>string.Format(CultureInfo.CurrentUICulture,T("Waiting for {0} to receive and reply"),agent),
-            TaskState.Acknowledged or TaskState.Running=>string.Format(CultureInfo.CurrentUICulture,T("{0} is processing"),agent),
+            TaskState.Dispatched or TaskState.Acknowledged or TaskState.Running=>string.Format(CultureInfo.CurrentUICulture,T("{0} is processing"),agent),
             TaskState.AwaitingReply=>string.Format(CultureInfo.CurrentUICulture,T("Waiting for {0} to handle the reply"),agent),
             _=>T(task.State.ToString())
         };
@@ -81,17 +81,21 @@ public partial class MainWindow
     {
         var task=view.Task;
         Heading(pane,AgentName(task.RequesterId)+" → "+AgentName(task.RecipientId),FileState(task));
+        if(task.ResumeStatus=="operator_completed")pane.Children.Add(Note(T("Marked complete by the user. Agent completion was not verified.")));
         if(task.ErrorMessage is not null)pane.Children.Add(Note(task.ErrorMessage));
         var live=task.State is not(TaskState.Succeeded or TaskState.Failed or TaskState.Cancelled or TaskState.TimedOut);
         var actions=Row(pane);
         if(live)
         {
             var recipient=AgentName(task.AwaitingAgentId??task.RecipientId);
+            var processing=task.State is TaskState.Acknowledged or TaskState.Running;
             pane.Children.Add(new Border{Background=Theme("AccentSoftBrush"),CornerRadius=new(8),Padding=new(12),Margin=new(0,8,0,8),Child=new TextBlock{
-                Text=string.Format(CultureInfo.CurrentUICulture,T("Next: copy the prompt to {0}. Relay updates automatically when the Agent writes its receipt."),recipient),TextWrapping=TextWrapping.Wrap}});
+                Text=FileDeliveryHint(task,processing,recipient),TextWrapping=TextWrapping.Wrap}});
             Add(actions,string.Format(CultureInfo.CurrentUICulture,T("Copy prompt for {0}"),recipient),()=>{Clipboard.SetText(FilePrompt(task));return Task.CompletedTask;},false);
+            AddFileDeliveryAction(actions,task);
             Add(actions,"Cancel",()=>{service.Cancel(task.TaskId,"Cancelled by user");return Task.CompletedTask;});
         }
+        AddTaskOperatorActions(actions,task);
         Add(actions,"Open task folder",()=>{System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(Path.GetDirectoryName(task.RequestPath)!){UseShellExecute=true});return Task.CompletedTask;},false);
         var current=task.ManualCurrentFile??task.RequestPath;
         pane.Children.Add(Note(T("Handoff file")+": "+current));

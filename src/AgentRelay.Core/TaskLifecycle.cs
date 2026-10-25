@@ -238,6 +238,8 @@ public sealed partial class RelayService
 
     private TaskView View(TaskRecord task, StoreSession? session = null)
     {
+        if (task.ResumeStatus == "operator_completed")
+            return new TaskView(task, false, "inspect", "用户已标记交接完成，未据此验证 Agent 执行结果。无需继续传递。");
         if (task.IsFileHandoff) return ManualView(task);
         var overdue = !Terminal(task.State) && task.DeadlineAt <= Now;
         var ready = task.State is TaskState.Succeeded or TaskState.Failed;

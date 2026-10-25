@@ -61,7 +61,7 @@ public sealed class CliProbeDialog : Window
         var extension=service.CliExtension(agentId);
         if(extension is null)
         {
-            layout.Body.Children.Add(Note("No CLI recipe is registered. Open Settings → Advanced: CLI interface extensions to copy a prompt for an Agent that knows the calling method."));
+            layout.Body.Children.Add(Note("No CLI calling method is registered. Use One-click setup in Agents, or Edit Agent to enter the program and arguments. This is not a failed probe."));
         }
         else
         {
@@ -70,7 +70,8 @@ public sealed class CliProbeDialog : Window
             layout.Body.Children.Add(new Expander{Header=T("Calling recipe"),Content=plan});
             if(demo)layout.Body.Children.Add(Note("Demo mode does not run external CLI calls. Use a normal workspace to test a real Agent."));
             var create=Action(layout.Body,"Run new-session probe","ProbeCreate",()=>RunProbe("create"));
-            create.IsEnabled=!demo;
+            create.IsEnabled=true;
+            if(demo)create.ToolTip=T("Demo mode blocks real CLI calls. Keep this workspace and switch to normal use to test your registered Agents.");
             if(extension.CreateProbe is {} probe)ProbeResult(probe);
             if(extension.CanCreate && extension.Recipe.Resume is not null)
             {
@@ -88,6 +89,7 @@ public sealed class CliProbeDialog : Window
 
     private async Task<string> RunProbe(string operation)
     {
+        if(demo)throw new RelayException("demo_cli_disabled",T("Demo mode blocks real CLI calls. Keep this workspace and switch to normal use to test your registered Agents."));
         var probe=await service.RunCliProbeAsync(agentId,operation);
         return probe.MachinePassed?"CLI probe passed · Confirm session visibility":"CLI probe failed · See the test result";
     }
@@ -98,6 +100,12 @@ public sealed class CliProbeDialog : Window
             T("Marker")+": "+probe.Marker+"\n"+T("Session")+": "+probe.SessionId+"\n"+
             (probe.MachinePassed?T("Machine receipt passed"):probe.Error),true);
         text.IsReadOnly=true;text.Height=100;layout.Body.Children.Add(text);
+        if(probe.Diagnostic is not null)
+        {
+            var diagnostic=EntryDialogLayout.Input("ProbeDiagnostics",probe.Diagnostic,true);
+            diagnostic.IsReadOnly=true;diagnostic.Height=170;
+            layout.Body.Children.Add(new Expander{Header=T("CLI diagnostics"),Content=diagnostic});
+        }
         if(!probe.MachinePassed)return;
         var confirm=new CheckBox{Content=new TextBlock{Text=T(probe.Operation=="create"?
             "I found this marker in the target Agent's session list.":"I found this marker in the SAME session, not a new session."),TextWrapping=TextWrapping.Wrap},
