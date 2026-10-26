@@ -226,7 +226,8 @@ public sealed partial class RelayService
     public TaskView Status(string id) => store.Read(s =>
     {
         var task = s.Task(id);
-        return View(task, s) with { Execution = Execution(s, id, task.AttemptId), Continuation = LatestContinuation(s, task) };
+        return View(task, s) with { Execution = Execution(s, id, task.AttemptId), Continuation = LatestContinuation(s, task),
+            Progress = task.IsFileHandoff ? FileHandoffProgress(task) : null };
     });
     public List<TaskView> Tasks() => store.Read(s => s.Query("SELECT json FROM tasks ORDER BY rowid DESC", r => View(RelayJson.Read<TaskRecord>(r.GetString(0)), s)));
     public List<InboxItem> Inbox() => store.Read(s => s.Query("SELECT id,task_id,event,message,created_at,is_read FROM notifications ORDER BY id DESC",

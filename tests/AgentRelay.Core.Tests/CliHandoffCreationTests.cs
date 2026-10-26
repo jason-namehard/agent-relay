@@ -205,6 +205,25 @@ public sealed class CliHandoffCreationTests
     }
 
     [TestMethod]
+    public async Task CliConfiguresTheLoopReportsProgressAndGuardsUnattendedDelivery()
+    {
+        var task=service.CreateCliHandoff(Request()).Task;
+        var configured=await Invoke("handoff","configure","--task",task.TaskId,"--author","agent-b","--criteria","测试通过","--max-rounds","3","--auto-deliver");
+        Assert.AreEqual(0,configured.Code);
+        task=service.Status(task.TaskId).Task;
+        Assert.AreEqual(3,task.Collaboration!.MaxReviewRounds);Assert.IsTrue(task.AutoDeliver);
+        var progress=await Invoke("handoff","progress","--task",task.TaskId);
+        Assert.AreEqual("implement",progress.Json.GetProperty("data").GetProperty("phase").GetString());
+        Assert.AreEqual("agent-b",progress.Json.GetProperty("data").GetProperty("current_agent_id").GetString());
+        var unapproved=await Invoke("handoff","sync","--deliver");
+        Assert.AreEqual("approval_required",unapproved.Json.GetProperty("error").GetProperty("code").GetString());
+        var imported=await Invoke("handoff","sync");
+        Assert.AreEqual(0,imported.Code);Assert.IsFalse(File.Exists(Log("agent-b")));
+        var status=await Invoke("task","status","--task",task.TaskId);
+        Assert.AreEqual("cli_ready",status.Json.GetProperty("data").GetProperty("progress").GetProperty("delivery").GetString());
+    }
+
+    [TestMethod]
     public async Task NewTargetSessionIdIsRegisteredThroughThePublicCliCreationPath()
     {
         var created=await Invoke("handoff","cli-create","--manifest",Manifest(Request(target:null)),"--send","--approve");

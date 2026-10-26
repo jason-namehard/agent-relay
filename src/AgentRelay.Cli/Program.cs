@@ -130,11 +130,28 @@ public static class RelayCli
         });
         Sync(handoff, "create", "读取短清单，不要求 Agent 查找会话 ID", ["manifest!"],
             (s,v) => s.CreateFileHandoffFromContext(ManualTransfers.Parse(File.ReadAllText(v.Get("manifest")),s.Agents())));
+        Sync(handoff, "configure", "首次投递前设置持续修改与验收、单轮时限和自动投递", ["task!", "author", "criteria", "max-rounds", "turn-timeout-minutes", "auto-deliver?"],
+            (s,v) => s.ConfigureFileHandoff(v.Get("task"), new(v.Optional("author") is { } author
+                ? new CollaborationOptions(author, v.Optional("criteria"), v.Number("max-rounds", 5)) : null,
+                v.Flag("auto-deliver"), v.Optional("turn-timeout-minutes") is null ? null : v.Number("turn-timeout-minutes", 0))));
+        Add(handoff, "sync", "导入回执；加 --deliver 时发送已选择自动投递且能力已验证的轮次", ["deliver?", "approve?"], async (s,v) =>
+        {
+            if(v.Flag("deliver")&&!v.Flag("approve"))throw new RelayException("approval_required","自动投递会启动目标 CLI，可能产生模型费用，确认后加 --approve。");
+            return await s.SyncFileHandoffsAsync(v.Flag("deliver"),v.CancellationToken);
+        });
+        Sync(handoff, "progress", "当前处理者、阶段、投递方式与是否在等用户", ["task!"],
+            (s,v) => s.FileHandoffProgress(s.Status(v.Get("task")).Task));
+        Sync(handoff, "continue", "用户决定继续已暂停的交接；轮数用完时须追加轮数", ["task!", "note", "extra-rounds"],
+            (s,v) => s.ContinueFileHandoff(v.Get("task"), v.Optional("note"), v.Number("extra-rounds", 0)));
+        Sync(handoff, "allow-resend", "确认本轮未送达后允许再发送一次", ["task!", "reason!", "approve?"],
+            (s,v) => s.AllowFileHandoffResend(v.Get("task"), v.Get("reason"), v.Flag("approve")));
 
         var cliRecipe = Group("cli-recipe", "保存已有 CLI 调用方案，不执行或启用");
         Sync(cliRecipe, "import", "从 JSON 保存指定 Agent 的调用方案", ["agent!", "manifest!"],
             (s, v) => s.ImportCliRecipe(v.Get("agent"), File.ReadAllText(v.Get("manifest"))));
-        Add(cliRecipe, "probe", "发起一次极短真实 CLI 探针，可能产生模型费用", ["agent!", "operation!", "approve?"], async (s, v) =>
+        Sync(cliRecipe, "unblock", "用户已处理登录、模型或权限问题后，解除自动投递阻塞", ["agent!"],
+            (s, v) => s.ClearCliBlock(v.Get("agent")));
+        Add(cliRecipe, "probe", "发起一次极短真实 CLI 探针（含写文件检查），可能产生模型费用", ["agent!", "operation!", "approve?"], async (s, v) =>
         {
             if (!v.Flag("approve")) throw new RelayException("approval_required", "真实探针可能产生模型费用；明确同意后加 --approve。");
             return await s.RunCliProbeAsync(v.Get("agent"), v.Get("operation"), v.CancellationToken);

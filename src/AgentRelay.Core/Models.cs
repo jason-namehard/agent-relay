@@ -95,7 +95,7 @@ public sealed class TaskRecord
 }
 
 public sealed record TaskView(TaskRecord Task, bool DeadlineExceeded, string NextAction, string Prompt,
-    ExecutionRecord? Execution = null, ContinuationRecord? Continuation = null);
+    ExecutionRecord? Execution = null, ContinuationRecord? Continuation = null, HandoffProgress? Progress = null);
 public sealed record ArtifactRecord(string ArtifactId, string TaskId, string AttemptId, string Kind,
     string Path, DateTimeOffset CreatedAt, DateTimeOffset ExpiresAt, string State);
 public sealed record AuditEvent(long Sequence, string EventId, string TaskId, string AttemptId,
