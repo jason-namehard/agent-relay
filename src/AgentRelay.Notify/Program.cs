@@ -109,9 +109,12 @@ internal static class Program
                 }
                 if(args.Contains("--silent"))builder.MuteAudio();
                 var notification=builder.BuildNotification();
+                if(args.Contains("--history-only"))notification.SuppressDisplay=true;
                 manager.Show(notification);
                 if (notification.Id == 0) throw new InvalidOperationException("Windows did not assign a notification ID.");
-                Write(new ResumeResult("submitted", Detail: $"Windows 已接受通知 {notification.Id}；可见性取决于系统通知设置。"));
+                Write(new ResumeResult("submitted", Detail: args.Contains("--history-only")
+                    ? $"Windows 已记录通知 {notification.Id}；屏幕提醒由 Agent Relay 主程序显示。"
+                    : $"Windows 已接受通知 {notification.Id}；可见性取决于系统通知设置。"));
                 manager.Unregister();
                 return 0;
             }

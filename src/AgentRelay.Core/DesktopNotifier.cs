@@ -3,7 +3,7 @@ using System.Text.Json;
 
 namespace AgentRelay.Core;
 
-public sealed class DesktopNotifier(string? executable, bool muteAudio = false) : IDesktopNotifier
+public sealed class DesktopNotifier(string? executable, bool muteAudio = false, bool suppressDisplay = false) : IDesktopNotifier
 {
     public Task<ResumeResult> TestAsync(string home,string title,string message,CancellationToken cancellationToken=default) =>
         InvokeAsync(home,["--test","--title",title,"--message",message],cancellationToken);
@@ -21,6 +21,7 @@ public sealed class DesktopNotifier(string? executable, bool muteAudio = false) 
         {
             var arguments = request.Concat(["--report-path",report]).ToList();
             if (muteAudio) arguments.Add("--silent");
+            if (suppressDisplay) arguments.Add("--history-only");
             var process = await RelayProcess.RunAsync(executable,arguments,null,TimeSpan.FromSeconds(30),cancellationToken);
             if (process.TimedOut) return new ResumeResult("unknown", "desktop_timed_out", "通知调用超时，可能已提交，不会自动重复发送。");
             if (!File.Exists(report)) return new ResumeResult("failed", "desktop_report_missing", "通知程序没有返回报告：" + process.Error);

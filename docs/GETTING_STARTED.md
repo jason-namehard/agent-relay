@@ -1,6 +1,6 @@
 # Agent Relay — 第一次任务
 
-版本：`0.1.0-preview.13`。Windows 完整包从 [Release](https://github.com/jason-namehard/agent-relay/releases/tag/v0.1.0-preview.13) 下载并完整解压，运行 `gui/AgentRelay.Desktop.exe` 配置真实 Agent。`TryDemo.cmd` 是隔离演示，会禁止真实 CLI 调用；已在演示中登记资料，可在设置保留当前数据并转为正式使用。GUI/通知自带运行库，CLI/MCP 需要 .NET 10 runtime；保留随包许可证。
+版本：`0.1.0-preview.14`。Windows 完整包从 [Release](https://github.com/jason-namehard/agent-relay/releases/tag/v0.1.0-preview.14) 下载并完整解压，运行 `gui/AgentRelay.Desktop.exe` 配置真实 Agent。`TryDemo.cmd` 是隔离演示，会禁止真实 CLI 调用；已在演示中登记资料，可在设置保留当前数据并转为正式使用。GUI/通知自带运行库，CLI/MCP 需要 .NET 10 runtime；保留随包许可证。
 
 ## 直接发起 CLI 任务
 
@@ -64,6 +64,6 @@
 
 在设置启用桌面通知，可为等待处理、回传、完成或失败显示提醒。同一批次同一任务的事件合并，避免重复刷新反复弹出。升级后使用当前安装包的通知程序，不再依赖旧版本的临时路径。
 
-提示音可选无声音、默认、信息、警告和错误，支持试听；“测试通知”不创建业务任务，也不调用模型。Windows 控制系统横幅和通知中心显示；投递明确失败时，软件可显示带“应用内通知”标记的右下角提醒，并报告失败原因。
+提示音可选无声音、默认、信息、警告和错误，支持试听；“测试通知”不创建业务任务，也不调用模型。软件运行时直接显示带“应用内通知”标记的右下角提醒，Windows 通知中心可用时静默记录，避免双重横幅；系统记录失败会明确说明。
 
 全部进程退出后没有后台监控。真实宿主接入、系统通知弹出、显示缩放和迁移的人工体验应分别记录，模拟桥接不作真实兼容证据。

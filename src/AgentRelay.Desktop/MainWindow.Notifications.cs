@@ -49,17 +49,12 @@ public partial class MainWindow
             foreach(var item in pending.GroupBy(n=>n.TaskId).Select(g=>g.Last()))
             {
                 if(!tasks.TryGetValue(item.TaskId,out var task))continue; // A user may have deleted a task before its desktop event was handled.
-                var result=await new DesktopNotifier(service.DesktopExecutable(),muteAudio:true).NotifyAsync(service.Home,task,CancellationToken.None);
-                if(result.State=="submitted")PlayNotificationSound(preferences.NotificationSound);
-                else if(result.State!="unknown")
-                {
-                    var content=service.NotificationContent(task);
-                    ShowApplicationNotification(content,task.TaskId);
-                    PlayNotificationSound(preferences.NotificationSound);
+                var result=await new DesktopNotifier(service.DesktopExecutable(),muteAudio:true,suppressDisplay:true).NotifyAsync(service.Home,task,CancellationToken.None);
+                ShowApplicationNotification(service.NotificationContent(task),task.TaskId);
+                PlayNotificationSound(preferences.NotificationSound);
+                if(result.State!="submitted")
                     hint=T("Desktop notification unavailable")+": "+result.Detail+
                         " · "+T("An in-app notification was shown instead.");
-                }
-                else hint=result.Detail;
             }
             return hint;
         }
@@ -124,16 +119,16 @@ public partial class MainWindow
         Add(row,"Send test notification",async()=>
         {
             var content=new DesktopNotificationContent("Agent Relay · "+T("Test notification"),T("This tests desktop notifications only. No task or model session was created."));
-            var result=await new DesktopNotifier(File.Exists(CurrentNotifierPath())?CurrentNotifierPath():service.DesktopExecutable(),muteAudio:true)
+            var result=await new DesktopNotifier(File.Exists(CurrentNotifierPath())?CurrentNotifierPath():service.DesktopExecutable(),muteAudio:true,suppressDisplay:true)
                 .TestAsync(service.Home,content.Title,content.Message);
             if(result.State=="submitted")
-            {PlayNotificationSound(preferences.NotificationSound);notificationSetupHint=null;}
+            {ShowApplicationNotification(content);PlayNotificationSound(preferences.NotificationSound);notificationSetupHint=null;}
             else
             {
                 ShowApplicationNotification(content);PlayNotificationSound(preferences.NotificationSound);
                 notificationSetupHint=T("Desktop notification unavailable")+": "+result.Detail+" · "+T("An in-app notification was shown instead.");
             }
-            LedgerHint.Text=result.State=="submitted"?T("Windows accepted the test notification. Check notification settings if no banner appears."):"";
+            LedgerHint.Text=result.State=="submitted"?T("The in-app reminder was shown and Windows accepted a silent notification-center entry."):"";
         },false);
         page.Children.Add(Note("Sounds follow Windows volume settings. Notification banners also depend on Windows notification and Do not disturb settings."));
     }

@@ -9,10 +9,10 @@ A local handoff desk for people working with several AI agents. Pass a file from
 
 ## Quick start — Windows x64
 
-Public preview: `0.1.0-preview.13`. In Windows PowerShell 5.1 or PowerShell 7, download and extract the whole package into a new folder:
+Public preview: `0.1.0-preview.14`. In Windows PowerShell 5.1 or PowerShell 7, download and extract the whole package into a new folder:
 
 ```powershell
-$version = 'v0.1.0-preview.13'
+$version = 'v0.1.0-preview.14'
 $zip = "AgentRelay-$version-windows-x64.zip"
 $download = Join-Path $PWD $zip
 $ProgressPreference = 'SilentlyContinue'
@@ -22,7 +22,7 @@ Set-Location ".\AgentRelay-$version"
 .\gui\AgentRelay.Desktop.exe
 ```
 
-Or download from [Releases](https://github.com/jason-namehard/agent-relay/releases/tag/v0.1.0-preview.13). Start the executable above to configure real Agents. `TryDemo.cmd` opens isolated samples and blocks real CLI calls; Settings can keep that workspace and switch it to normal use. GUI and notifications bundle their runtime. CLI/MCP require [.NET 10 runtime](https://dotnet.microsoft.com/download/dotnet/10.0). There is no installer or code signing; Windows may show a security warning.
+Or download from [Releases](https://github.com/jason-namehard/agent-relay/releases/tag/v0.1.0-preview.14). Start the executable above to configure real Agents. `TryDemo.cmd` opens isolated samples and blocks real CLI calls; Settings can keep that workspace and switch it to normal use. GUI and notifications bundle their runtime. CLI/MCP require [.NET 10 runtime](https://dotnet.microsoft.com/download/dotnet/10.0). There is no installer or code signing; Windows may show a security warning.
 
 <details>
 <summary>Verify the uploaded GitHub asset</summary>
@@ -137,7 +137,7 @@ Scripts accept `-Dotnet <path>`. Packages go to `artifacts/packages`; existing a
 - Invalid or incomplete receipts need attention; saving a result alone never completes a task. Old message tasks retain their earlier CLI/MCP protocol.
 - Deleting a task requires confirmation and removes its ledger history, retaining files for retention cleanup. Manually marking complete records a user decision; neither action verifies the Agent's work or stops an already running Agent.
 - Relocation requires no unfinished task, including a return awaiting the other agent. Files and ledger are copied before switching. The old root is a backup and is not automatically cleaned; Check migration only resumes a recorded pending move.
-- Windows controls system notification banners. Relay reports delivery failures and can show a labelled in-app alert; it does not claim that Windows displayed a banner. Settings includes a notification test, sound selection and preview. Display scaling still needs manual checks.
+- While Relay is running, a labelled in-app reminder appears at the bottom right. Windows receives a silent notification-center entry when available, with no duplicate system banner. Settings includes a notification test, sound selection and preview. Display scaling still needs manual checks.
 - Agents must have access to the relay files; arbitrary remote or sandboxed sessions may not.
 
 [Getting started](docs/GETTING_STARTED.md) · [Contributing](CONTRIBUTING.md) · [Changelog](CHANGELOG.md) · [Issues](https://github.com/jason-namehard/agent-relay/issues). Reports should include version, platform, steps and redacted errors.
