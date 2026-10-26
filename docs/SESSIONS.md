@@ -4,11 +4,17 @@
 
 ## 用户操作
 
-创建文件交接时，存在 CLI 方案就显示会话选择。目标默认“新建会话”；选择“使用已有会话”后点击“选择已有会话”。列表优先展示标题、活跃时间、项目路径和可获取的模型信息；准确 ID 用于确认身份。列表不会默认选择第一条，也不会把最近活跃或同 cwd 当作已绑定。
+“新建 CLI 任务”直接接受工作要求、发送方及来源会话、接收方和目标会话；不必先生成文件或交接 JSON。已有文件仍可走“新建交接”，存在 CLI 方案时确认会话选择。目标默认“新建会话”；选择“使用已有会话”后点击“选择已有会话”。列表优先展示标题、活跃时间、项目路径和可获取的模型信息；准确 ID 用于确认身份。列表不会默认选择第一条，也不会把最近活跃或同 cwd 当作已绑定。
 
 已有缓存立即显示，同时后台刷新该 Agent。取消不绑定，点击“使用此会话”才确定选择。无发现提供器时保留手动 ID 入口，不显示一个注定无法工作的发现列表。
 
 任务详情“会话”折叠区显示双方绑定，可主动更换或明确新建。会话已失效、存储不可访问或返回的 ID 不一致时，自动续接停止；用户可以重新选择或手动复制提示。不会自动跳到其他对话。
+
+## 完成计划与会话绑定
+
+会话绑定只确定下一轮进入哪里，完成计划确定还有谁必须处理。可选的审阅落实计划在任务 `handoff_plan` 中记录 `[接收方,发送方,接收方]`，对应 B 处理、A 审阅、B 落实；`turn` 是当前步骤。中间步骤即使错误声明 `needs_reply:false`，也不能提前结束任务；必须提交真实回稿及具体下一步才能推进，缺少则保持当前步骤并提示补齐。
+
+上下文提供 `required_next_agent`、剩余步骤和正确的回执模板。无计划旧任务保留原语义，但“无需继续”与非空 `next_action` 相互矛盾，会被拒绝。Relay 不从自然语言猜计划，也不自动追改已经结束的历史任务；必要的额外往返仍受四轮上限约束。
 
 ## 来源身份
 
@@ -66,6 +72,9 @@ Relay 缓存用于快速展示，不能证明续接仍然有效。每次 resume 
 在发布包目录使用 .NET 10，替换示例中的节点、任务和目录：
 
 ```powershell
+dotnet .\relay.dll --home <中转站目录> handoff cli-create --manifest <CLI任务清单>
+dotnet .\relay.dll --home <中转站目录> handoff cli-create --manifest <CLI任务清单> --send --approve
+dotnet .\relay.dll --home <中转站目录> handoff send --task <任务ID> --approve
 dotnet .\relay.dll --home <中转站目录> session query --agent <节点ID> --refresh
 dotnet .\relay.dll --home <中转站目录> session capabilities --agent <节点ID>
 dotnet .\relay.dll --home <中转站目录> session source --agent <节点ID> --provider dsh --directory <宿主数据根目录>
@@ -74,4 +83,4 @@ dotnet .\relay.dll --home <中转站目录> session bind --task <任务ID> --age
 dotnet .\relay.dll --home <中转站目录> session new --task <任务ID> --agent <节点ID>
 ```
 
-`source` 的 provider 可选 `dsh`、`zcode`、`hermes`、`workbuddy`，数据目录应与该提供器对应。查询只读元数据，`capabilities` 返回已登记方案声明的能力，不代表实际调用已经验证。`bind` 保存用户提供的精确 ID，保存不等于已验证；自动发送前仍核实存在。未知提供器或不能访问的存储不会回退到 latest。短探针属于可选诊断，真实发送和续接可能产生模型费用。
+`cli-create` 不加 `--send` 只保存工作要求和绑定，发送必须显式 `--approve`；清单结构见 [配置与回执](CONFIGURATION_ASSISTANT.md)。`source` 的 provider 可选 `dsh`、`zcode`、`hermes`、`workbuddy`，数据目录应与该提供器对应。查询只读元数据，`capabilities` 返回已登记方案声明的能力，不代表实际调用已经验证。`bind` 保存用户提供的精确 ID，保存不等于已验证；自动发送前仍核实存在。未知提供器或不能访问的存储不会回退到 latest。短探针属于可选诊断，真实发送和续接可能产生模型费用。

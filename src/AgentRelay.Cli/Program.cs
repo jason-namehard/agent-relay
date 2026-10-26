@@ -115,6 +115,19 @@ public static class RelayCli
         Sync(session, "new", "明确为任务选择新会话；不立即调用模型", ["task!", "agent!"],
             (s,v) => { s.UseNewTaskSession(v.Get("task"),v.Get("agent")); return new {status="new_session_selected"}; });
         var handoff = Group("handoff", "创建文件交接；来源身份来自调用适配器上下文");
+        Add(handoff,"cli-create","直接提交工作要求并绑定会话；发送会启动目标 CLI",["manifest!","send?","approve?"],async(s,v)=>
+        {
+            if(v.Flag("send")&&!v.Flag("approve"))throw new RelayException("approval_required","真实 CLI 投递可能产生模型费用，确认后加 --approve。");
+            var request=RelayJson.Read<CliHandoffRequest>(File.ReadAllText(v.Get("manifest")));
+            var created=s.CreateCliHandoff(request);
+            return v.Flag("send")?await s.SendFileHandoffAsync(created.Task.TaskId,s.FileHandoffPrompt(created.Task),v.CancellationToken):created;
+        });
+        Add(handoff,"send","按已绑定会话与启用方向发送现有 CLI 文件任务",["task!","approve?"],async(s,v)=>
+        {
+            if(!v.Flag("approve"))throw new RelayException("approval_required","真实 CLI 投递可能产生模型费用，确认后加 --approve。");
+            var task=s.Status(v.Get("task")).Task;
+            return await s.SendFileHandoffAsync(task.TaskId,s.FileHandoffPrompt(task),v.CancellationToken);
+        });
         Sync(handoff, "create", "读取短清单，不要求 Agent 查找会话 ID", ["manifest!"],
             (s,v) => s.CreateFileHandoffFromContext(ManualTransfers.Parse(File.ReadAllText(v.Get("manifest")),s.Agents())));
 

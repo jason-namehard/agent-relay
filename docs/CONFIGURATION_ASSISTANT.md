@@ -37,6 +37,37 @@ dotnet .\relay.dll --home <中转站目录> guidance remove --all
 
 删除便携目录不会执行卸载程序，删除前需在 GUI 或 CLI 移除规则。
 
+## 直接创建 CLI 任务
+
+任务看板的“新建 CLI 任务”直接接受工作要求、来源会话和目标会话。软件保存工作要求、生成上下文提示并调用已配置的程序；不需要先生成文件交接 JSON。目标可选新建或已有会话，使用已有会话时明确绑定一次，后续按准确 ID 续接。
+
+选择“接收方 → 发送方 → 接收方”会保存 `[B,A,B]` 完成计划，表示 B 执行、A 审阅、B 落实。单步任务保留一次完成的语义。未启用的连接方向需要明确授权，实际发送可能产生模型费用。
+
+CLI 也能直接创建。将下列占位值替换为实际登记节点和准确会话 ID，保存为清单：
+
+```json
+{
+  "from":"<发送节点ID>",
+  "to":"<接收节点ID>",
+  "prompt":"请检查并完成这项工作",
+  "origin_session_id":"<来源会话ID>",
+  "target_session_id":null,
+  "review_and_apply":true,
+  "enable_direction":false
+}
+```
+
+`target_session_id:null` 表示新建，已有目标则填写明确 ID。多轮计划要求双方配置续接命令及来源绑定；`enable_direction:true` 明确允许启用任务所需方向，默认不改变方向设置。
+
+```powershell
+# 只保存，不调用目标
+dotnet .\relay.dll --home <中转站目录> handoff cli-create --manifest <清单JSON路径>
+# 明确同意真实调用后，创建并发送
+dotnet .\relay.dll --home <中转站目录> handoff cli-create --manifest <清单JSON路径> --send --approve
+# 发送已创建任务的当前轮次
+dotnet .\relay.dll --home <中转站目录> handoff send --task <任务ID> --approve
+```
+
 ## A 输出文件交接 JSON
 
 让 A 先写好文件，再输出如下对象供用户粘贴。`from`、`to` 是已登记 ID 或唯一名称；`file` 是存在且可读的绝对路径；`message` 为可选的一句工作要求，不放完整正文。
@@ -70,14 +101,17 @@ dotnet .\relay.dll --home <中转站目录> guidance remove --all
 
 任务 ID、尝试 ID、发送节点与轮次必须采用当前上下文原值。可先写 `received` 或 `working` 表示收到/处理，再写 `done` 或 `failed`。旧轮次不覆盖新轮次，错误或未写完的 JSON 不会当作完成。
 
-- `done` 且 `needs_reply: false`：任务结束，无需回复寒暄或重复确认。
+- 有明确计划且仍有后续步骤：当前完成声明不能结束整个任务。必须给出真实 `result_file` 和具体 `next_action`，否则保持当前步骤并提示补齐，不猜测文件或发起空的下一轮。
+- 无未完成计划步骤时，`done` 且 `needs_reply: false` 表示结束，无需回复寒暄或重复确认；同时给出非空 `next_action` 会因声明矛盾被拒绝。
 - `done` 且 `needs_reply: true`：必须给出真实 `result_file` 与具体 `next_action`；任务继续等待另一方，按下一方向的设置自动投递或提供复制按钮。
 - `failed`：任务失败，说明待处理原因；不能自动开启新一轮。
 - 达到四轮上限：停止继续传递，交由用户判断。
 
-GUI 通过文件事件读取回执，启动和手动刷新也会补读。已接收或正在处理时提示等待回执，不再把重复复制列为下一步。普通文件快照只能记录变更，不能代替 Agent 的明确完成声明。所有进程退出后没有常驻监视进程；最小化到托盘时 GUI 仍在运行。
+GUI 通过文件事件读取回执，启动和手动刷新也会补读。已接收或正在处理时提示等待回执，不再把重复复制列为下一步。普通文件快照只能记录变更，不能代替 Agent 的明确完成声明。所有进程退出后没有常驻监视进程；通过 × 关闭到托盘时 GUI 仍在运行。
 
 任务可以取消，也可以在确认后删除账本记录；删除保留磁盘文件，之后仍可按保留期清理。人工标记完成会记录用户决定并停止等待，不代表获得 Agent 完成证据，也不会停止已运行的外部进程。
+
+计划保存在任务的 `handoff_plan` 中，按 `turn` 推进。上下文明确 `required_next_agent` 和剩余步骤；中间步骤的模板设 `needs_reply:true`。模型仍负责提交实际结果，Relay 不从自然语言推测未登记的计划。
 
 ## 高级 CLI 接口扩充
 

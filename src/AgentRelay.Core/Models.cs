@@ -81,6 +81,8 @@ public sealed class TaskRecord
     public string? CliFileStatus { get; set; }
     public string? CliFileSessionId { get; set; }
     public string? CliFileError { get; set; }
+    public string? CliNewSessionCwd { get; set; }
+    public string[]? HandoffPlan { get; set; }
 }
 
 public sealed record TaskView(TaskRecord Task, bool DeadlineExceeded, string NextAction, string Prompt,

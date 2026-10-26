@@ -38,6 +38,7 @@ public sealed partial class RelayService
             validated = check.Session;
         }
         var command = resume ? extension.Recipe.Resume! : extension.Recipe.Create;
+        if(!resume&&task.CliNewSessionCwd is {} newCwd)command=command with {WorkingDirectory=newCwd};
         if (resume) command = command with { WorkingDirectory = validated?.Cwd ?? binding!.Cwd ?? command.WorkingDirectory };
         if (resume)
         {

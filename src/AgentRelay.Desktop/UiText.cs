@@ -379,6 +379,8 @@ public static class UiText
         TaskControlUiText.AddTo(entries);
         WorkflowUiText.AddTo(entries);
         SessionUiText.AddTo(entries);
+        NotificationUiText.AddTo(entries);
+        CliTaskUiText.AddTo(entries);
         AgentEntryUiText.AddTo(entries);
         return entries;
     }

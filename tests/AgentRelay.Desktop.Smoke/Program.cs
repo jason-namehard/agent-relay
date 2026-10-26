@@ -55,6 +55,8 @@ internal static class Program
         await CheckTray(window);
         await CheckCloseBehavior(window,root);
         await CheckSessionDialogs(window,root);
+        await CheckCliTaskEntry(window,root);
+        await CheckNotificationDelivery(window,root);
         Check(navigation.Items.Cast<ListBoxItem>().Select(i=>(string)i.Tag).SequenceEqual(new[]{"Home","Agents","Connections","Settings"}),"Exactly four main pages");
         Check(Find<DataGrid>(window,"TasksTable").Items.Count==2,"Board combines all handoffs");
         SelectTask(window,task.TaskId);
@@ -286,8 +288,8 @@ internal static class Program
         var installed=(bool)typeof(MainWindow).GetField("trayInstalled",flags)!.GetValue(window)!;
         Check(installed,"Main window installs a system tray entry");
         window.WindowState=WindowState.Minimized;
-        await Wait(()=>!window.IsVisible);
-        Check(!window.IsVisible,"Minimizing hides the window to its tray entry");
+        await Wait(()=>window.WindowState==WindowState.Minimized);
+        Check(window.IsVisible&&window.WindowState==WindowState.Minimized&&window.ShowInTaskbar,"Minimize keeps the window on the taskbar; only Close can hide it to the tray");
         typeof(MainWindow).GetMethod("OpenFromTray",flags)!.Invoke(window,null);
         await Wait(()=>window.IsVisible&&window.WindowState==WindowState.Normal);
         Check(window.IsVisible&&window.WindowState==WindowState.Normal,"Tray Open restores the hidden window");
@@ -370,6 +372,78 @@ internal static class Program
             Press(dialog,"CancelSessionHandoff");
         });
         Check(station.Tasks().Count==0,"Cancelling conversation routing creates no task or CLI call");
+    }
+
+    private static async Task CheckCliTaskEntry(MainWindow owner,string root)
+    {
+        var station=new RelayService(Path.Combine(root,"cli-task-ui"));station.Initialize();
+        station.RegisterManual("ui-source","fixture","Source");station.RegisterManual("ui-target","fixture","Target");
+        var calls=Path.Combine(root,"cli-task-calls.txt");
+        var command=new CliCommand("pwsh",["-NoLogo","-NoProfile","-NonInteractive","-Command",
+            "$p=[Console]::In.ReadToEnd();[IO.File]::AppendAllText($env:RELAY_UI_CALLS,$p);@{session_id='created-ui-session';reply='work accepted';accepted=$true}|ConvertTo-Json -Compress"],
+            "{prompt}",root,new Dictionary<string,string>{{"RELAY_UI_CALLS",calls}});
+        station.ImportCliRecipe("ui-target",RelayJson.Write(new CliRecipe(1,"UI entry fixture","fixture",command,null,[],"fixture","local tests","MIT","No model calls.")));
+        Appearance.Save(station.Home,new DesktopPreferences("en",NotificationSound:"none"));
+        var window=new MainWindow(station){Owner=owner};window.Show();
+        await Wait(()=>((TextBlock)window.FindName("StatusText")).Text!="Working…");
+        await Modal<CliHandoffDialog>(window,"New CLI task",async dialog=>
+        {
+            Check(Find<RadioButton>(dialog,"CliTaskNewSession").IsChecked==true,"Explicit CLI task entry offers a new target conversation by default");
+            Check(!FindAll<TextBox>(dialog).Any(t=>t.Name=="FileHandoffReply"),"CLI work entry accepts instructions directly without a file or pasted Agent JSON");
+            Find<TextBox>(dialog,"CliTaskPrompt").Text="UI fixture: perform this direct work request.";
+            var selected=HandleNextDialog<SessionPickerDialog>(dialog,child=>
+            {
+                Expand(child);Find<TextBox>(child,"ManualSessionId").Text="exact-source-ui-session";
+                Find<TextBox>(child,"ManualSessionCwd").Text=root;Press(child,"UseManualSession");return Task.CompletedTask;
+            });
+            Press(dialog,"CliTaskOrigin");await selected;
+            Find<CheckBox>(dialog,"CliTaskEnableDirections").IsChecked=true;
+            await SaveImage(dialog,Path.Combine(root,"New-cli-task.png"));
+            Press(dialog,"SendCliTask");
+        });
+        await Wait(()=>station.Tasks().Count==1&&station.Tasks().Single().Task.CliFileStatus=="submitted");
+        var task=station.Tasks().Single().Task;
+        Check(File.Exists(calls)&&task.Mode=="cli"&&task.State==TaskState.Dispatched,"Creating a CLI task invokes the configured CLI through the visible UI path");
+        Check(File.ReadAllText(task.RequestPath).Contains("UI fixture: perform this direct work request.",StringComparison.Ordinal),"CLI task persists the user's work request as the actual request document");
+        Check(station.TaskSession(task.TaskId,"ui-source")?.SessionId=="exact-source-ui-session"&&station.TaskSession(task.TaskId,"ui-target")?.SessionId=="created-ui-session","CLI UI binds the explicit source and records the returned new target session ID");
+        window.RequestExit();
+    }
+
+    private static async Task CheckNotificationDelivery(MainWindow owner,string root)
+    {
+        var service=new RelayService(Path.Combine(root,"notification-ui"));service.Initialize();
+        service.RegisterManual("notify-a","manual","Writer");service.RegisterManual("notify-b","manual","Reader");
+        service.EnableDesktopFallback(Path.Combine(root,"removed-package","AgentRelay.Notify.exe"));
+        Appearance.Save(service.Home,new DesktopPreferences("en",NotificationSound:"none"));
+        var window=new MainWindow(service){Owner=owner};window.Show();await Task.Delay(100);
+        var navigation=(ListBox)window.FindName("Navigation");
+        navigation.SelectedItem=navigation.Items.Cast<ListBoxItem>().Single(i=>(string)i.Tag=="Settings");
+        await Wait(()=>FindAll<ComboBox>(window).Any(c=>c.Name=="NotificationSoundChoice"));
+        var sounds=Find<ComboBox>(window,"NotificationSoundChoice");
+        Check(sounds.Items.Count==5,"Notification settings offer silent, default, information, warning and error sounds");
+        sounds.SelectedValue="warning";await Wait(()=>Appearance.Load(service.Home).NotificationSound=="warning");
+        sounds.SelectedValue="none";await Wait(()=>Appearance.Load(service.Home).NotificationSound=="none");
+        Check(FindAll<Button>(window).Any(b=>Equals(b.Tag,"Preview sound")),"Notification sound selection persists and has an explicit preview action");
+        await Click(window,"Send test notification");
+        await Wait(()=>Application.Current.Windows.Cast<Window>().Any(w=>w.Name=="InAppNotification"));
+        var popup=Application.Current.Windows.Cast<Window>().Single(w=>w.Name=="InAppNotification");
+        Check(popup.ShowInTaskbar==false&&popup.Topmost&&service.Tasks().Count==0,"Missing native helper produces a visible in-app test notification without creating a task");
+        await SaveImage(popup,Path.Combine(root,"In-app-notification.png"));popup.Close();
+        var file=Path.Combine(root,"notification-work.md");File.WriteAllText(file,"A local notification fixture.");
+        var task=service.CreateFileHandoff(new("notify-a","notify-b",file)).Task;
+        await Click(window,"Refresh");
+        await Wait(()=>Application.Current.Windows.Cast<Window>().Any(w=>w.Name=="InAppNotification"));
+        popup=Application.Current.Windows.Cast<Window>().Single(w=>w.Name=="InAppNotification");
+        Check(FindAll<TextBlock>(popup).Any(t=>t.Text.Contains("Reader",StringComparison.Ordinal)),"Waiting notifications identify the current receiving Agent");popup.Close();
+        await Click(window,"Refresh");
+        Check(!Application.Current.Windows.Cast<Window>().Any(w=>w.Name=="InAppNotification"),"Refreshing the same event does not repeat its notification");
+        File.WriteAllText(service.ManualReceiptPath(task),RelayJson.Write(new ManualReceipt(task.TaskId,task.AttemptId,"notify-b",0,"done",false)));
+        await Click(window,"Refresh");
+        await Wait(()=>service.Status(task.TaskId).Task.State==TaskState.Succeeded);
+        await Wait(()=>Application.Current.Windows.Cast<Window>().Any(w=>w.Name=="InAppNotification"));
+        popup=Application.Current.Windows.Cast<Window>().Single(w=>w.Name=="InAppNotification");
+        Check(FindAll<TextBlock>(popup).Any(t=>t.Text.Contains("已完成",StringComparison.Ordinal)),"Completion still updates the task and notifies when the configured helper no longer exists");
+        popup.Close();window.RequestExit();
     }
 
     private static Task HandleNextDialog<T>(Window owner,Func<T,Task> exercise) where T:Window

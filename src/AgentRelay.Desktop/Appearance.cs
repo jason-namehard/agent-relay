@@ -12,7 +12,9 @@ public sealed record DesktopPreferences(
     [property: JsonRequired] string Language = "zh-CN",
     [property: JsonRequired] string Palette = "mist",
     string? Accent = null,
-    bool? CloseToTray = null);
+    bool? CloseToTray = null,
+    string NotificationSound = "default",
+    long? LastNotificationId = null);
 
 public sealed record AppearanceOption(string Id, string Label);
 
@@ -114,6 +116,9 @@ public static class Appearance
         if (!Palettes.Any(option => option.Id == preferences.Palette))
             throw new RelayException("invalid_desktop_palette", $"Unknown desktop palette: {preferences.Palette}. Supported: sage, clay, mist, rose.");
         if (preferences.Accent is not null) ParseAccent(preferences.Accent);
+        if (preferences.NotificationSound is not ("none" or "default" or "information" or "warning" or "error"))
+            throw new RelayException("invalid_notification_sound","通知声音应为 none、default、information、warning 或 error。");
+        if (preferences.LastNotificationId is < 0) throw new RelayException("invalid_notification_cursor","通知记录位置不能为负数。");
     }
 
     private static string SystemLanguage()

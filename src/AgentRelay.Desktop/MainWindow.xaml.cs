@@ -62,11 +62,11 @@ public partial class MainWindow : Window
             InstallTray();
         };
         Closed += (_, _) => {RemoveTray();receiptWatcher?.Dispose();source?.RemoveHook(ReceiveLedgerMessage);};
-        StateChanged += (_, _) => { if (WindowState == WindowState.Minimized) Hide(); };
         Loaded += async (_, _) =>
         {
             Navigation.SelectedIndex = 0;
             WatchReceipts();
+            InitializeNotificationDelivery();
             await Run(() => Task.CompletedTask, "Ready");
         };
     }
@@ -109,18 +109,13 @@ public partial class MainWindow : Window
         {
             await action();
             var receipts=service.ImportManualReceipts();
-            string? notificationHint=null;
             foreach(var updatedId in receipts.UpdatedTaskIds)
             {
                 var updated=service.Status(updatedId).Task;
                 if(updated.State is not(TaskState.AwaitingReply or TaskState.Succeeded or TaskState.Failed or TaskState.TimedOut))continue;
                 if(updated.State==TaskState.AwaitingReply) { _=FilePrompt(updated); await AutoDeliverFile(updated); }
-                if(service.DesktopExecutable() is { } notifier)
-                {
-                    var notified=await new DesktopNotifier(notifier).NotifyAsync(service.Home,updated,CancellationToken.None);
-                    if(notified.State!="submitted")notificationHint=notified.Detail??T("Desktop notification unavailable");
-                }
             }
+            var notificationHint=await DeliverPendingDesktopNotificationsAsync();
             if (refresh && !reviewCancelled) { RenderPage(); LedgerHint.Text = ""; }
             if(receipts.Errors.Length>0)LedgerHint.Text=T("Receipt needs attention")+": "+receipts.Errors[0].Message;
             else if(receipts.UpdatedTaskIds.Length>0)LedgerHint.Text=T("Handoff receipts updated");
@@ -217,6 +212,7 @@ public partial class MainWindow : Window
         Add(cards,T("Registered Agents")+": "+summary.RegisteredAgents,()=>{Go("Agents");return Task.CompletedTask;});
         cards.Children.Add(Note(T("Pending Tasks")+": "+summary.PendingTasks+"  ·  "+T("Retention")+": "+summary.RetentionDays+" "+T("days")));
         var actions=Row(page);
+        Add(actions,"New CLI task",NewCliHandoff);
         Add(actions,"New handoff",async()=>
         {
             var agents=service.Agents().Select(a=>new HandoffAgentOption(a.AgentId,a.DisplayName??a.AgentId)).ToArray();
@@ -236,6 +232,7 @@ public partial class MainWindow : Window
             }
             var result=await Task.Run(()=>service.CreateFileHandoff(draft));
             taskId=result.Task.TaskId;
+            if(dialog.RequireRoundTrip)service.ConfigureHandoffPlan(taskId,[draft.To,draft.From,draft.To]);
             if(routing is not null)
             {
                 if(routing.Origin is not null)service.BindTaskSession(taskId,draft.From,routing.Origin,routing.OriginBinding);
@@ -424,7 +421,20 @@ public partial class MainWindow : Window
             var enabled=notify.IsChecked==true;
             await Run(async()=>
             {
-                if(enabled)await service.ConfigureDesktopAsync(Path.GetFullPath(Path.Combine(AppContext.BaseDirectory,"..","desktop","AgentRelay.Notify.exe")));
+                if(enabled)
+                {
+                    try
+                    {
+                        await service.ConfigureDesktopAsync(CurrentNotifierPath());
+                        notificationSetupHint=null;
+                    }
+                    catch(Exception error) when(error is RelayException or Win32Exception or IOException or UnauthorizedAccessException)
+                    {
+                        service.EnableDesktopFallback(CurrentNotifierPath());
+                        notificationSetupHint=T("Native notifications are unavailable. In-app notifications remain enabled.")+" "+error.Message;
+                    }
+                    SaveNotificationCursor(service.Inbox().Select(n=>n.NotificationId).DefaultIfEmpty().Max());
+                }
                 else service.DisableDesktop();
             },enabled?"Desktop notifications enabled":"Desktop notifications disabled",refresh:false);
             restoringNotification=true;
@@ -433,6 +443,7 @@ public partial class MainWindow : Window
         }
         notify.Checked+=NotificationChanged;
         notify.Unchecked+=NotificationChanged;
+        AddNotificationSoundSettings(page);
         var extensions=Page();
         extensions.Children.Add(Note("CLI extensions connect verified command-line tools or bridges. Availability depends on the target software, version, environment and session support. Not every Agent supports automatic calls or resuming a session. Test before enabling; manual handoff remains available."));
         var extensionActions=Row(extensions);

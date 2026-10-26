@@ -9,10 +9,10 @@
 
 ## 快速开始 — Windows x64
 
-公开预览版：`0.1.0-preview.12`。在 Windows PowerShell 5.1 或 PowerShell 7 中下载并完整解压到新目录：
+公开预览版：`0.1.0-preview.13`。在 Windows PowerShell 5.1 或 PowerShell 7 中下载并完整解压到新目录：
 
 ```powershell
-$version = 'v0.1.0-preview.12'
+$version = 'v0.1.0-preview.13'
 $zip = "AgentRelay-$version-windows-x64.zip"
 $download = Join-Path $PWD $zip
 $ProgressPreference = 'SilentlyContinue'
@@ -22,7 +22,7 @@ Set-Location ".\AgentRelay-$version"
 .\gui\AgentRelay.Desktop.exe
 ```
 
-也可从 [Releases](https://github.com/jason-namehard/agent-relay/releases/tag/v0.1.0-preview.12) 下载。配置真实 Agent 请运行上述正式程序；`TryDemo.cmd` 是隔离演示，会禁止真实 CLI 调用。在设置中可保留当前演示数据并转为正式使用。GUI 与通知自带运行库，CLI/MCP 需要 [.NET 10 runtime](https://dotnet.microsoft.com/download/dotnet/10.0)。目前没有安装器和代码签名，Windows 可能给出安全提示。
+也可从 [Releases](https://github.com/jason-namehard/agent-relay/releases/tag/v0.1.0-preview.13) 下载。配置真实 Agent 请运行上述正式程序；`TryDemo.cmd` 是隔离演示，会禁止真实 CLI 调用。在设置中可保留当前演示数据并转为正式使用。GUI 与通知自带运行库，CLI/MCP 需要 [.NET 10 runtime](https://dotnet.microsoft.com/download/dotnet/10.0)。目前没有安装器和代码签名，Windows 可能给出安全提示。
 
 <details>
 <summary>核对上传的 GitHub 发布资产</summary>
@@ -41,7 +41,19 @@ if ($actual -ne $asset.digest) { throw 'The file does not match the GitHub asset
 
 </details>
 
-## 一次文件交接怎么走
+## 发起 CLI 任务
+
+1. **配置 A 和 B。** 在 Agent 管理使用“一键配置”或按字段手动新建；CLI 投递需要先保存真实可用的调用方案。
+2. **在看板点击“新建 CLI 任务”。** 选择 A 及其来源会话、B，以及新建或已有的目标会话，直接填写工作要求。软件生成任务提示并安排调用，不需要先让 Agent 写交接文件或 JSON。
+3. **选择完成计划。** 单步任务由 B 完成后结束；需要审阅与落实时，勾选“接收方 → 发送方 → 接收方”，让 B 处理、A 审阅、B 落实。中途的完成回执不能跳过计划步骤，每次回传必须提供真实回稿和具体下一步。
+4. **创建并通过 CLI 发送。** 必要时明确允许启用所需方向，再提交。实际调用可能产生模型费用。看板显示当前处理者，读取工作回执后更新，后续往返精确续接同一组已绑定会话。
+
+会话失效时需要重新选择，不会猜测最近会话；投递不确定时不会自动重试。CLI 返回成功或文件发生变化，都不等于工作完成。见[会话选择与限制](docs/SESSIONS.md)。
+
+<details>
+<summary>手动交接已有文件</summary>
+
+### 一次文件交接怎么走
 
 1. **配置 A 和 B。** 在 Agent 管理点击“一键配置”，把已复制的提示词粘贴到要登记的 Agent 的新对话窗口，让它调查并直接登记。每次提示词都有独立登记请求。也可点“新建 Agent”按字段手动填写，只有一个名称必填。
 2. **按需安装交接规则。** 选择宿主实际加载的指令文件，检查一句话规则并确认。详细说明只在需要时读取，已有会话可能要重新读取指令。
@@ -49,24 +61,26 @@ if ($actual -ne $asset.digest) { throw 'The file does not match the GitHub asset
 4. **选择 B 的对话。** 已配置 CLI 时，可以新建会话，或明确“选择已有会话”。选择器只刷新当前 Agent，不会自动替你选中第一项。剪贴板交接无法自动知道 A 的来源会话；要让后续 CLI 回传到那里，可明确选择一次。
 5. **把提示交给 B。** 已登记调用方案且 A → B 方向已启用时，软件通过 CLI 发送；否则点击“复制提示词给 B”。短提示指向文件、工作要求和回执模板。
 6. **B 写回执。** 软件打开时通过回执文件事件更新任务，启动和刷新也会补读。这条流程无需用户再导入已完成回稿。
-7. **确有工作才继续传递。** `done` 且 `needs_reply: false` 就结束。需要对方继续时必须给出真实回稿和具体 `next_action`，软件按已绑定的准确会话和方向继续，或提示复制给对方；最多四轮，达到上限后停止，由人判断。
+7. **按完成计划继续。** 文件流程也可选择审阅落实计划；中间步骤不能被 `needs_reply:false` 跳过，必须提供真实回稿和具体 `next_action`。无计划时，`done + needs_reply:false` 表示结束，但不能同时要求继续工作。软件按已绑定会话和方向继续，或提示复制给对方；最多四轮后交由人判断。
 
 Agent 正在处理时，看板会提示等待回执。同一轮 CLI 只记录一次投递；结果不确定时应先检查目标会话，再决定是否手动传递。同一任务 attempt 的后续往返复用双方准确的会话 ID；会话失效会停止自动投递并要求重新选择，不会改用“最近会话”。见[会话选择与限制](docs/SESSIONS.md)。
 
 文件改变不能证明完成，明确回执才能。外部文件复制进受管目录，受管文件直接复用，不额外生成正文包装文件或重复结果快照。控制 JSON 放在隐藏的 `.relay` 目录。长期成果保存在项目中，过期受管文件可通过清理操作删除。
 
+</details>
+
 ## 包含什么
 
 | 区域 | 当前行为 |
 | --- | --- |
-| 任务看板 | 手动或已启用 CLI 文件交接、明确选择会话、等待者与任务操作 |
+| 任务看板 | 直接填写 CLI 工作要求或文件交接、准确会话、完成计划与任务操作 |
 | 会话管理 | 同一 SQLite 中按任务/attempt/轮次/Agent 绑定，定向发现、展示缓存及续接前真实核实 |
 | 节点录入 | 一个名称、一键直接配置、分区手动字段与本机配置接口 |
 | 交接规则 | 用户批准后常驻一句话，详细说明按需读取，移除保留其他编辑 |
 | 连接图 | 每对节点一条线和独立方向开关；节点亮点区分方案已登记、探针失败与缺少方案 |
 | CLI 扩充 | 原生 JSON/JSONL/文本输出适配，新会话和续接探针分别核验 |
-| 设置 | 中转站、保留期、通知、六种语言、四套配色与强调色 |
-| Windows 托盘 | 首次关闭询问一次；设置记住关闭到托盘或直接退出，托盘“退出”始终结束程序 |
+| 设置 | 中转站、保留期、桌面提醒、可选提示音、六种语言与配色 |
+| Windows 托盘 | 最小化留在任务栏；× 按记住的选择进托盘或退出，托盘“退出”始终结束程序 |
 
 GUI 与通知为 Windows x64。Core CLI/MCP 有 Windows/Linux CI 覆盖，需要 .NET 10。没有 macOS 桌面包、云端中转站，所有进程关闭后没有后台服务。CLI 输出与多数深层文档目前为中文。
 
@@ -123,7 +137,7 @@ pwsh ./scripts/package.ps1 -Flavor Windows
 - 不完整或无效回执会提示处理，保存结果本身不会完成任务。旧消息任务保留原先 CLI/MCP 协议。
 - 删除任务需确认，会删除账本记录并保留文件供保留期清理。人工标记完成记录用户决定；这两项都不验证 Agent 的工作，也不终止已经运行的 Agent。
 - 迁移要求没有未完成任务，包括等待对方继续的回传。文件和账本复制后再切换；旧站作为备份不自动清理，迁移校验只继续有记录的待完成迁移。
-- 通知保存有自动测试，系统通知中心弹出和 125%/150% 缩放仍需人工验证。
+- 系统横幅由 Windows 通知设置决定。投递失败会明确报告，必要时显示标注为“应用内通知”的右下角提醒，不冒充系统横幅。设置提供测试通知、提示音选择与试听；显示缩放仍需人工检查。
 - Agent 必须能访问中转站文件，任意远程或沙盒会话不一定能读取本机目录。
 
 更多见 [上手指南](docs/GETTING_STARTED.md)、[贡献约定](CONTRIBUTING.md)、[更新记录](CHANGELOG.md) 与 [issues](https://github.com/jason-namehard/agent-relay/issues)。报告请附版本、平台、步骤及脱敏错误。

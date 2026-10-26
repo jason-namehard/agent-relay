@@ -179,10 +179,16 @@ public sealed partial class RelayService
         }
         else
         {
+            var plannedNext = receipt.Status == "done" && task.HandoffPlan is { } plan && task.ManualTurn + 1 < plan.Length;
             if (receipt.Status == "failed" && receipt.NeedsReply)
                 throw new RelayException("manual_receipt_reply", "失败回执不能自动开启下一轮。");
-            if (receipt.NeedsReply && (string.IsNullOrWhiteSpace(receipt.ResultFile) || string.IsNullOrWhiteSpace(receipt.NextAction)))
-                throw new RelayException("manual_receipt_reply", "需要对方继续时，必须给出回稿文件和具体的下一步工作；已确认或寒暄无需回传。");
+            if (receipt.Status == "done" && !receipt.NeedsReply && !plannedNext && !string.IsNullOrWhiteSpace(receipt.NextAction))
+                throw new RelayException("manual_receipt_contradiction", "回执声明无需继续，却同时给出了下一步工作。请明确是否需要继续；有待办时应设置 needs_reply=true 并提供回稿文件。");
+            var continues = receipt.NeedsReply || plannedNext;
+            if (continues && (string.IsNullOrWhiteSpace(receipt.ResultFile) || string.IsNullOrWhiteSpace(receipt.NextAction)))
+                throw new RelayException("manual_receipt_reply", plannedNext
+                    ? "本轮处理完成，但交接计划仍有后续步骤，不能结束任务。请提供真实回稿 result_file 和具体 next_action，再按当前上下文重写回执。"
+                    : "需要对方继续时，必须给出回稿文件和具体的下一步工作；已确认或寒暄无需回传。");
             if (!string.IsNullOrWhiteSpace(receipt.ResultFile))
             {
                 ManualTransfers.RequireFile(receipt.ResultFile);
@@ -195,7 +201,7 @@ public sealed partial class RelayService
                 task.State = TaskState.Failed; task.ErrorCode = "manual_agent_failed";
                 task.ErrorMessage = receipt.NextAction ?? "Agent 报告处理失败，请检查回执或回稿。";
             }
-            else if (!receipt.NeedsReply) task.State = TaskState.Succeeded;
+            else if (!continues) task.State = TaskState.Succeeded;
             else if (task.ManualTurn + 1 >= MaxManualTurns)
             {
                 task.State = TaskState.Failed; task.ErrorCode = "manual_round_limit";
@@ -203,7 +209,8 @@ public sealed partial class RelayService
             }
             else
             {
-                task.AwaitingAgentId = receipt.Sender == task.RequesterId ? task.RecipientId : task.RequesterId;
+                task.AwaitingAgentId = plannedNext ? task.HandoffPlan![task.ManualTurn + 1]
+                    : receipt.Sender == task.RequesterId ? task.RecipientId : task.RequesterId;
                 task.ManualTurn++; task.State = TaskState.AwaitingReply;
                 task.ManualNextAction = receipt.NextAction;
             }

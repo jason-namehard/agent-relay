@@ -63,17 +63,9 @@ public partial class MainWindow
 
     private string FilePrompt(TaskRecord task)
     {
+        _=service.FileHandoffPrompt(task);
         var receipt=service.ManualReceiptPath(task);
         var context=Path.Combine(Path.GetDirectoryName(receipt)!,"context.json");
-        var current=task.AwaitingAgentId??task.RecipientId;
-        var template=new ManualReceipt(task.TaskId,task.AttemptId,current,task.ManualTurn,"done",false);
-        File.WriteAllText(context,RelayJson.Write(new
-        {
-            sender_name=AgentName(task.ManualTurn==0?task.RequesterId:current==task.RequesterId?task.RecipientId:task.RequesterId),
-            recipient_name=AgentName(current),current_file=task.ManualCurrentFile??task.RequestPath,request=task.ManualNextAction,
-            reply_file=task.ResultPath,receipt_file=receipt,receipt_template=template,
-            instructions="Read current_file and perform the request. Write the receipt JSON to receipt_file when finished; do not ask the user to import your reply or create another handoff JSON. status: received/working/done/failed. Keep task_id, attempt_id, sender and turn unchanged. Set needs_reply=false when complete. Only use needs_reply=true for concrete remaining work; include result_file and next_action. No greetings or repeated confirmations. Limit: 4 completion turns. Permanent deliverables belong in the project. Publish one complete receipt or rename a temporary file."
-        }));
         return string.Format(CultureInfo.CurrentUICulture,T("A file is waiting for you. Read {0}, perform the request and write its receipt. No extra acknowledgement message is needed."),context);
     }
 
@@ -83,6 +75,7 @@ public partial class MainWindow
         Heading(pane,AgentName(task.RequesterId)+" → "+AgentName(task.RecipientId),FileState(task));
         if(task.ResumeStatus=="operator_completed")pane.Children.Add(Note(T("Marked complete by the user. Agent completion was not verified.")));
         if(task.ErrorMessage is not null)pane.Children.Add(Note(task.ErrorMessage));
+        if(task.HandoffPlan is {} plan)pane.Children.Add(Note(T("Planned steps")+": "+string.Join(" → ",plan.Select(AgentName))+" · "+T("Current step")+" "+(task.ManualTurn+1)+"/"+plan.Length));
         AddSessionBindings(pane,task);
         var live=task.State is not(TaskState.Succeeded or TaskState.Failed or TaskState.Cancelled or TaskState.TimedOut);
         var actions=Row(pane);

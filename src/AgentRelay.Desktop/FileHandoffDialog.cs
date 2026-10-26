@@ -8,6 +8,7 @@ namespace AgentRelay.Desktop;
 public sealed class FileHandoffDialog : Window
 {
     public ManualTransferDraft? Result { get; private set; }
+    public bool RequireRoundTrip { get; private set; }
 
     public FileHandoffDialog(Window owner,RelayService service,string language)
     {
@@ -16,6 +17,9 @@ public sealed class FileHandoffDialog : Window
         ui.Body.Children.Add(ui.Note("Ask Agent A to write a file for B, then append the copied instructions. Paste its JSON here and create the handoff. Installed Agent rules can provide this format automatically."));
         var reply=ui.Field(ui.Body,"Agent handoff JSON","FileHandoffReply",multiline:true);reply.Height=150;
         var actions=new WrapPanel();ui.Body.Children.Add(actions);
+        var plan=new CheckBox{Name="FileHandoffReviewPlan",Content=ui.T("Require recipient → sender → recipient before completing"),Margin=new(0,10,0,10)};
+        ui.Body.Children.Add(plan);
+        plan.Checked+=(_,_)=>RequireRoundTrip=true;plan.Unchecked+=(_,_)=>RequireRoundTrip=false;
         ui.Button(actions,"Copy handoff format","CopyFileHandoffFormat",()=>
         {
             Clipboard.SetText(UiText.Translate("After creating the requested file, return only this JSON. Use registered node IDs or names and an existing absolute file path. This message describes a handoff; do not create a second file containing the JSON.",language)+"\n"+

@@ -55,6 +55,8 @@ internal static class Program
                     try
                     {
                         var values = activation.Arguments;
+                        if(values.TryGetValue("action",out var testAction)&&testAction=="test")
+                        {app.Shutdown();return;}
                         if (!values.TryGetValue("home", out var home) || !values.TryGetValue("task", out var task) ||
                             !values.TryGetValue("attempt", out var attempt) || !values.TryGetValue("action", out var action) || action is not ("copy" or "view"))
                             throw new RelayException("notification_arguments_invalid", "通知参数无效，请在 Inbox 查看任务。", 3);
@@ -84,27 +86,29 @@ internal static class Program
                 manager.UnregisterAll();
                 return 0;
             }
-            if (args.Contains("--notify"))
+            if (args.Contains("--notify")||args.Contains("--test"))
             {
-                var home = Required(args, "--home");
-                var task = Required(args, "--task");
-                var view = new RelayService(home).Status(task);
-                RequireAttempt(view, Required(args, "--attempt"));
                 if (manager.Setting != AppNotificationSetting.Enabled)
                 {
                     Write(new ResumeResult("unavailable", "notifications_disabled", "Windows 通知设置：" + manager.Setting));
                     manager.Unregister();
                     return 3;
                 }
-                var notification = new AppNotificationBuilder()
-                    .AddArgument("action", "view").AddArgument("home", home).AddArgument("task", task).AddArgument("attempt", view.Task.AttemptId)
-                    .AddText(view.Task.IsFileHandoff && view.Task.State==TaskState.Succeeded ? "Agent Relay · 交接已完成" :
-                        view.Task.IsFileHandoff && view.Task.State is TaskState.Failed or TaskState.TimedOut ? "Agent Relay · 交接需要处理" : "Agent Relay · 任务需要继续")
-                    .AddText($"{view.Task.RequesterId} ← {view.Task.RecipientId} · {view.Task.State}")
-                    .AddText("结果与继续提示词已保存。")
-                    .AddButton(new AppNotificationButton("复制继续提示词")
-                        .AddArgument("action", "copy").AddArgument("home", home).AddArgument("task", task).AddArgument("attempt", view.Task.AttemptId))
-                    .BuildNotification();
+                var builder=new AppNotificationBuilder();
+                if(args.Contains("--test"))
+                    builder.AddArgument("action","test").AddText(Required(args,"--title")).AddText(Required(args,"--message"));
+                else
+                {
+                    var home=Required(args,"--home");var task=Required(args,"--task");
+                    var service=new RelayService(home);var view=service.Status(task);
+                    RequireAttempt(view,Required(args,"--attempt"));
+                    var content=service.NotificationContent(view.Task);
+                    builder.AddArgument("action","view").AddArgument("home",home).AddArgument("task",task).AddArgument("attempt",view.Task.AttemptId)
+                        .AddText(content.Title).AddText(content.Message)
+                        .AddButton(new AppNotificationButton("打开任务").AddArgument("action","view").AddArgument("home",home).AddArgument("task",task).AddArgument("attempt",view.Task.AttemptId));
+                }
+                if(args.Contains("--silent"))builder.MuteAudio();
+                var notification=builder.BuildNotification();
                 manager.Show(notification);
                 if (notification.Id == 0) throw new InvalidOperationException("Windows did not assign a notification ID.");
                 Write(new ResumeResult("submitted", Detail: $"Windows 已接受通知 {notification.Id}；可见性取决于系统通知设置。"));
@@ -113,7 +117,7 @@ internal static class Program
             }
             // Windows launches this process through the app-owned COM activation registration.
             if (!args.Any(a => a.Contains("AppNotificationActivated", StringComparison.Ordinal)))
-                throw new ArgumentException("Use --notify, --open, --copy, --probe or --unregister.");
+                throw new ArgumentException("Use --notify, --test, --open, --copy, --probe or --unregister.");
             return app.Run();
         }
         catch (Exception error) when (error is RelayException or IOException or UnauthorizedAccessException or ExternalException or ArgumentException)
