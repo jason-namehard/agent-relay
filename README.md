@@ -133,7 +133,7 @@ Scripts accept `-Dotnet <path>`. Packages go to `artifacts/packages`; existing a
 
 ## Limits and verification
 
-- One-click setup registers an invocation recipe; it does not synchronize desktop authentication with a standalone CLI. WorkBuddy's bundled CLI cannot use the desktop login; use the official CodeBuddy Code CLI, which keeps its own sessions and cannot resume existing WorkBuddy desktop conversations ([details](docs/SESSIONS.md#workbuddy-cli)). Real host creation, visibility and continuation need testing in that host. Simulated bridges do not establish real integration; actual probes may incur model fees.
+- One-click setup registers an invocation recipe; it does not synchronize desktop authentication with a standalone CLI. WorkBuddy offers no usable external interface, so handoffs to it are copied manually ([details](docs/SESSIONS.md#workbuddy)). Real host creation, visibility and continuation need testing in that host. Simulated bridges do not establish real integration; actual probes may incur model fees.
 - Invalid or incomplete receipts need attention; saving a result alone never completes a task. Old message tasks retain their earlier CLI/MCP protocol.
 - Deleting a task requires confirmation and removes its ledger history, retaining files for retention cleanup. Manually marking complete records a user decision; neither action verifies the Agent's work or stops an already running Agent.
 - Relocation requires no unfinished task, including a return awaiting the other agent. Files and ledger are copied before switching. The old root is a backup and is not automatically cleaned; Check migration only resumes a recorded pending move.

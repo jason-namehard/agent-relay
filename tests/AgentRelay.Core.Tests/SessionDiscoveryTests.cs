@@ -33,18 +33,6 @@ public sealed class SessionDiscoveryTests
         """ + $"INSERT INTO sessions VALUES('{id}','Review','/project','default',1700000000.5,'fixture-model','desktop',0,0);");
 
     [TestMethod]
-    public void WorkBuddyDesktopStoreIsUsedOnlyForTheBundledCli()
-    {
-        service.RegisterManual("workbuddy", "WorkBuddy", "WorkBuddy");
-        CliRecipe Recipe(string script) => new(1, "fixture", "WorkBuddy", new("node", [script, "-p", "{prompt}", "--output-format", "json"], null, null),
-            null, [], "", "", "", "", "claude-json");
-        service.ImportCliRecipe("workbuddy", RelayJson.Write(Recipe(@"D:\workbuddy\resources\app.asar.unpacked\cli\dist\codebuddy-lite-wb.mjs")));
-        Assert.AreEqual("workbuddy", service.DiscoverySource("workbuddy")!.Provider);
-        service.ImportCliRecipe("workbuddy", RelayJson.Write(Recipe(@"C:\npm\node_modules\@tencent-ai\codebuddy-code\bin\codebuddy")));
-        Assert.IsNull(service.DiscoverySource("workbuddy"));
-    }
-
-    [TestMethod]
     public async Task DiscoveryReadsOnlyTheRequestedAgentAndPreservesOtherCaches()
     {
         _ = Hermes("a", "a-session"); _ = Hermes("b", "b-session");

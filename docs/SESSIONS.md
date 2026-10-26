@@ -67,19 +67,15 @@ Relay 缓存用于快速展示，不能证明续接仍然有效。每次 resume 
 
 模型和思考强度属于执行配置，当前没有统一跨宿主覆盖表单。新建会话若提示未选模型，需要在宿主设置或选择已经配置的旧会话；续接默认继承旧会话。Relay 不把模型参数塞进任务正文，也不伪造宿主不支持的参数。
 
-## WorkBuddy CLI
+## WorkBuddy
 
-WorkBuddy 应用自带的 print 模式 CLI（应用内的 `codebuddy-lite-wb.mjs`）不能使用桌面登录：桌面令牌加密保存，只供 GUI 进程使用。桌面已登录不等于 CLI 已登录。
+WorkBuddy 桌面版目前没有对外可用的调用接口，只能复制提示词手动交接：
 
-可用路线是官方 CodeBuddy Code CLI，命令为 `codebuddy`，见 [CLI 快速开始](https://www.workbuddy.ai/docs/cli/quickstart)：
+- 应用自带的 CLI（`codebuddy-lite-wb.mjs`）单独启动时用不了桌面登录，报 `Authentication required`。
+- 每个打开中的对话由一个本机工作进程承载，`~/.workbuddy/sessions/<pid>.json` 记录其 ACP 地址。WorkBuddy 5.9.2 中该地址接受连接和 `initialize`，但外部发来的 `session/prompt` 被静默忽略，对话里不出现；桌面自己的消息走内部通道。
+- 官方 CodeBuddy Code CLI 有独立的登录、额度和会话存储，建的会话不出现在 WorkBuddy 里，不能代替 WorkBuddy。
 
-```powershell
-npm install -g @tencent-ai/codebuddy-code
-# 在终端运行一次，按提示交互登录
-codebuddy
-```
-
-调用方案的 create 参数使用 `-p {prompt} --output-format json` 和非交互权限参数：`--permission-mode acceptEdits` 允许直接改文件、写回执，终端命令在 print 模式下会被拒绝；需要无人值守运行命令时改用 `-y`（高风险操作仍会被拒绝）；resume 另加 `--resume {session_id}`；`output_format` 为 `claude-json`，`login` 可填 `codebuddy`。该 CLI 的会话保存在它自己的存储中，不是 WorkBuddy 桌面对话；已有的 WorkBuddy 桌面对话不能通过它续接，Relay 也不再用桌面会话库校验这类方案的会话。
+会话发现仍读取 `~/.workbuddy/workbuddy.db`，手动交接时可以绑定 WorkBuddy 的对话以便记录。
 
 ## Zcode CLI
 
@@ -87,10 +83,10 @@ codebuddy
 
 ```powershell
 $env:ZCODE_BUILTIN_PROVIDER_CONFIG_FILE = "D:\Zcode\resources\config\provider\zcode-builtin.json"   # 按实际安装目录
-& <Zcode 自带 node.exe> "D:\Zcode\resources\glm\zcode.cjs" login zai
+& <Zcode 自带 node.exe> "D:\Zcode\resources\glm\zcode.cjs" login zai --no-browser
 ```
 
-不设该变量时，登录会因找不到内置供应商配置而失败。`relay cli-recipe doctor` 会检查命令行是否已登记套餐。续接已选过模型的会话不受影响。
+不设该变量时，登录会因找不到内置供应商配置而失败。Windows 自动打开浏览器时会在第一个 `&` 处截断授权地址，页面报缺少 `response_type`、`redirect_uri`、`state`；加 `--no-browser` 后复制终端打印的完整地址到浏览器打开。`relay cli-recipe doctor` 会检查命令行是否已登记套餐。续接已选过模型的会话不受影响。
 
 ## CLI
 

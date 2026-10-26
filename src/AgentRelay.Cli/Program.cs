@@ -149,6 +149,8 @@ public static class RelayCli
         var cliRecipe = Group("cli-recipe", "保存已有 CLI 调用方案，不执行或启用");
         Sync(cliRecipe, "import", "从 JSON 保存指定 Agent 的调用方案", ["agent!", "manifest!"],
             (s, v) => s.ImportCliRecipe(v.Get("agent"), File.ReadAllText(v.Get("manifest"))));
+        Sync(cliRecipe, "remove", "删除指定 Agent 的调用方案及其验证记录", ["agent!"],
+            (s, v) => { s.RemoveCliExtension(v.Get("agent")); return new { status = "removed" }; });
         Sync(cliRecipe, "confirm", "记录用户已在宿主中看到探针会话（--visible 表示可见，省略表示撤销）", ["agent!", "probe!", "visible?"],
             (s, v) => s.ConfirmCliProbe(v.Get("agent"), v.Get("probe"), v.Flag("visible")));
         Sync(cliRecipe, "doctor", "检查调用方案的本机前提（程序、目录、权限参数、宿主登录与默认模型），不调用模型", ["agent!"],
@@ -253,6 +255,8 @@ public static class RelayCli
         Sync(task, "execution", "只读显示执行、会话和 worker 证据", ["task!", "attempt"],
             (s, v) => (object?)s.ExecutionEvidence(v.Get("task"), v.Optional("attempt")) ?? new { message = "尚无执行记录。" });
         Sync(task, "status", "只读状态，不触发投递或时限处理", ["task!"], (s, v) => s.Status(v.Get("task")));
+        Sync(task, "delete", "删除任务及其历史记录；文件保留，已在运行的 Agent 不会被停止", ["task!", "approve?"],
+            (s, v) => { s.DeleteTask(v.Get("task"), v.Flag("approve")); return new { status = "deleted" }; });
         Sync(task, "list", "只读列出任务", [], (s, _) => s.Tasks());
         Add(task, "approve", "批准待确认任务；可显式启动 worker", ["task!", "execute?", "execution-timeout-seconds"], async (s, v) =>
         {

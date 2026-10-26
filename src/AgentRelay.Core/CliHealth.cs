@@ -47,7 +47,7 @@ public sealed partial class RelayService
         if (format == "claude-json")
         {
             if (arguments.Any(a => a.Replace('\\', '/').EndsWith("/codebuddy-lite-wb.mjs", StringComparison.OrdinalIgnoreCase)))
-                yield return new("host.login", "fail", "这是 WorkBuddy 应用自带的 CLI，它不能使用桌面登录。请安装官方 CodeBuddy Code CLI（npm install -g @tencent-ai/codebuddy-code），在终端运行 codebuddy 登录一次，再改用该 CLI 的调用方案。");
+                yield return new("host.login", "fail", "WorkBuddy 桌面版没有对外可用的调用接口：自带的 CLI 单独启动用不了桌面登录，打开中的对话也不接受外部提示词。请给 WorkBuddy 选择“无”，用复制提示词手动交接。");
             if (!arguments.Any(a => a is "-y" or "--dangerously-skip-permissions" or "--permission-mode"))
                 yield return new("host.permission", "fail", "缺少非交互权限参数（-y 或 --permission-mode acceptEdits）：无人值守时 Agent 无法写回执。");
         }

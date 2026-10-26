@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-- 新增 `acp` 调用方案：Relay 内置 Agent Client Protocol 客户端，支持 ACP 的宿主（如 Hermes、CodeBuddy Code）用一条启动命令完成新建与续接，不依赖各家命令行参数与输出格式。
+- 新增 `acp` 调用方案：Relay 内置 Agent Client Protocol 客户端，支持 ACP 的宿主（如 Hermes）用一条启动命令完成新建与续接，不依赖各家命令行参数与输出格式。
 - 新增不调用模型的配置检查（Agent 管理“检查 CLI 配置”、`relay cli-recipe doctor`），覆盖程序路径、工作目录、权限参数、WorkBuddy 自带 CLI、Zcode 命令行账号套餐与默认模型；新增 `relay cli-recipe confirm`。
 - 一键配置优先查证 ACP；需要另装桥接工具时先向用户说明来源、许可证、用途与不装的后果，同意后才安装。
 - 读取 CodeBuddy Code 2.17x 以数组输出的 JSON 结果；探针给宿主 3 分钟完成写文件与回复。
@@ -14,7 +14,8 @@
 - 每轮回稿使用独立 `reply_file`；上下文为持续修改与验收提供 `collaboration` 与预填 `outcome` 的回执模板。
 - CLI 增加 `handoff configure/sync/progress/continue/allow-resend` 与 `cli-recipe unblock`；`task status` 返回 `progress`。`cli-create` 清单以 `collaboration`、`auto_deliver`、`turn_timeout_minutes` 取代 `review_and_apply`。
 - 任务卡显示角色、轮次、阶段、待解决问题、下一步、投递方式与验收记录；Agent 管理显示 CLI 能力与阻塞。“新建 CLI 任务”的来源会话改为可选。
-- 说明 WorkBuddy 桌面登录不能用于其自带 CLI，改用官方 CodeBuddy Code CLI 的方案与限制。
+- 说明 WorkBuddy 没有对外可用的调用接口，交给它的任务使用手动复制；一键配置不再为它登记方案。
+- CLI 增加 `task delete`、`cli-recipe remove`。
 
 ## 0.1.0-preview.15 — 2026-10-26
 
