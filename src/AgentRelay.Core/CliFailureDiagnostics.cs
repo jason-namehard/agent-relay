@@ -8,6 +8,8 @@ public static class CliFailureDiagnostics
     private static readonly string[] AuthenticationSignals =
         ["Authentication required", "Please use /login", "Not logged in", "Please log in", "login required"];
 
+    private static readonly string[] QuotaSignals = ["Insufficient balance", "no resource package", "insufficient_quota", "quota exceeded"];
+
     public static string Explain(ProcessResult process) => Classify(process).Message;
 
     public static CliFailure Classify(ProcessResult process, CliRecipe? recipe = null)
@@ -21,6 +23,8 @@ public static class CliFailureDiagnostics
             return new("auth_required", "目标 CLI 没有可用的登录。桌面应用的登录不一定能被命令行使用，需要为该 CLI 单独登录" +
                 (string.IsNullOrWhiteSpace(recipe?.Login) ? "。" : "：在终端运行 " + recipe.Login + " 并按提示完成。") +
                 "完成后在 Agent 管理中点“我已处理，重新检测”。原始错误见 CLI 诊断详情。", true);
+        if (QuotaSignals.Any(signal => output.Contains(signal, StringComparison.OrdinalIgnoreCase)))
+            return new("quota_exhausted", "目标 CLI 所用的账号套餐余额不足或没有可用资源包，模型拒绝了请求。请在宿主里确认命令行使用的套餐（可能与桌面端不同）或充值后，在 Agent 管理中点“我已处理，重新检测”。原始错误见 CLI 诊断详情。", true);
         if (process.TimedOut)
             return new("timeout", "CLI 等待超时或已取消，可能已经提交。请检查目标会话，不要重复发送。", false);
         if (process.ExitCode != 0)

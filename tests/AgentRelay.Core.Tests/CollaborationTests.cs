@@ -221,15 +221,20 @@ public sealed class CollaborationTests
     }
 
     [TestMethod]
-    public void OptionsCannotChangeOnceTheFirstTurnStartedAndPlainHandoffsRejectDecisionFields()
+    public void OptionsCannotChangeOnceTheFirstTurnStarted()
     {
-        var plain = Send("submitted", content: "x", needsReply: false);
-        Rejected(plain, "只用于持续修改与验收");
-        File.Delete(service.ManualReceiptPath(task));
         Assert.ThrowsExactly<RelayException>(() => service.ConfigureFileHandoff(task.TaskId, new(new CollaborationOptions("other"))));
         Assert.ThrowsExactly<RelayException>(() => service.ConfigureFileHandoff(task.TaskId, new(new CollaborationOptions("agent-b", null, 0))));
         Loop();
         Cycle(1);
         Assert.ThrowsExactly<RelayException>(() => Loop());
+    }
+
+    [TestMethod]
+    public void SingleHandoffIgnoresReviewLoopFieldsAnAgentAddsToItsReceipt()
+    {
+        Accepted(Send("completed", ["none"], "已完成", "E:/project/out.md", needsReply: false));
+        Assert.AreEqual(TaskState.Succeeded, task.State);
+        Assert.IsNull(task.Collaboration);
     }
 }

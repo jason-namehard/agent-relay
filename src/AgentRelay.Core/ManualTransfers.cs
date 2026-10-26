@@ -166,8 +166,8 @@ public sealed partial class RelayService
             throw new RelayException("manual_receipt_sender", "此回执必须由当前等待的 Agent 提交。");
         if (receipt.Status is not ("received" or "working" or "done" or "failed"))
             throw new RelayException("manual_receipt_status", "回执状态应为 received、working、done 或 failed。");
-        if (task.Collaboration is null && (receipt.Outcome is not null || receipt.OpenItems is not null || receipt.Deliverable is not null))
-            throw new RelayException("manual_receipt_fields", "outcome、open_items、deliverable 只用于持续修改与验收任务。");
+        // Single handoffs are decided by needs_reply; review-loop fields an Agent adds there carry no decision.
+        if (task.Collaboration is null) receipt = receipt with { Outcome = null, OpenItems = null, Deliverable = null };
         if (task.State == TaskState.Paused)
         {
             // A late receipt for the timed-out turn is still the Agent's real result; other pauses wait for the user.

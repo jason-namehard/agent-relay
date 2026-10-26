@@ -35,6 +35,14 @@ public sealed class CliFailureDiagnosticsTests
     }
 
     [TestMethod]
+    public void ExhaustedPlanBlocksAutomaticDelivery()
+    {
+        var failure = CliFailureDiagnostics.Classify(new(1, "", "ProviderBusinessError: [1113][Insufficient balance or no resource package. Please recharge.]", false));
+        Assert.AreEqual("quota_exhausted", failure.Kind); Assert.IsTrue(failure.Blocking);
+        StringAssert.Contains(failure.Message, "余额不足");
+    }
+
+    [TestMethod]
     public void TimeoutWarnsAboutUncertainSubmission()
     {
         var message = CliFailureDiagnostics.Explain(new(-1, "", "", true));
