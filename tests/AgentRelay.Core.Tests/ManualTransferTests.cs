@@ -125,19 +125,29 @@ public sealed class ManualTransferTests
     }
 
     [TestMethod]
-    public void FollowupRequiresConcreteWorkAndStopsAfterFourTurns()
+    public void FollowupRequiresConcreteWorkAndPausesAfterFourTurnsUntilTheUserAddsRounds()
     {
         var task = Create(); Receipt(task, "agent-b", "done", true);
         Assert.HasCount(1, service.ImportManualReceipts().Errors);
-        for (var turn = 0; turn < RelayService.MaxManualTurns; turn++)
+        void Reply()
         {
             task = service.Status(task.TaskId).Task;
-            File.WriteAllText(task.ResultPath, "Pending decision " + turn);
-            Receipt(task, task.AwaitingAgentId!, "done", true, task.ResultPath, "需要确认尚未决定的选项");
+            var reply = service.TurnReplyPath(task);
+            File.WriteAllText(reply, "Pending decision " + task.ManualTurn);
+            Receipt(task, task.AwaitingAgentId!, "done", true, reply, "需要确认尚未决定的选项");
             Assert.HasCount(1, service.ImportManualReceipts().UpdatedTaskIds);
         }
+        for (var turn = 0; turn < RelayService.MaxManualTurns; turn++) Reply();
         var halted = service.Status(task.TaskId).Task;
-        Assert.AreEqual(TaskState.Failed, halted.State); Assert.AreEqual("manual_round_limit", halted.ErrorCode);
+        Assert.AreEqual(TaskState.Paused, halted.State); Assert.AreEqual("round_limit", halted.PauseReason);
+        Assert.IsFalse(service.CanSendFileHandoff(halted));
+        Assert.AreEqual("user", service.FileHandoffProgress(halted).WaitingOn);
+        Assert.ThrowsExactly<RelayException>(() => service.ContinueFileHandoff(task.TaskId));
+        var resumed = service.ContinueFileHandoff(task.TaskId, "再确认一次即可", 1).Task;
+        Assert.AreEqual(TaskState.AwaitingReply, resumed.State); Assert.AreEqual(5, resumed.MaxTurns);
+        StringAssert.Contains(resumed.ManualNextAction, "再确认一次即可");
+        Reply();
+        Assert.AreEqual("round_limit", service.Status(task.TaskId).Task.PauseReason);
     }
 
     [TestMethod]
@@ -149,28 +159,50 @@ public sealed class ManualTransferTests
     }
 
     [TestMethod]
-    public void ReceiptScanMarksExpiredWaitingTaskTimedOutWithoutAcceptingLateCompletion()
+    public void ReceiptWrittenAfterTheTurnDeadlineIsStillTheAgentsResult()
     {
         var task = Create();
         Receipt(task, "agent-b", "done");
         clock.Advance(TimeSpan.FromMinutes(31));
         var result = service.ImportManualReceipts();
         Assert.HasCount(1, result.UpdatedTaskIds); Assert.IsEmpty(result.Errors);
-        var expired = service.Status(task.TaskId).Task;
-        Assert.AreEqual(TaskState.TimedOut, expired.State);
-        Assert.AreEqual("deadline_exceeded", expired.ErrorCode);
+        Assert.AreEqual(TaskState.Succeeded, service.Status(task.TaskId).Task.State);
         Assert.IsEmpty(service.Continuations(task.TaskId));
         Assert.IsEmpty(service.ImportManualReceipts().UpdatedTaskIds);
     }
 
     [TestMethod]
-    public void ExpiredTaskWithoutReceiptStopsWaitingAndCleanupDoesNotQueueLegacyContinuation()
+    public void OverdueTurnPausesRecoverablyAndALateReceiptResumesIt()
     {
         var task = Create();
         clock.Advance(TimeSpan.FromMinutes(31));
         Assert.HasCount(1, service.ImportManualReceipts().UpdatedTaskIds);
-        Assert.AreEqual(TaskState.TimedOut, service.Status(task.TaskId).Task.State);
+        var paused = service.Status(task.TaskId).Task;
+        Assert.AreEqual(TaskState.Paused, paused.State); Assert.AreEqual("turn_timeout", paused.PauseReason);
         Assert.IsEmpty(service.Continuations(task.TaskId));
+        Assert.IsEmpty(service.ImportManualReceipts().UpdatedTaskIds);
+        Receipt(task, "agent-b", "working");
+        Assert.HasCount(1, service.ImportManualReceipts().UpdatedTaskIds);
+        var running = service.Status(task.TaskId).Task;
+        Assert.AreEqual(TaskState.Running, running.State); Assert.IsNull(running.PauseReason);
+        Assert.IsTrue(running.DeadlineAt > clock.GetUtcNow());
+    }
+
+    [TestMethod]
+    public void UserCanKeepWaitingAfterATurnTimeout()
+    {
+        var task = Create();
+        clock.Advance(TimeSpan.FromMinutes(31));
+        service.ImportManualReceipts();
+        var resumed = service.ContinueFileHandoff(task.TaskId).Task;
+        Assert.AreEqual(TaskState.AwaitingManual, resumed.State);
+        Assert.IsTrue(resumed.DeadlineAt > clock.GetUtcNow());
+        Assert.AreEqual("handoff.continued", service.Audit(task.TaskId).Last().Event);
+    }
+
+    [TestMethod]
+    public void ArtifactExpiryStillEndsAnUnfinishedHandoffWithoutQueueingLegacyContinuation()
+    {
         var other = Path.Combine(root, "other.zip"); File.WriteAllBytes(other, [1, 2, 3]);
         var second = service.CreateFileHandoff(new("agent-a", "agent-b", other)).Task;
         clock.Advance(TimeSpan.FromDays(4)); service.Cleanup(true);

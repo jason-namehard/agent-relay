@@ -58,7 +58,8 @@ public sealed class CliHandoffCreationTests
     }
 
     private CliHandoffRequest Request(bool review=false,string? target="selected-b")=>
-        new("agent-a","agent-b","检查这份要求，并执行必要修改。","source-a",target,review,true,root,root);
+        new("agent-a","agent-b","检查这份要求，并执行必要修改。","source-a",target,true,root,root,
+            review?new CollaborationOptions("agent-b","要求中的每一项都已落实"):null);
 
     private async Task<(int Code,JsonElement Json)> Invoke(params string[] arguments)
     {
@@ -78,12 +79,12 @@ public sealed class CliHandoffCreationTests
         File.WriteAllText(path,RelayJson.Write(request));return path;
     }
 
-    private void FinishStep(TaskRecord task,bool result)
+    private void FinishStep(TaskRecord task,string outcome)
     {
         var file=Path.Combine(root,"step-"+task.ManualTurn+".md");
-        if(result)File.WriteAllText(file,"Concrete output for this step.");
-        var receipt=new ManualReceipt(task.TaskId,task.AttemptId,task.AwaitingAgentId!,task.ManualTurn,"done",false,
-            result?file:null,result?"根据回稿落实下一步工作":null);
+        File.WriteAllText(file,"Concrete output for step "+task.ManualTurn);
+        var receipt=new ManualReceipt(task.TaskId,task.AttemptId,task.AwaitingAgentId!,task.ManualTurn,"done",null,
+            outcome=="submitted"?file:null,null,outcome,Deliverable:outcome=="accepted"?"项目中的 README 已更新":null);
         File.WriteAllText(service.ManualReceiptPath(task),RelayJson.Write(receipt));
         Assert.IsEmpty(service.ImportManualReceipts().Errors);
     }
@@ -96,17 +97,19 @@ public sealed class CliHandoffCreationTests
         Assert.AreEqual("cli",task.Mode);Assert.AreEqual("cli:agent-b",task.AdapterId);
         Assert.AreEqual("source-a",service.TaskSession(task.TaskId,"agent-a")!.SessionId);
         Assert.AreEqual("selected-b",service.TaskSession(task.TaskId,"agent-b")!.SessionId);
-        CollectionAssert.AreEqual(new[]{"agent-b","agent-a","agent-b"},task.HandoffPlan);
+        Assert.IsNull(task.HandoffPlan);
+        Assert.AreEqual("agent-b",task.Collaboration!.AuthorId);Assert.AreEqual("agent-a",task.Collaboration.ReviewerId);
+        Assert.AreEqual("implement",task.Collaboration.Phase);
         Assert.HasCount(2,service.ConnectionPermissions().Where(p=>p.Decision=="allow").ToArray());
         Assert.IsNull(task.CliFileTurn);Assert.IsFalse(File.Exists(Log("agent-a")));Assert.IsFalse(File.Exists(Log("agent-b")));
         Assert.IsEmpty(Directory.GetFiles(Path.Combine(service.Home,".cli-drafts")));
     }
 
     [TestMethod]
-    public void CreationRequiresAnEnabledDirectionAndAnExplicitSourceForReview()
+    public void CreationRequiresAnEnabledDirectionAndExactSessionInput()
     {
         Assert.ThrowsExactly<RelayException>(()=>service.CreateCliHandoff(Request() with{EnableDirection=false}));
-        Assert.ThrowsExactly<RelayException>(()=>service.CreateCliHandoff(Request(true) with{OriginSessionId=null}));
+        Assert.ThrowsExactly<RelayException>(()=>service.CreateCliHandoff(Request(true) with{EnableDirection=false}));
         Assert.ThrowsExactly<RelayException>(()=>service.CreateCliHandoff(Request() with{Prompt=" "}));
         Assert.ThrowsExactly<RelayException>(()=>service.CreateCliHandoff(Request() with{OriginSessionId=" "}));
         Assert.ThrowsExactly<RelayException>(()=>service.CreateCliHandoff(Request() with{TargetSessionId=" "}));
@@ -115,6 +118,19 @@ public sealed class CliHandoffCreationTests
         var created=service.CreateCliHandoff(Request() with{EnableDirection=false}).Task;
         Assert.AreEqual("selected-b",service.TaskSession(created.TaskId,"agent-b")!.SessionId);
         Assert.IsFalse(File.Exists(Log("agent-b")));
+    }
+
+    [TestMethod]
+    public void CollaborationWithoutASourceConversationReturnsToTheSenderManually()
+    {
+        var task=service.CreateCliHandoff(Request(true) with{OriginSessionId=null}).Task;
+        Assert.IsNotNull(task.Collaboration);
+        Assert.AreEqual("agent-a",service.ConnectionPermissions().Single(p=>p.Decision=="allow").From);
+        FinishStep(task,"submitted");
+        var review=service.Status(task.TaskId);
+        Assert.AreEqual("agent-a",review.Task.AwaitingAgentId);
+        Assert.IsFalse(service.CanSendFileHandoff(review.Task));
+        Assert.AreEqual("copy_prompt",service.FileHandoffProgress(review.Task).Delivery);
     }
 
     [TestMethod]
@@ -152,7 +168,7 @@ public sealed class CliHandoffCreationTests
     }
 
     [TestMethod]
-    public async Task ApprovedCliCommandsReachTheSelectedSessionsForTheWholeReviewPlan()
+    public async Task ApprovedCliCommandsReachTheSelectedSessionsThroughReviewAndAcceptance()
     {
         var created=await Invoke("handoff","cli-create","--manifest",Manifest(Request(true)),"--send","--approve");
         Assert.AreEqual(0,created.Code);
@@ -167,20 +183,25 @@ public sealed class CliHandoffCreationTests
         var contextPath=Path.Combine(Path.GetDirectoryName(service.ManualReceiptPath(task))!,"context.json");
         using(var context=JsonDocument.Parse(File.ReadAllText(contextPath)))
         {
-            Assert.IsTrue(context.RootElement.GetProperty("receipt_template").GetProperty("needs_reply").GetBoolean());
-            Assert.AreEqual("agent-a",context.RootElement.GetProperty("required_next_agent").GetString());
+            var collaboration=context.RootElement.GetProperty("collaboration");
+            Assert.AreEqual("author",collaboration.GetProperty("role").GetString());
+            Assert.AreEqual("implement",collaboration.GetProperty("phase").GetString());
+            Assert.AreEqual("submitted",context.RootElement.GetProperty("receipt_template").GetProperty("outcome").GetString());
+            Assert.DoesNotContain("4 completion turns",context.RootElement.GetProperty("instructions").GetString()!);
         }
-        FinishStep(task,true);task=service.Status(task.TaskId).Task;
+        FinishStep(task,"submitted");task=service.Status(task.TaskId).Task;
         var review=await Invoke("handoff","send","--task",task.TaskId,"--approve");
         Assert.AreEqual(0,review.Code);
         using(var call=JsonDocument.Parse(File.ReadAllLines(Log("agent-a")).Single()))
             Assert.AreEqual("source-a",call.RootElement.GetProperty("session").GetString());
-        FinishStep(task,true);task=service.Status(task.TaskId).Task;
-        Assert.AreEqual(TaskState.AwaitingReply,task.State);
-        var apply=await Invoke("handoff","send","--task",task.TaskId,"--approve");
-        Assert.AreEqual(0,apply.Code);Assert.HasCount(2,File.ReadAllLines(Log("agent-b")));
-        FinishStep(task,false);
-        Assert.AreEqual(TaskState.Succeeded,service.Status(task.TaskId).Task.State);
+        FinishStep(task,"approved");task=service.Status(task.TaskId).Task;
+        Assert.AreEqual(TaskState.AwaitingReply,task.State);Assert.AreEqual("accept",task.Collaboration!.Phase);
+        var accept=await Invoke("handoff","send","--task",task.TaskId,"--approve");
+        Assert.AreEqual(0,accept.Code);Assert.HasCount(2,File.ReadAllLines(Log("agent-b")));
+        FinishStep(task,"accepted");
+        var finished=service.Status(task.TaskId).Task;
+        Assert.AreEqual(TaskState.Succeeded,finished.State);
+        Assert.AreEqual("delivered",service.FileHandoffProgress(finished).Completion);
     }
 
     [TestMethod]

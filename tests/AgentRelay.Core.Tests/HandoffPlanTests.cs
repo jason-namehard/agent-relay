@@ -22,6 +22,12 @@ public sealed class HandoffPlanTests
     [TestCleanup]
     public void Cleanup() => Directory.Delete(root, true);
 
+    // Fixed plans can no longer be created; tasks saved by earlier versions still carry them in the ledger.
+    private void LegacyPlan(params string[] plan) => new RelayStore(service.Home).Write(s =>
+    {
+        var stored = s.Task(task.TaskId); stored.HandoffPlan = plan; s.Save(stored); return true;
+    });
+
     private ManualReceiptImportResult Complete(bool needsReply = false, bool includeFollowup = false)
     {
         task = service.Status(task.TaskId).Task;
@@ -38,9 +44,9 @@ public sealed class HandoffPlanTests
     }
 
     [TestMethod]
-    public void ExplicitThreeStepPlanCannotFinishAfterTheReviewStep()
+    public void LegacyThreeStepPlanCannotFinishAfterTheReviewStep()
     {
-        service.ConfigureHandoffPlan(task.TaskId, ["agent-b", "agent-a", "agent-b"]);
+        LegacyPlan("agent-b", "agent-a", "agent-b");
         Assert.IsEmpty(Complete(includeFollowup: true).Errors);
         var review = service.Status(task.TaskId).Task;
         Assert.AreEqual(TaskState.AwaitingReply, review.State); Assert.AreEqual("agent-a", review.AwaitingAgentId);
@@ -56,7 +62,7 @@ public sealed class HandoffPlanTests
     [TestMethod]
     public void PrematureFinalReceiptWithoutARealFollowupCannotEndOrAdvanceThePlan()
     {
-        service.ConfigureHandoffPlan(task.TaskId, ["agent-b", "agent-a", "agent-b"]);
+        LegacyPlan("agent-b", "agent-a", "agent-b");
         Assert.IsEmpty(Complete(needsReply: true, includeFollowup: true).Errors);
         var before = service.Status(task.TaskId).Task;
         var result = Complete();
@@ -89,25 +95,9 @@ public sealed class HandoffPlanTests
     }
 
     [TestMethod]
-    public void PlanIsPersistedAndRequiresAnInitialAlternatingParticipantSequence()
-    {
-        Assert.ThrowsExactly<RelayException>(() => service.ConfigureHandoffPlan(task.TaskId, []));
-        Assert.ThrowsExactly<RelayException>(() => service.ConfigureHandoffPlan(task.TaskId, ["agent-a"]));
-        Assert.ThrowsExactly<RelayException>(() => service.ConfigureHandoffPlan(task.TaskId, ["agent-b", "agent-b"]));
-        Assert.ThrowsExactly<RelayException>(() => service.ConfigureHandoffPlan(task.TaskId, ["agent-b", "other"]));
-        var plan = new[] { "agent-b", "agent-a", "agent-b" };
-        service.ConfigureHandoffPlan(task.TaskId, plan);
-        plan[1] = "other";
-        var stored = new RelayService(service.Home).Status(task.TaskId).Task;
-        CollectionAssert.AreEqual(new[] { "agent-b", "agent-a", "agent-b" }, stored.HandoffPlan);
-        Assert.IsEmpty(Complete(needsReply: true, includeFollowup: true).Errors);
-        Assert.ThrowsExactly<RelayException>(() => service.ConfigureHandoffPlan(task.TaskId, ["agent-b"]));
-    }
-
-    [TestMethod]
     public void FourStepPlanCanFinishAtItsLastStepWithoutHittingTheFollowupLimit()
     {
-        service.ConfigureHandoffPlan(task.TaskId, ["agent-b", "agent-a", "agent-b", "agent-a"]);
+        LegacyPlan("agent-b", "agent-a", "agent-b", "agent-a");
         for (var index = 0; index < 3; index++) Assert.IsEmpty(Complete(includeFollowup: true).Errors);
         Assert.IsEmpty(Complete().Errors);
         Assert.AreEqual(TaskState.Succeeded, service.Status(task.TaskId).Task.State);
@@ -117,7 +107,7 @@ public sealed class HandoffPlanTests
     [TestMethod]
     public void NecessaryWorkCanContinueAfterTheMinimumPlanWithoutInfiniteReplies()
     {
-        service.ConfigureHandoffPlan(task.TaskId, ["agent-b"]);
+        LegacyPlan("agent-b");
         Assert.IsEmpty(Complete(needsReply: true, includeFollowup: true).Errors);
         Assert.AreEqual("agent-a", service.Status(task.TaskId).Task.AwaitingAgentId);
         Assert.IsEmpty(Complete().Errors);

@@ -34,7 +34,7 @@ public sealed class RelayException(string code, string message, int exitCode = 2
 public enum TaskState
 {
     Created, AwaitingConfirmation, AwaitingManual, Dispatching, Dispatched,
-    Acknowledged, Running, Succeeded, Failed, TimedOut, DeliveryUnknown, Cancelled, AwaitingReply
+    Acknowledged, Running, Succeeded, Failed, TimedOut, DeliveryUnknown, Cancelled, AwaitingReply, Paused
 }
 
 public sealed record AgentRecord(string AgentId, string Host, string ConfigPath, string? CliPath,
@@ -82,7 +82,16 @@ public sealed class TaskRecord
     public string? CliFileSessionId { get; set; }
     public string? CliFileError { get; set; }
     public string? CliNewSessionCwd { get; set; }
+    public string? CliFileOperation { get; set; }
+    public string? CliFileRevision { get; set; }
     public string[]? HandoffPlan { get; set; }
+    public CollaborationRecord? Collaboration { get; set; }
+    public int? MaxTurns { get; set; }
+    public int? TurnTimeoutMinutes { get; set; }
+    public bool AutoDeliver { get; set; }
+    public string? PauseReason { get; set; }
+    public string? PauseMessage { get; set; }
+    public TaskState? PausedFrom { get; set; }
 }
 
 public sealed record TaskView(TaskRecord Task, bool DeadlineExceeded, string NextAction, string Prompt,

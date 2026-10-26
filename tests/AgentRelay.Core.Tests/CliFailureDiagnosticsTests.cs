@@ -19,8 +19,19 @@ public sealed class CliFailureDiagnosticsTests
     public void AuthenticationFailureDoesNotLookLikeAnOutputFormatProblem()
     {
         var message = CliFailureDiagnostics.Explain(new(0, "{\"error\":\"Authentication required\"}", "", false));
-        StringAssert.Contains(message, "尚未完成登录");
+        StringAssert.Contains(message, "没有可用的登录");
+        StringAssert.Contains(message, "单独登录");
         Assert.DoesNotContain("输出格式", message, StringComparison.Ordinal);
+    }
+
+    [TestMethod]
+    public void AuthenticationRefusalWithExitCodeZeroBlocksAndShowsTheRecipesLoginCommand()
+    {
+        var recipe = new CliRecipe(1, "fixture", "fixture", new("codebuddy", ["-p", "{prompt}"], null, null), null, [], "", "", "", "",
+            "claude-json", "codebuddy");
+        var failure = CliFailureDiagnostics.Classify(new(0, "", "Authentication required. Please use /login command to sign in", false), recipe);
+        Assert.AreEqual("auth_required", failure.Kind); Assert.IsTrue(failure.Blocking);
+        StringAssert.Contains(failure.Message, "在终端运行 codebuddy");
     }
 
     [TestMethod]

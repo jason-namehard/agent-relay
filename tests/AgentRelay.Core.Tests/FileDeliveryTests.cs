@@ -18,6 +18,9 @@ public sealed class FileDeliveryTests
         source = Path.Combine(root, "source.md"); File.WriteAllText(source, "Review this file.");
     }
 
+    // Probes ask the Agent to write a file; a fixture that can use tools writes it like a real Agent would.
+    private const string ProbeFile = "$f=[regex]::Match($p,'Create the file (.+?) containing').Groups[1].Value;if($f){[IO.File]::WriteAllText($f,$m)};";
+
     [TestCleanup]
     public void Cleanup() => Directory.Delete(root, true);
 
@@ -26,7 +29,7 @@ public sealed class FileDeliveryTests
     {
         var command = new CliCommand("pwsh", ["-NoLogo", "-NoProfile", "-NonInteractive", "-Command",
             "[Console]::InputEncoding=[Text.UTF8Encoding]::new($false);[Console]::OutputEncoding=[Text.UTF8Encoding]::new($false);" +
-            "$p=[Console]::In.ReadToEnd();$m=[regex]::Match($p,'RELAY-[A-Z0-9]+').Value;" +
+            "$p=[Console]::In.ReadToEnd();$m=[regex]::Match($p,'RELAY-[A-Z0-9]+').Value;" + ProbeFile +
             "if($m){@{session_id='fixture-session';reply=$m;accepted=$true}|ConvertTo-Json -Compress}else{" +
             "[IO.File]::AppendAllText($env:RELAY_FIXTURE_COUNT,'sent'+[Environment]::NewLine);" +
             (invalidDelivery ? "[Console]::Out.Write('not-a-receipt')" :

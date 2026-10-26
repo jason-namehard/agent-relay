@@ -3,8 +3,8 @@ using System.Text;
 namespace AgentRelay.Core;
 
 public sealed record CliHandoffRequest(string From,string To,string Prompt,string? OriginSessionId=null,
-    string? TargetSessionId=null,bool ReviewAndApply=false,bool EnableDirection=false,
-    string? OriginCwd=null,string? TargetCwd=null);
+    string? TargetSessionId=null,bool EnableDirection=false,string? OriginCwd=null,string? TargetCwd=null,
+    CollaborationOptions? Collaboration=null,bool AutoDeliver=false,int? TurnTimeoutMinutes=null);
 
 public sealed partial class RelayService
 {
@@ -22,16 +22,13 @@ public sealed partial class RelayService
         var target=CliExtension(request.To)??throw new RelayException("cli_recipe_missing","接收 Agent 尚未配置 CLI 调用方案，请先在 Agent 管理中配置。");
         if(request.TargetSessionId is not null&&target.Recipe.Resume is null)
             throw new RelayException("session_resume_unsupported","接收 Agent 的调用方案不支持续接已有会话，请选择新建会话或补充续接命令。");
-        if(request.ReviewAndApply)
-        {
-            if(string.IsNullOrWhiteSpace(request.OriginSessionId))
-                throw new RelayException("cli_origin_required","多轮 CLI 任务需要明确的来源会话，才能把回稿准确送回发送方。");
-            if(CliExtension(request.From)?.Recipe.Resume is null||target.Recipe.Resume is null)
-                throw new RelayException("session_resume_unsupported","多轮 CLI 任务要求双方均配置准确会话续接命令。");
-        }
+        // Collaboration turns that return to the sender use CLI only when its exact conversation is bound; otherwise they are copied manually.
+        var senderByCli=request.Collaboration is not null&&request.OriginSessionId is not null;
+        if(senderByCli&&CliExtension(request.From)?.Recipe.Resume is null)
+            throw new RelayException("session_resume_unsupported","发送方需要配置准确会话续接命令，才能通过 CLI 把回稿送回原会话；也可以不选来源会话，改为手动传回。");
         foreach(var cwd in new[]{request.OriginCwd,request.TargetCwd})
             if(cwd is not null&&!Path.IsPathFullyQualified(cwd))throw new RelayException("session_cwd_invalid","会话项目目录需要完整路径。");
-        var directions=request.ReviewAndApply?new[]{(request.From,request.To),(request.To,request.From)}:new[]{(request.From,request.To)};
+        var directions=senderByCli?new[]{(request.From,request.To),(request.To,request.From)}:new[]{(request.From,request.To)};
         var permissions=ConnectionPermissions();
         foreach(var (from,to) in directions)
             if(!permissions.Any(p=>p.From==from&&p.To==to&&p.Decision=="allow")&&!request.EnableDirection)
@@ -41,13 +38,13 @@ public sealed partial class RelayService
         var source=Path.Combine(drafts,"work-"+Guid.NewGuid().ToString("N")+".md");
         TaskView created;
         File.WriteAllText(source,request.Prompt.Trim(),new UTF8Encoding(false));
-        try{created=CreateFileHandoff(new(request.From,request.To,source,"请执行工作要求文件中的任务，并按任务计划写回执。"));}
+        try{created=CreateFileHandoff(new(request.From,request.To,source,"请执行工作要求文件中的任务，并按任务上下文写回执。"));}
         finally{File.Delete(source);}
         var taskId=created.Task.TaskId;
         if(request.OriginSessionId is not null)BindManualTaskSession(taskId,request.From,request.OriginSessionId,request.OriginCwd);
         if(request.TargetSessionId is not null)BindManualTaskSession(taskId,request.To,request.TargetSessionId,request.TargetCwd);
         else UseNewTaskSession(taskId,request.To);
-        if(request.ReviewAndApply)ConfigureHandoffPlan(taskId,[request.To,request.From,request.To]);
+        ConfigureFileHandoff(taskId,new(request.Collaboration,request.AutoDeliver,request.TurnTimeoutMinutes));
         foreach(var (from,to) in directions)
             if(request.EnableDirection)SetPermission(from,to,"allow");
         store.Write(s=>
@@ -60,6 +57,10 @@ public sealed partial class RelayService
         return Status(taskId);
     }
 
+    private const string ReceiptRules="Write the receipt JSON to receipt_file when finished; do not ask the user to import your reply or create another handoff JSON. "+
+        "status: received/working/done/failed. Keep task_id, attempt_id, sender and turn unchanged. No greetings or repeated confirmations. "+
+        "Save each reply as a new real file (reply_file is reserved for this turn). Permanent deliverables belong in the project. Publish one complete receipt or rename a temporary file.";
+
     public string FileHandoffPrompt(TaskRecord task)
     {
         if(!task.IsFileHandoff)throw new RelayException("file_handoff_required","此接口只用于文件或 CLI 工作交接。");
@@ -67,17 +68,61 @@ public sealed partial class RelayService
         var receipt=ManualReceiptPath(task);
         var context=Path.Combine(Path.GetDirectoryName(receipt)!,"context.json");
         var current=task.AwaitingAgentId??task.RecipientId;
-        var requiredNext=task.HandoffPlan is {} plan&&task.ManualTurn+1<plan.Length;
-        var template=new ManualReceipt(task.TaskId,task.AttemptId,current,task.ManualTurn,"done",requiredNext);
-        File.WriteAllText(context,RelayJson.Write(new
+        var other=current==task.RequesterId?task.RecipientId:task.RequesterId;
+        var reply=TurnReplyPath(task);
+        var common=new
         {
-            sender_name=Name(task.ManualTurn==0?task.RequesterId:current==task.RequesterId?task.RecipientId:task.RequesterId),
-            recipient_name=Name(current),current_file=task.ManualCurrentFile??task.RequestPath,original_request_file=task.RequestPath,request=task.ManualNextAction,
-            reply_file=task.ResultPath,receipt_file=receipt,receipt_template=template,
-            handoff_plan=task.HandoffPlan,required_next_agent=requiredNext?task.HandoffPlan![task.ManualTurn+1]:null,
-            remaining_steps=task.HandoffPlan?.Skip(task.ManualTurn).Select(id=>new{agent_id=id,name=Name(id)}),
-            instructions="Read current_file and perform the request. Write the receipt JSON to receipt_file when finished; do not ask the user to import your reply or create another handoff JSON. status: received/working/done/failed. Keep task_id, attempt_id, sender and turn unchanged. Follow handoff_plan: if required_next_agent is set, this task is not finished; save a real result_file, set needs_reply=true and provide concrete next_action for that Agent. Set needs_reply=false only when no required work remains. Never set needs_reply=false while also asking for further work in next_action. No greetings or repeated confirmations. Limit: 4 completion turns. Permanent deliverables belong in the project. Publish one complete receipt or rename a temporary file."
-        }));
+            sender_name=Name(task.ManualTurn==0?task.RequesterId:other),recipient_name=Name(current),
+            current_file=task.ManualCurrentFile??task.RequestPath,original_request_file=task.RequestPath,request=task.ManualNextAction,
+            reply_file=reply,receipt_file=receipt
+        };
+        object document;
+        if(task.Collaboration is {} c)
+        {
+            var allowed=AllowedOutcomes(c.Phase);
+            var role=current==c.AuthorId?"author":"reviewer";
+            var duty=c.Phase switch
+            {
+                "implement"=>"You are the author. Do the work in original_request_file. Then save a real result file that states what you delivered and where it lives, and write a done receipt with outcome=submitted and result_file.",
+                "revise"=>"You are the author. The reviewer requested changes: fix every item in open_items (details in current_file when the reviewer wrote notes). Then save a real result file describing the changes and write a done receipt with outcome=submitted and result_file.",
+                "review"=>"You are the reviewer. Check submission_file and the project changes it describes against acceptance_criteria. If anything must change, set outcome=changes_requested and list each concrete unresolved issue in open_items; a notes file in result_file is optional. If it meets the criteria, set outcome=approved with no open_items. Never approve with open issues and never request changes without concrete items.",
+                "accept"=>"You are the author. The reviewer approved submission_file. If you accept it as the final result, set outcome=accepted and put the final deliverable location or a short delivery summary in deliverable; this completes the task for the user. If you change anything, set outcome=submitted with a new result_file and it goes back to review.",
+                _=>throw new ArgumentOutOfRangeException(nameof(task),c.Phase,"Unknown collaboration phase.")
+            };
+            document=new
+            {
+                common.sender_name,common.recipient_name,common.current_file,common.original_request_file,common.request,
+                common.reply_file,common.receipt_file,
+                collaboration=new
+                {
+                    role,phase=c.Phase,review_round=c.ReviewRound,max_review_rounds=c.MaxReviewRounds,
+                    author=new{agent_id=c.AuthorId,name=Name(c.AuthorId)},reviewer=new{agent_id=c.ReviewerId,name=Name(c.ReviewerId)},
+                    acceptance_criteria=c.Criteria,submission_file=c.SubmissionPath,open_items=c.OpenItems,allowed_outcomes=allowed
+                },
+                receipt_template=new ManualReceipt(task.TaskId,task.AttemptId,current,task.ManualTurn,"done",null,
+                    c.Phase is "implement" or "revise"?reply:null,null,allowed[0],c.Phase=="review"?Array.Empty<string>():null,null),
+                instructions=duty+" The task finishes only after the reviewer approves and the author accepts; finishing your part hands it on. "+
+                    "Use outcome, open_items and deliverable for the decision; needs_reply may be omitted. If you cannot do the work, write status=failed and explain in next_action. "+ReceiptRules
+            };
+        }
+        else
+        {
+            var requiredNext=task.HandoffPlan is {} plan&&task.ManualTurn+1<plan.Length;
+            var remaining=Math.Max(0,(task.MaxTurns??MaxManualTurns)-task.ManualTurn-1);
+            document=new
+            {
+                common.sender_name,common.recipient_name,common.current_file,common.original_request_file,common.request,
+                common.reply_file,common.receipt_file,
+                receipt_template=new ManualReceipt(task.TaskId,task.AttemptId,current,task.ManualTurn,"done",requiredNext),
+                handoff_plan=task.HandoffPlan,required_next_agent=requiredNext?task.HandoffPlan![task.ManualTurn+1]:null,
+                remaining_handoffs=remaining,
+                instructions="Read current_file and perform the request. "+
+                    (requiredNext?"handoff_plan still requires required_next_agent: this task is not finished; save a real result_file, set needs_reply=true and provide concrete next_action for that Agent. ":"")+
+                    "Set needs_reply=true only when the other Agent must do concrete further work; then provide result_file and next_action. Set needs_reply=false when no required work remains, and never ask for further work in next_action at the same time. "+
+                    $"At most {remaining} more handoffs are allowed before Relay pauses for the user. "+ReceiptRules
+            };
+        }
+        File.WriteAllText(context,RelayJson.Write(document));
         return "A file is waiting for you. Read "+context+", perform the request and write its receipt. No extra acknowledgement message is needed.";
     }
 }

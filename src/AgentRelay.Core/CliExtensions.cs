@@ -8,15 +8,23 @@ public sealed record CliCommand(string Executable, string[] Arguments, string? I
     Dictionary<string, string>? Environment = null);
 public sealed record CliRecipe(int Version, string Name, string Host, CliCommand Create, CliCommand? Resume,
     string[] Dependencies, string SupportedVersions, string Source, string License, string Limitations,
-    string OutputFormat = "relay-json");
+    string OutputFormat = "relay-json", string? Login = null);
 public sealed record CliProbe(string ProbeId, string Operation, string Marker, string? SessionId,
-    bool MachinePassed, bool UserConfirmed, string? Error, DateTimeOffset TestedAt, string? Diagnostic = null);
+    bool MachinePassed, bool UserConfirmed, string? Error, DateTimeOffset TestedAt, string? Diagnostic = null,
+    bool? FileWritten = null);
+/// <summary>A real handoff turn sent through this recipe whose Agent then wrote the turn's receipt.</summary>
+public sealed record CliDeliveryEvidence(string TaskId, int Turn, string? SessionId, DateTimeOffset VerifiedAt);
+/// <summary>A host condition that makes further unattended calls pointless until the user resolves it.</summary>
+public sealed record CliBlock(string Kind, string Message, DateTimeOffset At);
 public sealed record CliExtensionRecord(string AgentId, string Revision, CliRecipe Recipe,
-    CliProbe? CreateProbe, CliProbe? ResumeProbe)
+    CliProbe? CreateProbe, CliProbe? ResumeProbe, CliDeliveryEvidence? CreateEvidence = null,
+    CliDeliveryEvidence? ResumeEvidence = null, CliBlock? Block = null)
 {
-    [JsonIgnore] public bool CanCreate => CreateProbe is { MachinePassed: true, UserConfirmed: true };
-    [JsonIgnore] public bool CanResume => CanCreate && Recipe.Resume is not null &&
-        ResumeProbe is { MachinePassed: true, UserConfirmed: true } && !string.IsNullOrWhiteSpace(CreateProbe!.SessionId) && ResumeProbe.SessionId == CreateProbe.SessionId;
+    [JsonIgnore] private bool CreateProbed => CreateProbe is { MachinePassed: true, UserConfirmed: true, FileWritten: true };
+    [JsonIgnore] public bool CanCreate => CreateProbed || CreateEvidence is not null;
+    [JsonIgnore] public bool CanResume => Recipe.Resume is not null && (ResumeEvidence is not null || CreateProbed &&
+        ResumeProbe is { MachinePassed: true, UserConfirmed: true, FileWritten: true } &&
+        !string.IsNullOrWhiteSpace(CreateProbe!.SessionId) && ResumeProbe.SessionId == CreateProbe.SessionId);
 }
 
 public static class CliRecipes
@@ -160,22 +168,35 @@ public sealed partial class RelayService
     private static void InvalidateCliExtension(StoreSession s, string agentId)
     {
         if (ReadCliExtension(s, agentId) is { } record)
-            SaveCliExtension(s, record with { Revision = Guid.NewGuid().ToString(), CreateProbe = null, ResumeProbe = null });
+            SaveCliExtension(s, record with { Revision = Guid.NewGuid().ToString(), CreateProbe = null, ResumeProbe = null,
+                CreateEvidence = null, ResumeEvidence = null, Block = null });
     }
+
+    public CliExtensionRecord ClearCliBlock(string agentId) => store.Write(s =>
+    {
+        var record = ReadCliExtension(s, agentId) ?? throw new RelayException("cli_recipe_missing", "未找到调用方案。");
+        SaveCliExtension(s, record with { Block = null });
+        return record with { Block = null };
+    });
 
     public async Task<CliProbe> RunCliProbeAsync(string agentId, string operation, CancellationToken cancellationToken = default)
     {
         if (operation is not ("create" or "resume")) throw new RelayException("cli_probe_operation", "探针类型应为 create 或 resume。");
         var record = CliExtension(agentId) ?? throw new RelayException("cli_recipe_missing", "请先导入 CLI 调用方案。");
-        if (operation == "resume" && (!record.CanCreate || record.Recipe.Resume is null || string.IsNullOrWhiteSpace(record.CreateProbe?.SessionId)))
+        if (operation == "resume" && (record.CreateProbe is not { MachinePassed: true, UserConfirmed: true } || record.Recipe.Resume is null || string.IsNullOrWhiteSpace(record.CreateProbe.SessionId)))
             throw new RelayException("cli_probe_not_ready", "请先完成新会话探针并确认可见；续接还需要真实会话 ID 和续接命令。");
         var marker = "RELAY-" + Guid.NewGuid().ToString("N")[..10].ToUpperInvariant();
         var sessionId = operation == "resume" ? record.CreateProbe!.SessionId : null;
         var command = operation == "create" ? record.Recipe.Create : record.Recipe.Resume!;
-        var prompt = "Reply with exactly " + marker + ". Do not use tools or inspect files.";
+        // Handoffs are completed by a receipt file, so a probe must show the unattended Agent can write one.
+        var probes = Path.Combine(Home, ".cli-probes"); Directory.CreateDirectory(probes);
+        var probeFile = Path.Combine(probes, marker + ".txt");
+        var prompt = "Create the file " + probeFile + " containing exactly " + marker + ", then reply with exactly " + marker + ". Do nothing else.";
         bool passed;
+        bool? written = null;
         string? error;
         string? diagnostic = null;
+        CliFailure? failure = null;
         try
         {
             var process = await CliRecipes.InvokeAsync(command, prompt, sessionId, Home,
@@ -183,22 +204,27 @@ public sealed partial class RelayService
             var output = $"exit_code: {process.ExitCode}\ntimed_out: {process.TimedOut}\nstdout:\n{process.Output}\nstderr:\n{process.Error}";
             diagnostic = output.Length <= 16 * 1024 ? output : output[^(16 * 1024)..];
             var receipt = CliRecipes.Receipt(process, CliRecipes.OutputFormatFor(record.Recipe));
-            passed = receipt is { } r && r.Reply.Trim() == marker && (operation == "create" || r.SessionId == sessionId);
+            written = File.Exists(probeFile) && File.ReadAllText(probeFile).Trim() == marker;
+            var replied = receipt is { } r && r.Reply.Trim() == marker && (operation == "create" || r.SessionId == sessionId);
+            passed = replied && written == true;
             if (receipt is { } received) sessionId = received.SessionId;
-            error = passed ? null : CliFailureDiagnostics.Explain(process);
+            failure = passed ? null : replied ? CliFailureDiagnostics.PermissionRequired(record.Recipe) : CliFailureDiagnostics.Classify(process, record.Recipe);
+            error = failure?.Message;
         }
         catch (Win32Exception ex)
         {
             passed = false;
             error = "无法启动 CLI：" + ex.Message;
         }
-        var probe = new CliProbe(Guid.NewGuid().ToString(), operation, marker, sessionId, passed, false, error, Now, diagnostic);
+        finally { File.Delete(probeFile); }
+        var probe = new CliProbe(Guid.NewGuid().ToString(), operation, marker, sessionId, passed, false, error, Now, diagnostic, written);
         return store.Write(s =>
         {
             var current = ReadCliExtension(s, agentId);
             if (current is null || current.Revision != record.Revision || current.CreateProbe != record.CreateProbe || current.ResumeProbe != record.ResumeProbe)
                 throw new RelayException("cli_recipe_changed", "调用方案或探针已变化，本次结果不能用于启用。请重新测试。");
-            SaveCliExtension(s, operation == "create" ? current with { CreateProbe = probe, ResumeProbe = null } : current with { ResumeProbe = probe });
+            var block = passed ? null : failure is { Blocking: true } ? new CliBlock(failure.Kind, failure.Message, Now) : current.Block;
+            SaveCliExtension(s, (operation == "create" ? current with { CreateProbe = probe, ResumeProbe = null } : current with { ResumeProbe = probe }) with { Block = block });
             return probe;
         });
     }
@@ -248,6 +274,6 @@ public sealed class CliRecipeDeliveryAdapter(CliExtensionRecord extension) : IDe
         var process = await CliRecipes.InvokeAsync(extension.Recipe.Create, prompt, null, home, timeout, cancellationToken);
         return CliRecipes.Receipt(process, CliRecipes.OutputFormatFor(extension.Recipe)) is not null
             ? new("accepted", process.Output, null)
-            : new("unknown", null, CliFailureDiagnostics.Explain(process));
+            : new("unknown", null, CliFailureDiagnostics.Classify(process, extension.Recipe).Message);
     }
 }

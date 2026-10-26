@@ -70,7 +70,8 @@ public sealed partial class RelayService
         var waiting=Name(task.AwaitingAgentId??task.RecipientId);
         var title=task.State switch
         {
-            TaskState.Succeeded=>"交接已完成",
+            TaskState.Succeeded=>task.Collaboration?.Deliverable is not null?"协作已交付":"交接已完成",
+            TaskState.Paused=>"交接已暂停，等待你决定",
             TaskState.Failed or TaskState.TimedOut=>"交接需要处理",
             TaskState.Cancelled=>"交接已取消",
             TaskState.Acknowledged or TaskState.Running or TaskState.Dispatched=>waiting+" 正在处理",
@@ -79,7 +80,8 @@ public sealed partial class RelayService
         };
         var instruction=task.State switch
         {
-            TaskState.Succeeded=>"本次任务已完成，无需继续传递。",
+            TaskState.Succeeded=>task.Collaboration?.Deliverable is {} delivered?"作者已确认接受并交付："+delivered:"本次任务已完成，无需继续传递。",
+            TaskState.Paused=>task.PauseMessage??"请打开任务决定是否继续。",
             TaskState.Failed or TaskState.TimedOut=>task.ErrorMessage??"请打开任务查看处理原因。",
             TaskState.Cancelled=>"用户已取消此交接。",
             TaskState.Acknowledged or TaskState.Running or TaskState.Dispatched=>"等待当前 Agent 写入工作回执，请勿重复投递。",

@@ -23,7 +23,12 @@ public sealed partial class RelayService
                     s.Notify(task, "execution_attention", "执行结果未知，不会自动重新启动 Agent。", Now);
                 }
                 var box = Outbox(s, task.TaskId);
-                if (task.DeadlineAt <= Now)
+                if (task.IsFileHandoff)
+                {
+                    // File handoffs keep their sessions and files when a turn runs over; the user decides how to go on.
+                    if (task.State != TaskState.Paused && task.DeadlineAt <= Now) { PauseForTimeout(s, task); s.Save(task); }
+                }
+                else if (task.DeadlineAt <= Now)
                 {
                     task.State = TaskState.TimedOut; s.Save(task);
                     s.Event(task, "task.timed_out", "relay", Now);

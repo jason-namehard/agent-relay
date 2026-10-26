@@ -5,7 +5,8 @@ namespace AgentRelay.Core;
 
 public sealed record ManualTransferDraft(string From, string To, string File, string Message = "");
 public sealed record ManualReceipt(string TaskId, string AttemptId, string Sender, int Turn, string Status,
-    bool NeedsReply, string? ResultFile = null, string? NextAction = null);
+    bool? NeedsReply = null, string? ResultFile = null, string? NextAction = null, string? Outcome = null,
+    string[]? OpenItems = null, string? Deliverable = null);
 public sealed record ManualReceiptError(string TaskId, string Path, string Message);
 public sealed record ManualReceiptImportResult(string[] UpdatedTaskIds, ManualReceiptError[] Errors);
 
@@ -120,33 +121,33 @@ public sealed partial class RelayService
         var changed = new List<string>(); var errors = new List<ManualReceiptError>();
         foreach (var task in tasks)
         {
-            if (task.DeadlineAt <= Now)
-            {
-                var expired = store.Write(s =>
-                {
-                    var current = s.Task(task.TaskId);
-                    if (Terminal(current.State) || current.DeadlineAt > Now) return false;
-                    ExpireManualTask(s, current);
-                    return true;
-                });
-                if (expired) changed.Add(task.TaskId);
-                continue;
-            }
             var path = ManualReceiptPath(task);
-            if (!File.Exists(path)) continue;
-            try
+            var applied = false;
+            if (File.Exists(path))
             {
-                var json = File.ReadAllText(path);
-                if (json == task.ManualReceiptJson) continue;
-                var receipt = ManualTransfers.ParseReceipt(json);
-                var updated = ApplyManualReceipt(task.TaskId, receipt, json);
-                if (updated) changed.Add(task.TaskId);
+                try
+                {
+                    var json = File.ReadAllText(path);
+                    if (json != task.ManualReceiptJson)
+                        applied = ApplyManualReceipt(task.TaskId, ManualTransfers.ParseReceipt(json), json);
+                }
+                catch (Exception error) when (error is RelayException or IOException or UnauthorizedAccessException)
+                {
+                    // Agents may still be publishing an external receipt; report it without changing the ledger.
+                    errors.Add(new(task.TaskId, path, error.Message));
+                }
             }
-            catch (Exception error) when (error is RelayException or IOException or UnauthorizedAccessException)
+            if (applied) { changed.Add(task.TaskId); continue; }
+            if (task.State == TaskState.Paused || task.DeadlineAt > Now) continue;
+            var paused = store.Write(s =>
             {
-                // Agents may still be publishing an external receipt; report it without changing the ledger.
-                errors.Add(new(task.TaskId, path, error.Message));
-            }
+                var current = s.Task(task.TaskId);
+                if (Terminal(current.State) || current.State == TaskState.Paused || current.DeadlineAt > Now) return false;
+                PauseForTimeout(s, current);
+                s.Save(current);
+                return true;
+            });
+            if (paused) changed.Add(task.TaskId);
         }
         return new(changed.ToArray(), errors.ToArray());
     }
@@ -165,72 +166,70 @@ public sealed partial class RelayService
             throw new RelayException("manual_receipt_sender", "此回执必须由当前等待的 Agent 提交。");
         if (receipt.Status is not ("received" or "working" or "done" or "failed"))
             throw new RelayException("manual_receipt_status", "回执状态应为 received、working、done 或 failed。");
-        if (task.DeadlineAt <= Now)
+        if (task.Collaboration is null && (receipt.Outcome is not null || receipt.OpenItems is not null || receipt.Deliverable is not null))
+            throw new RelayException("manual_receipt_fields", "outcome、open_items、deliverable 只用于持续修改与验收任务。");
+        if (task.State == TaskState.Paused)
         {
-            ExpireManualTask(s, task);
-            return true;
+            // A late receipt for the timed-out turn is still the Agent's real result; other pauses wait for the user.
+            if (task.PauseReason != "turn_timeout")
+                throw new RelayException("handoff_paused", "交接已暂停，等待用户决定；暂停期间不接收新的回执。");
+            task.State = task.PausedFrom!.Value;
+            task.PauseReason = null; task.PauseMessage = null; task.PausedFrom = null;
+            task.DeadlineAt = Now + TurnTimeout(s, task);
+            s.Event(task, "handoff.late_receipt", receipt.Sender, Now, "turn=" + receipt.Turn);
         }
+        RecordCliDeliveryEvidence(s, task, receipt);
         if (receipt.Status is "received" or "working")
         {
-            if (receipt.NeedsReply) throw new RelayException("manual_receipt_reply", "只有完成当前工作后才能要求回传。");
+            if (receipt.NeedsReply == true || receipt.Outcome is not null)
+                throw new RelayException("manual_receipt_reply", "只有完成当前工作后才能要求回传或给出结论。");
             if (receipt.Status == "received" && task.State == TaskState.Running)
                 throw new RelayException("manual_receipt_order", "处理中任务不能退回已接收状态。");
             task.State = receipt.Status == "received" ? TaskState.Acknowledged : TaskState.Running;
         }
-        else
-        {
-            var plannedNext = receipt.Status == "done" && task.HandoffPlan is { } plan && task.ManualTurn + 1 < plan.Length;
-            if (receipt.Status == "failed" && receipt.NeedsReply)
-                throw new RelayException("manual_receipt_reply", "失败回执不能自动开启下一轮。");
-            if (receipt.Status == "done" && !receipt.NeedsReply && !plannedNext && !string.IsNullOrWhiteSpace(receipt.NextAction))
-                throw new RelayException("manual_receipt_contradiction", "回执声明无需继续，却同时给出了下一步工作。请明确是否需要继续；有待办时应设置 needs_reply=true 并提供回稿文件。");
-            var continues = receipt.NeedsReply || plannedNext;
-            if (continues && (string.IsNullOrWhiteSpace(receipt.ResultFile) || string.IsNullOrWhiteSpace(receipt.NextAction)))
-                throw new RelayException("manual_receipt_reply", plannedNext
-                    ? "本轮处理完成，但交接计划仍有后续步骤，不能结束任务。请提供真实回稿 result_file 和具体 next_action，再按当前上下文重写回执。"
-                    : "需要对方继续时，必须给出回稿文件和具体的下一步工作；已确认或寒暄无需回传。");
-            if (!string.IsNullOrWhiteSpace(receipt.ResultFile))
-            {
-                ManualTransfers.RequireFile(receipt.ResultFile);
-                var settings = s.Json<RelaySettings>("SELECT json FROM settings WHERE id=1")!;
-                var artifact = KeepManualFile(s, task, receipt.ResultFile, "result", Now, settings.ArtifactTtlDays);
-                task.ResultPath = artifact.Path; task.ManualCurrentFile = artifact.Path;
-            }
-            if (receipt.Status == "failed")
-            {
-                task.State = TaskState.Failed; task.ErrorCode = "manual_agent_failed";
-                task.ErrorMessage = receipt.NextAction ?? "Agent 报告处理失败，请检查回执或回稿。";
-            }
-            else if (!continues) task.State = TaskState.Succeeded;
-            else if (task.ManualTurn + 1 >= MaxManualTurns)
-            {
-                task.State = TaskState.Failed; task.ErrorCode = "manual_round_limit";
-                task.ErrorMessage = "交接已达到 4 轮上限，已暂停继续传递。请人工判断是否需要另建任务，避免重复往返。";
-            }
-            else
-            {
-                task.AwaitingAgentId = plannedNext ? task.HandoffPlan![task.ManualTurn + 1]
-                    : receipt.Sender == task.RequesterId ? task.RecipientId : task.RequesterId;
-                task.ManualTurn++; task.State = TaskState.AwaitingReply;
-                task.ManualNextAction = receipt.NextAction;
-            }
-        }
+        else if (task.Collaboration is { } collaboration) ApplyCollaborationOutcome(s, task, collaboration, receipt);
+        else ApplyPlainOutcome(s, task, receipt);
         task.ManualReceiptJson = json;
-        s.Save(task); s.Event(task, "manual." + receipt.Status, receipt.Sender, Now, "turn=" + receipt.Turn);
+        s.Save(task);
+        s.Event(task, "manual." + receipt.Status, receipt.Sender, Now,
+            "turn=" + receipt.Turn + (receipt.Outcome is null ? "" : " outcome=" + receipt.Outcome));
         s.Notify(task, "manual_turn_" + receipt.Turn + "_" + receipt.Status,
-            task.State == TaskState.AwaitingReply ? "对方需要继续处理，请复制当前交接提示词。" :
-            task.State == TaskState.Succeeded ? "本次交接已结束，无需继续传递。" : task.ErrorMessage ?? "交接进度已更新。", Now);
+            task.State == TaskState.AwaitingReply ? "请将交接交给 " + (Agent(s, task.AwaitingAgentId!).DisplayName ?? task.AwaitingAgentId) + " 继续处理。" :
+            task.State == TaskState.Paused ? task.PauseMessage! :
+            task.State == TaskState.Succeeded ? task.Collaboration is null ? "本次交接已结束，无需继续传递。" : "作者已确认接受并记录交付，协作已完成。" :
+            task.ErrorMessage ?? "交接进度已更新。", Now);
         return true;
     });
 
-    private void ExpireManualTask(StoreSession session, TaskRecord task)
+    private void ApplyPlainOutcome(StoreSession s, TaskRecord task, ManualReceipt receipt)
     {
-        task.State = TaskState.TimedOut;
-        task.ErrorCode = "deadline_exceeded";
-        task.ErrorMessage = "交接已超过设定时限，已停止继续等待。请确认双方处理情况，再决定是否新建交接。";
-        session.Save(task);
-        session.Event(task, "task.timed_out", "relay", Now);
-        session.Notify(task, "timed_out", task.ErrorMessage, Now);
+        if (receipt.NeedsReply is not { } needsReply)
+            throw new RelayException("manual_receipt_reply", "完成或失败回执需要填写 needs_reply。");
+        // Fixed plans exist only on tasks created before condition-driven collaboration replaced them.
+        var plannedNext = receipt.Status == "done" && task.HandoffPlan is { } plan && task.ManualTurn + 1 < plan.Length;
+        if (receipt.Status == "failed" && needsReply)
+            throw new RelayException("manual_receipt_reply", "失败回执不能自动开启下一轮。");
+        if (receipt.Status == "done" && !needsReply && !plannedNext && !string.IsNullOrWhiteSpace(receipt.NextAction))
+            throw new RelayException("manual_receipt_contradiction", "回执声明无需继续，却同时给出了下一步工作。请明确是否需要继续；有待办时应设置 needs_reply=true 并提供回稿文件。");
+        var continues = needsReply || plannedNext;
+        if (continues && (string.IsNullOrWhiteSpace(receipt.ResultFile) || string.IsNullOrWhiteSpace(receipt.NextAction)))
+            throw new RelayException("manual_receipt_reply", plannedNext
+                ? "本轮处理完成，但交接计划仍有后续步骤，不能结束任务。请提供真实回稿 result_file 和具体 next_action，再按当前上下文重写回执。"
+                : "需要对方继续时，必须给出回稿文件和具体的下一步工作；已确认或寒暄无需回传。");
+        KeepReceiptResult(s, task, receipt.ResultFile);
+        if (receipt.Status == "failed")
+        {
+            task.State = TaskState.Failed; task.ErrorCode = "manual_agent_failed";
+            task.ErrorMessage = receipt.NextAction ?? "Agent 报告处理失败，请检查回执或回稿。";
+            return;
+        }
+        if (!continues) { task.State = TaskState.Succeeded; return; }
+        var next = plannedNext ? task.HandoffPlan![task.ManualTurn + 1]
+            : receipt.Sender == task.RequesterId ? task.RecipientId : task.RequesterId;
+        var limit = task.MaxTurns ?? MaxManualTurns;
+        AdvanceFileHandoff(s, task, next, receipt.NextAction);
+        if (task.ManualTurn >= limit)
+            PauseFileHandoff(s, task, "round_limit", $"交接已往返 {limit} 轮，已暂停继续传递，避免重复往返。请决定追加轮数继续、取消或人工标记完成。", TaskState.AwaitingReply);
     }
 
     private ArtifactRecord KeepManualFile(StoreSession s, TaskRecord task, string source, string kind, DateTimeOffset now, int ttl)
@@ -260,12 +259,17 @@ public sealed partial class RelayService
         return artifact;
     }
 
+    public string TurnReplyPath(TaskRecord task) => Path.Combine(workspace.AttemptDirectory(task.TaskId, task.AttemptId),
+        task.ManualTurn == 0 ? "reply.md" : $"reply-{task.ManualTurn}.md");
+
     private TaskView ManualView(TaskRecord task)
     {
-        var overdue = !Terminal(task.State) && task.DeadlineAt <= Now;
+        var paused = task.State == TaskState.Paused;
+        var overdue = !Terminal(task.State) && !paused && task.DeadlineAt <= Now;
         var finished = Terminal(task.State);
-        return new(task, overdue, finished ? "inspect" : "copy_file_handoff", finished ?
-            task.State == TaskState.Succeeded ? "交接已完成，无需继续传递。" : task.ErrorMessage ?? "交接已结束。" :
+        return new(task, overdue, finished ? "inspect" : paused ? "decide_paused_handoff" : "copy_file_handoff", finished ?
+            task.State == TaskState.Succeeded ? task.Collaboration?.Deliverable is { } delivered ? "作者已确认接受并交付：" + delivered : "交接已完成，无需继续传递。" :
+            task.ErrorMessage ?? "交接已结束。" : paused ? task.PauseMessage! :
             $"有文件交接给你。请读取 {Path.Combine(Path.GetDirectoryName(ManualReceiptPath(task))!, "context.json")}，完成其中要求并写回执，无需额外寒暄或确认消息。");
     }
 }

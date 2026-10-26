@@ -18,13 +18,16 @@ public sealed class CliExtensionTests
         service.Register("agent-b", "fixture", Path.Combine(root, "absent-b.toml"));
     }
 
+    // Probes ask the Agent to write a file; a fixture that can use tools writes it like a real Agent would.
+    private const string ProbeFile = "$f=[regex]::Match($p,'Create the file (.+?) containing').Groups[1].Value;if($f){[IO.File]::WriteAllText($f,$m)};";
+
     [TestCleanup]
     public void Cleanup() => Directory.Delete(root, true);
 
     private static CliCommand Command(string session = "fixture-session", bool resume = false, bool wrongReply = false) => new("pwsh",
         ["-NoLogo", "-NoProfile", "-NonInteractive", "-Command",
             "[Console]::InputEncoding=[Text.UTF8Encoding]::new($false);[Console]::OutputEncoding=[Text.UTF8Encoding]::new($false);" +
-            "$p=[Console]::In.ReadToEnd();$m=[regex]::Match($p,'RELAY-[A-Z0-9]+').Value;" +
+            "$p=[Console]::In.ReadToEnd();$m=[regex]::Match($p,'RELAY-[A-Z0-9]+').Value;" + ProbeFile +
             "@{session_id='" + session + "';reply=" + (wrongReply ? "'wrong'" : "$m") + ";accepted=$true}|ConvertTo-Json -Compress"],
         resume ? "{session_id}\n{prompt}" : "{prompt}", null);
 
@@ -168,7 +171,7 @@ public sealed class CliExtensionTests
     private static CliCommand NativeCommand(string output, int exitCode = 0) => new("pwsh",
         ["-NoLogo", "-NoProfile", "-NonInteractive", "-Command",
             "[Console]::InputEncoding=[Text.UTF8Encoding]::new($false);[Console]::OutputEncoding=[Text.UTF8Encoding]::new($false);" +
-            "$p=[Console]::In.ReadToEnd();$m=[regex]::Match($p,'RELAY-[A-Z0-9]+').Value;" +
+            "$p=[Console]::In.ReadToEnd();$m=[regex]::Match($p,'RELAY-[A-Z0-9]+').Value;" + ProbeFile +
             "$o=[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('" +
             Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes(output)) + "'));" +
             "[Console]::Out.Write($o.Replace('{marker}',$m));exit " + exitCode], "{prompt}", null);
