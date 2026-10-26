@@ -61,6 +61,7 @@ internal static class CollaborationUiText
         Add("failed","处理失败","處理失敗","失敗","실패","Fallido");
         Add("Review history","验收记录","驗收紀錄","レビュー履歴","검토 기록","Historial de revisión");
         Add("CLI blocked · Action needed","CLI 受阻 · 需要处理","CLI 受阻 · 需要處理","CLI 停止中 · 対応が必要","CLI 차단됨 · 조치 필요","CLI bloqueado · Requiere acción");
+        Add("Check CLI setup (no model call)","检查 CLI 配置（不调用模型）","檢查 CLI 設定（不呼叫模型）","CLI 設定を確認（モデル呼び出しなし）","CLI 설정 확인(모델 호출 없음)","Revisar configuración CLI (sin llamar al modelo)");
         Add("CLI capability","CLI 能力","CLI 能力","CLI 機能","CLI 기능","Capacidad CLI");
         Add("New conversations verified","新会话已验证","新會話已驗證","新規会話は検証済み","새 대화 검증됨","Conversaciones nuevas verificadas");
         Add("New conversations not verified","新会话未验证","新會話未驗證","新規会話は未検証","새 대화 미검증","Conversaciones nuevas sin verificar");

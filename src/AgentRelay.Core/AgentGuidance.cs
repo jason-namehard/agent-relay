@@ -100,9 +100,17 @@ public sealed partial class RelayService
             {"name":"用户可识别的名称","host":"可识别的内部宿主类型，未知填manual","config_path":null,"cli_path":null,"host_version":null,"instruction_paths":[]}
             用户只需要一个名称。host 是内部适配资料，不另外要求用户提供软件名称。未知信息保留 null 或空数组，不猜路径，不返回认证信息；name 必填。会话 ID 与记录位置不能作为 config_path。
             {{recipe}}
+            {{(relayCommand is null ? "" : BridgeGuidance(relayCommand))}}
             导入只保存，不执行或启用方案。没有可用接口时明确说明，使用手动交接即可。
             """;
     }
+
+    private string BridgeGuidance(string relayCommand) => $"""
+        优先查证宿主是否支持 Agent Client Protocol（帮助中的 --acp 选项或 acp 子命令）；支持时 output_format 用 acp，命令只启动 ACP 服务，create 与 resume 写同一条命令。
+        宿主自带的命令行若不能无人值守调用（需另装官方 CLI、社区 ACP 适配器或其他桥接工具），不要自行安装。先向用户说明：工具名称、来源链接、许可证、为什么需要、不安装的后果（该 Agent 不能通过 CLI 自动接收任务，仍可复制提示词手动交接）。用户明确同意后才安装，并写入方案 dependencies。需要用户在终端登录的工具，把登录命令写入方案的 login 字段，由用户自己运行。
+        已知情况：WorkBuddy 应用自带的 CLI 不能使用桌面登录，应使用官方 CodeBuddy Code CLI（npm 包 @tencent-ai/codebuddy-code，命令 codebuddy）并由用户登录一次；它的会话与 WorkBuddy 桌面对话分开。
+        导入后运行 {relayCommand} --home "{Home}" cli-recipe doctor --agent <Agent ID> 检查本机前提（不调用模型），把未通过的项和修复方法告诉用户。
+        """;
 
     public IReadOnlyList<GuidanceRegistration> GuidanceRegistrations() => ReadGuidanceState()?.Registrations ?? [];
 

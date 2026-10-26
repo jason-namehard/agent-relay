@@ -114,7 +114,7 @@ public sealed partial class RelayService
         string status; string? session = null; string? error; CliFailure? failure = null;
         try
         {
-            var process = await CliRecipes.InvokeAsync(command, prompt, binding?.SessionId, Home,
+            var process = await CliRecipes.InvokeAsync(command, CliRecipes.OutputFormatFor(extension.Recipe), prompt, binding?.SessionId, Home,
                 budget > MinimumCliTurn ? budget : MinimumCliTurn, cancellationToken);
             var receipt = CliRecipes.Receipt(process, CliRecipes.OutputFormatFor(extension.Recipe));
             var matching = receipt is not null && (!resume || receipt.Value.SessionId == binding!.SessionId);

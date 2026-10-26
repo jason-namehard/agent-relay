@@ -187,8 +187,20 @@ dotnet .\relay.dll --home <中转站目录> cli-recipe import --agent <节点ID>
 | `claude-json` | 采用相应结构的 CodeBuddy/WorkBuddy 等 JSON 输出 |
 | `text` | 仅最终回复的普通文本；没有真实会话 ID 时无法验证同会话续接 |
 | `relay-json` | 已有桥接的 `{"session_id":"真实标识","reply":"真实回复","accepted":true}` |
+| `acp` | 支持 [Agent Client Protocol](https://agentclientprotocol.com) 的宿主，如 `hermes acp`、`codebuddy --acp` |
+
+`acp` 方案的命令只启动 ACP 服务：不含 `{prompt}`、`{session_id}`，`input` 为 `null`，`resume` 与 `create` 写同一条命令。Relay 以 stdio JSON-RPC 发送 `initialize`、`session/new`（或按宿主能力 `session/resume`、`session/load`）和 `session/prompt`，取本轮 `agent_message_chunk` 作为回复，`stopReason` 为 `end_turn` 才算一轮结束；`session/load` 重放的历史不计入回复。无人值守时，宿主发来的 `session/request_permission` 由 Relay 选择 `allow_once`，等同于命令行的免确认参数，应只在信任的工作目录使用。宿主支持 ACP 时优先选用：参数和输出格式不随版本变化，新建与续接走同一协议。
 
 选择已查证的输出格式，参数必须与安装版本的帮助及实际输出匹配。内置格式解析不等于所有版本或所有宿主都已接通。探针核对真实短标识回复与标记文件，并单独记录界面可见性，用于验证自动投递能力；这不代替已有会话的准确绑定与续接前验证。真实调用可能收费，不能保证缓存或所有未来会话可见。
+
+配置检查不调用模型，只看本机前提：程序与入口文件是否存在、工作目录、续接命令、WorkBuddy 自带 CLI 与权限参数、Zcode 命令行的账号套餐与默认模型、当前阻塞和验证状态。Agent 管理的“检查 CLI 配置”按钮与下列命令等价；一键配置导入方案后也会运行它，把未通过项告诉用户。
+
+```powershell
+dotnet .\relay.dll --home <中转站目录> cli-recipe doctor --agent <节点ID>
+dotnet .\relay.dll --home <中转站目录> cli-recipe confirm --agent <节点ID> --probe <探针ID> --visible
+```
+
+`confirm` 记录用户已在宿主中看到探针会话，与测试窗口中的勾选相同。一键配置发现宿主需另装官方 CLI、ACP 适配器或其他桥接时，只向用户说明名称、来源、许可证、用途及不安装的后果（只能复制提示词手动交接），得到同意才安装，并写入方案 `dependencies`；需要交互登录的，把登录命令写入 `login`，由用户自己运行。
 
 模型、工作目录和 profile 属于宿主执行配置。若新建提示未选择模型，应在宿主配置，或选择已配置的已有会话；续接默认继承原设置。当前没有跨宿主统一的模型/思考强度覆盖表单。会话 ID 由适配器输出或宿主元数据取得，不让模型自行查找；手动粘贴短 JSON 本身不能提供当前来源会话。
 

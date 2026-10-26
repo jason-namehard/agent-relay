@@ -29,7 +29,7 @@ public sealed record CliExtensionRecord(string AgentId, string Revision, CliReci
 
 public static class CliRecipes
 {
-    public static readonly string[] OutputFormats = ["relay-json", "dsh-jsonl", "zcode-json", "zcode-jsonl", "hermes-jsonl", "claude-json", "text"];
+    public static readonly string[] OutputFormats = ["relay-json", "dsh-jsonl", "zcode-json", "zcode-jsonl", "hermes-jsonl", "claude-json", "text", "acp"];
 
     public static string OutputFormatFor(CliRecipe recipe)
     {
@@ -74,12 +74,14 @@ public static class CliRecipes
             throw new RelayException("cli_recipe_invalid", "方案需要 version=1、名称、宿主、create、dependencies 和来源/版本/许可证/限制说明。未知说明请填空字符串。");
         if (!OutputFormats.Contains(recipe.OutputFormat))
             throw new RelayException("cli_recipe_invalid", "不支持的输出格式。可选：" + string.Join(", ", OutputFormats));
-        ValidateCommand(recipe.Create, false);
-        if (recipe.Resume is not null) ValidateCommand(recipe.Resume, true);
+        // An ACP command only starts the agent; Relay sends the prompt and session over the protocol.
+        var acp = recipe.OutputFormat == "acp";
+        ValidateCommand(recipe.Create, false, acp);
+        if (recipe.Resume is not null) ValidateCommand(recipe.Resume, true, acp);
         return recipe;
     }
 
-    private static void ValidateCommand(CliCommand command, bool resume)
+    private static void ValidateCommand(CliCommand command, bool resume, bool acp)
     {
         if (string.IsNullOrWhiteSpace(command.Executable) || command.Arguments is null || command.Arguments.Any(a => a is null) ||
             (command.WorkingDirectory is not null && !Path.IsPathFullyQualified(command.WorkingDirectory)))
@@ -87,6 +89,12 @@ public static class CliRecipes
         if (command.Environment is not null && command.Environment.Any(p => string.IsNullOrWhiteSpace(p.Key) || p.Value is null))
             throw new RelayException("cli_recipe_invalid", "environment 必须是非空变量名到字符串值的对象。只配置非敏感运行环境，不导入密钥。");
         var templates = command.Arguments.Append(command.Input ?? "").ToArray();
+        if (acp)
+        {
+            if (command.Input is not null || templates.Any(t => t.Contains("{prompt}", StringComparison.Ordinal) || t.Contains("{session_id}", StringComparison.Ordinal)))
+                throw new RelayException("cli_recipe_invalid", "acp 方案只写启动 ACP 服务的命令，input 为 null；提示词和会话由 Relay 通过协议传递，不使用 {prompt} 或 {session_id}。");
+            return;
+        }
         if (!templates.Any(t => t.Contains("{prompt}", StringComparison.Ordinal)))
             throw new RelayException("cli_recipe_invalid", "每条命令必须在 arguments 或 input 中包含 {prompt}。");
         if (resume && !templates.Any(t => t.Contains("{session_id}", StringComparison.Ordinal)))
@@ -106,6 +114,7 @@ public static class CliRecipes
         dsh-jsonl：DSH --profile headless --json；zcode-json：Zcode -p {prompt} --json；
         hermes-jsonl：Hermes chat -q {prompt} --format stream-json；claude-json：CodeBuddy/WorkBuddy -p --output-format json；
         text：只输出最终回复的普通文本命令，可测试回复，但无会话 ID 时不能测试同会话续接。
+        acp：宿主支持 Agent Client Protocol（如 hermes acp、codebuddy --acp）时优先使用；命令只启动 ACP 服务，不含 {prompt}/{session_id}，input 为 null，resume 填与 create 相同的命令；Relay 通过协议新建或续接会话。
         原生输出由 Relay 转换，不要求目标软件改成 relay-json，也不需要为已支持的格式额外编写桥接。
         探针要求真实回复准确返回短标识；不得由脚本自行生成回复。退出成功表示本次调用结束，不表示文件任务完成，任务仍以回执为准。
         environment 可提供非敏感环境变量，如宿主数据根目录；不要输出或导入认证信息。
@@ -118,9 +127,11 @@ public static class CliRecipes
         }
         """;
 
-    internal static Task<ProcessResult> InvokeAsync(CliCommand command, string prompt, string? sessionId,
+    internal static Task<ProcessResult> InvokeAsync(CliCommand command, string format, string prompt, string? sessionId,
         string home, TimeSpan timeout, CancellationToken cancellationToken)
     {
+        if (format == "acp")
+            return AcpClient.RunAsync(command, prompt, sessionId, command.WorkingDirectory ?? home, timeout, cancellationToken);
         string Expand(string template) => template.Replace("{session_id}", sessionId ?? "", StringComparison.Ordinal)
             .Replace("{relay_home}", home, StringComparison.Ordinal).Replace("{prompt}", prompt, StringComparison.Ordinal);
         return RelayProcess.RunAsync(command.Executable, command.Arguments.Select(Expand),
@@ -202,7 +213,7 @@ public sealed partial class RelayService
         CliFailure? failure = null;
         try
         {
-            var process = await CliRecipes.InvokeAsync(command, prompt, sessionId, Home,
+            var process = await CliRecipes.InvokeAsync(command, CliRecipes.OutputFormatFor(record.Recipe), prompt, sessionId, Home,
                 ProbeTimeout, cancellationToken);
             var output = $"exit_code: {process.ExitCode}\ntimed_out: {process.TimedOut}\nstdout:\n{process.Output}\nstderr:\n{process.Error}";
             diagnostic = output.Length <= 16 * 1024 ? output : output[^(16 * 1024)..];
@@ -274,7 +285,7 @@ public sealed class CliRecipeDeliveryAdapter(CliExtensionRecord extension) : IDe
             relay --home "{home}" task complete --task {task.TaskId} --attempt {task.AttemptId} --sender {task.RecipientId} --idempotency-key completed --status succeeded --result "{task.ResultPath}"
             If Relay CLI/MCP is unavailable, return the reply path to the operator for manual confirmation. Save permanent deliverables in the project, not the relay directory.
             """;
-        var process = await CliRecipes.InvokeAsync(extension.Recipe.Create, prompt, null, home, timeout, cancellationToken);
+        var process = await CliRecipes.InvokeAsync(extension.Recipe.Create, CliRecipes.OutputFormatFor(extension.Recipe), prompt, null, home, timeout, cancellationToken);
         return CliRecipes.Receipt(process, CliRecipes.OutputFormatFor(extension.Recipe)) is not null
             ? new("accepted", process.Output, null)
             : new("unknown", null, CliFailureDiagnostics.Classify(process, extension.Recipe).Message);

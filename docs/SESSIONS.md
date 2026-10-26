@@ -81,6 +81,17 @@ codebuddy
 
 调用方案的 create 参数使用 `-p {prompt} --output-format json` 和非交互权限参数：`--permission-mode acceptEdits` 允许直接改文件、写回执，终端命令在 print 模式下会被拒绝；需要无人值守运行命令时改用 `-y`（高风险操作仍会被拒绝）；resume 另加 `--resume {session_id}`；`output_format` 为 `claude-json`，`login` 可填 `codebuddy`。该 CLI 的会话保存在它自己的存储中，不是 WorkBuddy 桌面对话；已有的 WorkBuddy 桌面对话不能通过它续接，Relay 也不再用桌面会话库校验这类方案的会话。
 
+## Zcode CLI
+
+从桌面应用外启动 `zcode.cjs` 时，命令行只认自己登记过的账号套餐；桌面已登录、或在桌面里切换模型，都不会为它登记，于是新建会话报 “Select a model before sending a message”。在终端登录一次即可登记套餐并写入默认模型：
+
+```powershell
+$env:ZCODE_BUILTIN_PROVIDER_CONFIG_FILE = "D:\Zcode\resources\config\provider\zcode-builtin.json"   # 按实际安装目录
+& <Zcode 自带 node.exe> "D:\Zcode\resources\glm\zcode.cjs" login zai
+```
+
+不设该变量时，登录会因找不到内置供应商配置而失败。`relay cli-recipe doctor` 会检查命令行是否已登记套餐。续接已选过模型的会话不受影响。
+
 ## CLI
 
 在发布包目录使用 .NET 10，替换示例中的节点、任务和目录：

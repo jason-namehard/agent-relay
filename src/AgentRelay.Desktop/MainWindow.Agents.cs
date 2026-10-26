@@ -102,6 +102,15 @@ public partial class MainWindow
                     Add(Row(details),"I have resolved this · Allow automatic sends",()=>{service.ClearCliBlock(row.Source.AgentId);return Task.CompletedTask;});
                 }
             }
+            var health=new StackPanel();
+            Add(Row(details),"Check CLI setup (no model call)",()=>
+            {
+                health.Children.Clear();
+                foreach(var check in service.CliHealth(row.Source.AgentId))
+                    health.Children.Add(Note((check.Status=="pass"?"✓ ":check.Status=="warn"?"! ":"✗ ")+check.Message));
+                return Task.CompletedTask;
+            },false);
+            details.Children.Add(health);
             details.Children.Add(Note("Session discovery reads this Agent's local conversation store. It never selects the latest conversation."));
             var current=service.DiscoverySource(row.Source.AgentId);
             var provider=new ComboBox{Name="SessionDiscoveryProvider",ItemsSource=new[]{"zcode","dsh","hermes","workbuddy"},SelectedItem=current?.Provider,MinHeight=38};
