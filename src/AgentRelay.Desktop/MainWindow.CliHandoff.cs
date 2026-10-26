@@ -15,7 +15,8 @@ public partial class MainWindow
         var created=service.CreateCliHandoff(request);taskId=created.Task.TaskId;
         if(dialog.Origin is not null&&dialog.OriginBinding=="user_selected")service.BindTaskSession(taskId,request.From,dialog.Origin);
         if(request.TargetSessionId is not null&&dialog.TargetBinding=="user_selected")service.BindTaskSession(taskId,request.To,dialog.Target!);
-        StartCliSend(taskId);
+        // Recipients without a bridge wait for the user to copy the prompt from the task card.
+        if(service.CanSendFileHandoff(service.Status(taskId).Task))StartCliSend(taskId);
         await Task.CompletedTask;
     }
 }

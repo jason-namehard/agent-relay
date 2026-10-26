@@ -207,7 +207,7 @@ public partial class MainWindow : Window
         Add(cards,T("Registered Agents")+": "+summary.RegisteredAgents,()=>{Go("Agents");return Task.CompletedTask;});
         cards.Children.Add(Note(T("Pending Tasks")+": "+summary.PendingTasks+"  ·  "+T("Retention")+": "+summary.RetentionDays+" "+T("days")));
         var actions=Row(page);
-        Add(actions,"New CLI task",NewCliHandoff);
+        Add(actions,"New task",NewCliHandoff);
         Add(actions,"New handoff",async()=>
         {
             var agents=service.Agents().Select(a=>new HandoffAgentOption(a.AgentId,a.DisplayName??a.AgentId)).ToArray();
@@ -255,7 +255,7 @@ public partial class MainWindow : Window
                 var actions=Row(detail);
                 Button button;
                 if(direction.Display!="Unavailable") button=Add(actions,direction.Display=="Allowed"?"Pause connection":"Enable connection",()=>{service.SetPermission(direction.From,direction.To,direction.Display=="Allowed"?"deny":"allow");return Task.CompletedTask;});
-                else button=Add(actions,"CLI interface extensions",()=>{agentId=direction.To;Go("Settings");return Task.CompletedTask;});
+                else button=Add(actions,"Agent bridges",()=>{agentId=direction.To;Go("Settings");return Task.CompletedTask;});
                 button.Name=(direction.Display=="Unavailable"?"ExtendConnection":direction.Display=="Allowed"?"PauseConnection":"EnableConnection")+"_"+direction.From.Replace('-','_')+"_"+direction.To.Replace('-','_');
                 AutomationProperties.SetAutomationId(button,button.Name);
             }
@@ -271,7 +271,7 @@ public partial class MainWindow : Window
     private sealed record TaskRow(string TaskId,string Route,string Mode,string State,DateTimeOffset Created,string StateCode);
     private void TaskPane(StackPanel page,IEnumerable<TaskView> views)
     {
-        var rows=views.OrderByDescending(v=>v.Task.CreatedAt).Select(v=>new TaskRow(v.Task.TaskId,AgentName(v.Task.RequesterId)+" → "+AgentName(v.Task.RecipientId),T(v.Task.Mode=="manual"?"Manual handoff":"CLI"),v.Task.IsFileHandoff||v.Task.Mode=="manual"?FileState(v.Task):v.Task.State.ToString(),v.Task.CreatedAt.ToLocalTime(),v.Task.State.ToString())).ToArray();
+        var rows=views.OrderByDescending(v=>v.Task.CreatedAt).Select(v=>new TaskRow(v.Task.TaskId,AgentName(v.Task.RequesterId)+" → "+AgentName(v.Task.RecipientId),T(v.Task.Mode=="manual"?"Manual handoff":"Agent bridge"),v.Task.IsFileHandoff||v.Task.Mode=="manual"?FileState(v.Task):v.Task.State.ToString(),v.Task.CreatedAt.ToLocalTime(),v.Task.State.ToString())).ToArray();
         var table=Table("TasksTable",("Route","Route"),("Delivery","Mode"),("State","State"),("Created","Created"));table.Height=230;
         var stateStyle=new Style(typeof(TextBlock),(Style)FindResource("TableTextStyle"));
         foreach(var state in new[]{"Succeeded","Failed","TimedOut","DeliveryUnknown","Running","Acknowledged","Paused"})

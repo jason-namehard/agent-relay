@@ -19,8 +19,9 @@ public sealed partial class RelayService
         var agents=Agents();
         _=agents.SingleOrDefault(a=>a.AgentId==request.From)??throw new RelayException("agent_not_found","未找到发送 Agent。");
         _=agents.SingleOrDefault(a=>a.AgentId==request.To)??throw new RelayException("agent_not_found","未找到接收 Agent。");
-        var target=CliExtension(request.To)??throw new RelayException("cli_recipe_missing","接收 Agent 尚未配置 CLI 调用方案，请先在 Agent 管理中配置。");
-        if(request.TargetSessionId is not null&&target.Recipe.Resume is null)
+        // A recipient without a bridge still gets the task; its turns are copied manually.
+        var target=CliExtension(request.To);
+        if(request.TargetSessionId is not null&&target is not null&&target.Recipe.Resume is null)
             throw new RelayException("session_resume_unsupported","接收 Agent 的调用方案不支持续接已有会话，请选择新建会话或补充续接命令。");
         // Collaboration turns that return to the sender use CLI only when its exact conversation is bound; otherwise they are copied manually.
         var senderByCli=request.Collaboration is not null&&request.OriginSessionId is not null;
@@ -28,7 +29,8 @@ public sealed partial class RelayService
             throw new RelayException("session_resume_unsupported","发送方需要配置准确会话续接命令，才能通过 CLI 把回稿送回原会话；也可以不选来源会话，改为手动传回。");
         foreach(var cwd in new[]{request.OriginCwd,request.TargetCwd})
             if(cwd is not null&&!Path.IsPathFullyQualified(cwd))throw new RelayException("session_cwd_invalid","会话项目目录需要完整路径。");
-        var directions=senderByCli?new[]{(request.From,request.To),(request.To,request.From)}:new[]{(request.From,request.To)};
+        var directions=new[]{(request.From,request.To)}.Where(_=>target is not null)
+            .Concat(new[]{(request.To,request.From)}.Where(_=>senderByCli)).ToArray();
         var permissions=ConnectionPermissions();
         foreach(var (from,to) in directions)
             if(!permissions.Any(p=>p.From==from&&p.To==to&&p.Decision=="allow")&&!request.EnableDirection)
@@ -49,7 +51,7 @@ public sealed partial class RelayService
             if(request.EnableDirection)SetPermission(from,to,"allow");
         store.Write(s=>
         {
-            var task=s.Task(taskId);task.Mode="cli";task.AdapterId="cli:"+request.To;
+            var task=s.Task(taskId);task.Mode=target is null?"manual":"cli";task.AdapterId=target is null?"manual-file":"cli:"+request.To;
             task.CliNewSessionCwd=request.TargetSessionId is null?request.TargetCwd:null;
             s.Save(task);s.Event(task,"cli_handoff.created","operator",Now);
             return true;

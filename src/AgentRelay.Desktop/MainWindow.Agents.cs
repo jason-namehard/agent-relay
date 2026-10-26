@@ -1,12 +1,15 @@
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Data;
+using System.Windows.Media;
+using System.Windows.Shapes;
 using AgentRelay.Core;
 
 namespace AgentRelay.Desktop;
 
 public partial class MainWindow
 {
-    private sealed record AgentRow(AgentRecord Source, string Name, string Capability, string Activity);
+    private sealed record AgentRow(AgentRecord Source, string Name, string Bridge, Brush BridgeBrush, string Activity);
 
     private HashSet<string> ActiveAgentIds() => service.Tasks()
         .Where(view => view.Task.State is not (TaskState.Succeeded or TaskState.Failed or TaskState.TimedOut or TaskState.Cancelled))
@@ -17,7 +20,8 @@ public partial class MainWindow
         var page = Page();
         Heading(page, "Your Agents", "Use one name per Agent. Configure it directly with a prompt, or enter the fields yourself.");
         var actions = Row(page);
-        var table = Table("AgentsTable", ("Name", "Name"), ("CLI capability", "Capability"), ("Handoffs", "Activity"));
+        var table = Table("AgentsTable", ("Name", "Name"), ("Agent bridge", "Bridge"), ("Handoffs", "Activity"));
+        table.Columns[1] = BridgeColumn();
         var details = new StackPanel { Margin = new(10) };
 
         Task Edit(AgentRecord? existing)
@@ -63,7 +67,7 @@ public partial class MainWindow
             service.RemoveAgent(agent.AgentId); service.RemoveGuidance(agent.AgentId); agentId = null;
             return Task.CompletedTask;
         });
-        Add(actions, "Agent CLI test", () =>
+        Add(actions, "Test bridge", () =>
         {
             agentId = Selected().AgentId; ShowCliProbe(agentId); return Task.CompletedTask;
         });
@@ -76,10 +80,14 @@ public partial class MainWindow
         }, false);
 
         var active = ActiveAgentIds();
-        var rows = service.Agents().Select(agent => new AgentRow(agent, agent.DisplayName ?? agent.AgentId,
-            AgentCliStatus(agent), T(active.Contains(agent.AgentId) ? "Unfinished handoffs" : "No unfinished handoffs"))).ToArray();
+        var rows = service.Agents().Select(agent =>
+        {
+            var bridge = service.Bridge(agent.AgentId);
+            return new AgentRow(agent, agent.DisplayName ?? agent.AgentId, BridgePresentation.Label(bridge, T), BridgePresentation.Accent(this, bridge),
+                T(active.Contains(agent.AgentId) ? "Unfinished handoffs" : "No unfinished handoffs"));
+        }).ToArray();
         table.ItemsSource = rows; page.Children.Add(table);
-        page.Children.Add(Note("One-click setup is for a new node. To change an existing node, select it and use Edit Agent. A configured CLI is ready to test; it is not a failed connection."));
+        page.Children.Add(Note("One-click setup is for a new node. To change an existing node, select it and use Edit Agent. An Agent bridge connects Relay to the Agent through ACP or its CLI; ACP is used when the host supports it. Without a bridge you copy prompts by hand."));
         page.Children.Add(new Expander { Header = T("Handoff rules and node details"), Content = details, Margin = new(0, 10, 0, 0) });
         void ShowDetails()
         {
@@ -93,7 +101,7 @@ public partial class MainWindow
             Add(ruleActions, "Remove handoff rule", () => { service.RemoveGuidance(Selected().AgentId); return Task.CompletedTask; });
             if(service.CliExtension(row.Source.AgentId) is {} extension)
             {
-                details.Children.Add(Note(T("CLI capability")+": "+T(extension.CanCreate?"New conversations verified":"New conversations not verified")+" · "+
+                details.Children.Add(Note(T("Agent bridge")+": "+BridgePresentation.Label(service.Bridge(row.Source.AgentId),T)+" · "+T(extension.CanCreate?"New conversations verified":"New conversations not verified")+" · "+
                     T(extension.CanResume?"Resume verified":"Resume not verified")+
                     (extension.CreateEvidence is not null||extension.ResumeEvidence is not null?" · "+T("Proven by a real handoff"):"")));
                 if(extension.Block is {} block)
@@ -103,7 +111,7 @@ public partial class MainWindow
                 }
             }
             var health=new StackPanel();
-            Add(Row(details),"Check CLI setup (no model call)",()=>
+            Add(Row(details),"Check bridge setup (no model call)",()=>
             {
                 health.Children.Clear();
                 foreach(var check in service.CliHealth(row.Source.AgentId))
@@ -127,19 +135,20 @@ public partial class MainWindow
         return page;
     }
 
-    private string AgentCliStatus(AgentRecord agent)
+    private DataGridTemplateColumn BridgeColumn()
     {
-        var extension = service.CliExtension(agent.AgentId);
-        if (extension?.Block is not null) return T("CLI blocked · Action needed");
-        return T(extension switch
-        {
-            { CanResume: true } => "New session and resume verified",
-            { CanCreate: true } => "New session verified",
-            { CreateProbe: { MachinePassed: true } } => "CLI probe passed · Confirm visibility",
-            { CreateProbe: { MachinePassed: false } } => "CLI probe failed · Retry available",
-            not null => "CLI configured · Choose a task conversation",
-            _ when agent.CliPath is not null => "CLI program recorded · Add calling arguments",
-            _ => "CLI not configured"
-        });
+        var row = new FrameworkElementFactory(typeof(StackPanel));
+        row.SetValue(StackPanel.OrientationProperty, Orientation.Horizontal);
+        row.SetValue(VerticalAlignmentProperty, VerticalAlignment.Center);
+        var dot = new FrameworkElementFactory(typeof(Ellipse));
+        dot.SetValue(WidthProperty, 8.0); dot.SetValue(HeightProperty, 8.0);
+        dot.SetValue(MarginProperty, new Thickness(10, 0, 8, 0)); dot.SetValue(VerticalAlignmentProperty, VerticalAlignment.Center);
+        dot.SetBinding(Shape.FillProperty, new Binding(nameof(AgentRow.BridgeBrush)));
+        var label = new FrameworkElementFactory(typeof(TextBlock));
+        label.SetBinding(TextBlock.TextProperty, new Binding(nameof(AgentRow.Bridge)));
+        label.SetValue(VerticalAlignmentProperty, VerticalAlignment.Center);
+        row.AppendChild(dot); row.AppendChild(label);
+        return new DataGridTemplateColumn { Header = T("Agent bridge"), CellTemplate = new DataTemplate { VisualTree = row },
+            Width = new DataGridLength(1, DataGridLengthUnitType.Star) };
     }
 }

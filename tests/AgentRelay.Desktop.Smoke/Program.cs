@@ -79,8 +79,8 @@ internal static class Program
         Check(service.Agents().Any(a=>a.AgentId=="agent-b") && ((Border)window.FindName("ErrorBanner")).Visibility==Visibility.Visible && ((TextBox)window.FindName("ErrorText")).Text.Contains("未完成交接"),"Removing an active Agent is blocked before any confirmation dialog");
         Check(!FindAll<TextBox>(window).Any(b=>b.Name.StartsWith("AgentEntry")||b.Name.EndsWith("SetupReply")),"Agent page has no competing setup form");
         var agentToolbar=(Panel)FindAll<Button>(window).Single(b=>Equals(b.Tag,"New Agent")).Parent;
-        Check(agentToolbar.Children.OfType<Button>().Select(b=>(string)b.Tag).SequenceEqual(new[]{"New Agent","Edit Agent","Delete Agent","Agent CLI test","One-click setup"}),"Agent toolbar contains exactly five primary configuration actions");
-        Check(FindAll<Button>(window).Single(b=>Equals(b.Tag,"Agent CLI test")).IsEnabled,"CLI test remains available to explain missing calling methods instead of silently disabling itself");
+        Check(agentToolbar.Children.OfType<Button>().Select(b=>(string)b.Tag).SequenceEqual(new[]{"New Agent","Edit Agent","Delete Agent","Test bridge","One-click setup"}),"Agent toolbar contains exactly five primary configuration actions");
+        Check(FindAll<Button>(window).Single(b=>Equals(b.Tag,"Test bridge")).IsEnabled,"CLI test remains available to explain missing calling methods instead of silently disabling itself");
         Check(FindAll<Button>(window).Any(b=>Equals(b.Tag,"Install handoff rule"))&&FindAll<Button>(window).Any(b=>Equals(b.Tag,"Remove handoff rule")),"Agent page exposes explicit installation and removal of handoff rules");
         var count=service.Agents().Count;
         await Modal<AgentEntryDialog>(window,"New Agent",async dialog=>
@@ -411,11 +411,17 @@ internal static class Program
         Appearance.Save(station.Home,new DesktopPreferences("en",NotificationSound:"none"));
         var window=new MainWindow(station){Owner=owner};window.Show();
         await Wait(()=>((TextBlock)window.FindName("StatusText")).Text!="Working…");
-        await Modal<CliHandoffDialog>(window,"New CLI task",async dialog=>
+        await Modal<CliHandoffDialog>(window,"New task",async dialog=>
         {
             Check(Find<RadioButton>(dialog,"CliTaskNewSession").IsChecked==true,"Explicit CLI task entry offers a new target conversation by default");
             Check(!FindAll<TextBox>(dialog).Any(t=>t.Name=="FileHandoffReply"),"CLI work entry accepts instructions directly without a file or pasted Agent JSON");
             Check(Find<RadioButton>(dialog,"CliTaskSingle").IsChecked==true&&FindAll<RadioButton>(dialog).Any(r=>r.Name=="CliTaskLoop")&&!FindAll<CheckBox>(dialog).Any(c=>c.Name=="CliTaskReviewPlan"),"CLI task offers a single handoff or a review loop instead of a fixed step plan");
+            string CardText()=>string.Join(" ",FindAll<TextBlock>(Find<Border>(dialog,"CliTaskBridgeCard")).Select(t=>t.Text));
+            Check(CardText().Contains("Target",StringComparison.Ordinal)&&CardText().Contains("CLI bridge, not yet verified",StringComparison.Ordinal),"Choosing a recipient explains which bridge carries its turns: "+CardText());
+            var recipientChoice=Find<ComboBox>(dialog,"CliTaskTo");recipientChoice.SelectedValue="ui-source";
+            Check(CardText().Contains("has no Agent bridge",StringComparison.Ordinal)&&CardText().Contains("copy the prompt",StringComparison.Ordinal),"A recipient without a bridge is flagged before the task is created");
+            await SaveImage(dialog,Path.Combine(root,"New-task-no-bridge.png"));
+            recipientChoice.SelectedValue="ui-target";
             Find<TextBox>(dialog,"CliTaskPrompt").Text="UI fixture: perform this direct work request.";
             var selected=HandleNextDialog<SessionPickerDialog>(dialog,child=>
             {
@@ -608,7 +614,7 @@ internal static class Program
         await Click(window,"One-click setup");
         var agents=Find<DataGrid>(window,"AgentsTable");
         agents.SelectedItem=agents.Items.Cast<object>().Single(row=>((AgentRecord)row.GetType().GetProperty("Source")!.GetValue(row)!).AgentId==id);
-        await Modal<CliProbeDialog>(window,"Agent CLI test",async dialog=>
+        await Modal<CliProbeDialog>(window,"Test bridge",async dialog=>
         {
             try
             {

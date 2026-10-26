@@ -15,8 +15,8 @@ public sealed class CliHandoffDialog : Window
 
     public CliHandoffDialog(Window owner,RelayService service,string language)
     {
-        var ui=new EntryDialogLayout(this,owner,UiText.Translate("New CLI task",language),language);
-        ui.Body.Children.Add(ui.Note("Write the work request, choose the conversations and send it through CLI. A real call may incur model charges."));
+        var ui=new EntryDialogLayout(this,owner,UiText.Translate("New task",language),language);
+        ui.Body.Children.Add(ui.Note("Write the work request and choose the conversations. Agents with a bridge receive it automatically; for others you copy the prompt. A real call may incur model charges."));
         var agents=service.Agents().Select(a=>new HandoffAgentOption(a.AgentId,a.DisplayName??a.AgentId)).ToArray();
         ComboBox AgentChoice(string label,string name,int index)
         {
@@ -34,6 +34,12 @@ public sealed class CliHandoffDialog : Window
             Origin=picker.SelectedSession;OriginBinding=picker.Binding;originLabel.Text=(Origin!.Title??Origin.SessionId)+"\n"+Origin.Cwd;
         });
         var to=AgentChoice("Recipient","CliTaskTo",Math.Min(1,agents.Length-1));
+        var bridgeCard=BridgePresentation.Card(this,"CliTaskBridgeCard");ui.Body.Children.Add(bridgeCard);
+        void ShowBridge()
+        {
+            if(to.SelectedItem is HandoffAgentOption recipient)BridgePresentation.Show(bridgeCard,service.Bridge(recipient.Id),recipient.Name,ui.T);
+        }
+        ShowBridge();
         var create=new RadioButton{Name="CliTaskNewSession",Content=ui.T("New conversation"),IsChecked=true,Margin=new(0,8,0,8)};
         var existing=new RadioButton{Name="CliTaskExistingSession",Content=ui.T("Use existing conversation"),Margin=new(0,4,0,8)};
         ui.Body.Children.Add(create);ui.Body.Children.Add(existing);
@@ -48,19 +54,18 @@ public sealed class CliHandoffDialog : Window
         });choose.IsEnabled=false;
         create.Checked+=(_,_)=>{choose.IsEnabled=false;newCwd.IsEnabled=true;};existing.Checked+=(_,_)=>{choose.IsEnabled=true;newCwd.IsEnabled=false;};
         from.SelectionChanged+=(_,_)=>{Origin=null;originLabel.Text=ui.T("Choose the source conversation for exact replies.");};
-        to.SelectionChanged+=(_,_)=>{Target=null;targetLabel.Text=ui.T("New conversation");create.IsChecked=true;};
+        to.SelectionChanged+=(_,_)=>{Target=null;targetLabel.Text=ui.T("New conversation");create.IsChecked=true;ShowBridge();};
         var prompt=ui.Field(ui.Body,"Work request","CliTaskPrompt",multiline:true);prompt.Height=160;
         var options=new CollaborationOptionsPanel(ui,ui.Body,"CliTask",service.Settings().TaskTimeoutMinutes,true);
         var permission=new CheckBox{Name="CliTaskEnableDirections",Content=ui.T("Allow enabling the connection directions required by this task"),Margin=new(0,4,0,10)};
         ui.Body.Children.Add(permission);
         ui.Body.Children.Add(ui.Note("Chosen conversations stay bound to this task. Without a source conversation, turns for the sender are copied manually."));
-        ui.Button(ui.Actions,"Create and send through CLI","SendCliTask",()=>
+        ui.Button(ui.Actions,"Create task","SendCliTask",()=>
         {
             if(from.SelectedValue is not string sender||to.SelectedValue is not string recipient)throw new RelayException("agent_required",ui.T("Select an Agent."));
             if(sender==recipient)throw new RelayException("manual_same_agent",ui.T("Sender and recipient must be different."));
             if(existing.IsChecked==true&&Target is null)throw new RelayException("session_selection_required",ui.T("Select a conversation first."));
             if(string.IsNullOrWhiteSpace(prompt.Text))throw new RelayException("cli_work_required",ui.T("Enter the work request."));
-            if(service.CliExtension(recipient) is null)throw new RelayException("cli_recipe_missing",ui.T("The recipient has no CLI calling method. Configure it in Agents first."));
             var choice=options.Build(sender,recipient);
             Result=new(sender,recipient,prompt.Text,Origin?.SessionId,existing.IsChecked==true?Target!.SessionId:null,
                 permission.IsChecked==true,Origin?.Cwd,existing.IsChecked==true?Target?.Cwd:string.IsNullOrWhiteSpace(newCwd.Text)?null:newCwd.Text.Trim(),

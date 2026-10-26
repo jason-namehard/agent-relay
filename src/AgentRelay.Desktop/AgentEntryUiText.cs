@@ -7,7 +7,6 @@ internal static class AgentEntryUiText
         void Add(string en, string cn, string tw, string ja, string ko, string es) => entries.Add(en, [en, cn, tw, ja, ko, es]);
         Add("New Agent", "新建 Agent", "新增 Agent", "Agent を作成", "Agent 만들기", "Nuevo agente");
         Add("Delete Agent", "删除 Agent", "刪除 Agent", "Agent を削除", "Agent 삭제", "Eliminar agente");
-        Add("Agent CLI test", "Agent CLI 测试", "Agent CLI 測試", "Agent CLI テスト", "Agent CLI 테스트", "Probar CLI del agente");
         Add("One-click setup", "一键配置", "一鍵設定", "ワンクリック設定", "원클릭 설정", "Configuración con un clic");
         Add("Use one name per Agent. Configure it directly with a prompt, or enter the fields yourself.",
             "每个 Agent 只需一个名称。用一键配置让 Agent 直接登记，也可按字段手动填写。", "每個 Agent 只需一個名稱。可一鍵設定直接登記，或按欄位手動填寫。",

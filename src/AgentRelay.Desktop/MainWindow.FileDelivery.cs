@@ -26,7 +26,7 @@ public partial class MainWindow
     private void AddFileDeliveryAction(Panel actions, TaskRecord task, HandoffProgress progress)
     {
         if (!demo && service.CanSendFileHandoff(task) && !sendingTasks.Contains(task.TaskId))
-            Add(actions,"Send through CLI",()=>{StartCliSend(task.TaskId);return Task.CompletedTask;});
+            Add(actions,"Send via bridge",()=>{StartCliSend(task.TaskId);return Task.CompletedTask;});
         if (progress.Delivery == "cli_unconfirmed")
             Add(actions,"Not received · Allow resending",()=>
             {
