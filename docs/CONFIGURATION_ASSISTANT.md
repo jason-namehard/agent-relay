@@ -81,9 +81,9 @@ GUI 通过文件事件读取回执，启动和手动刷新也会补读。已接�
 
 ## 高级 CLI 接口扩充
 
-文件交接在接收方 CLI 新会话探针通过且用户确认可见、发送方向明确启用时自动投递。首次创建和需要对方继续的回合都按当前方向判断；条件不足时保留手动复制。每轮只提交一次，投递状态未知时先检查真实会话，不自动重发。当前文件投递创建新会话，同会话探针独立验证续接能力。
+文件交接在接收方已登记 CLI 方案、发送方向明确启用时投递，短探针和界面可见性是可选诊断。默认新建目标会话，也可明确选择已有会话；新建返回的真实 ID 或用户选择都存入同一 SQLite。后续往返按当前 attempt 的绑定精确续接，发送前核实宿主记录、检查返回 ID 一致。来源未识别、会话失效或能力不足时保留手动复制，不猜最近会话。每轮只提交一次，投递不确定时不自动重发。细节见 [Session Registry 与发现](SESSIONS.md)。
 
-方案可由一键配置直接导入，或在高级设置中手动导入。包含 `version/name/host/output_format/create/resume/dependencies/supported_versions/source/license/limitations`；命令含 `executable`、`arguments` 数组、可选 `input`、`working_directory` 和非敏感 `environment`。`{prompt}` 为必需模板变量，续接还需 `{session_id}`。
+方案可由一键配置直接导入，也可在编辑 Agent 中分区填写；CLI 仍提供 JSON 导入接口。包含 `version/name/host/output_format/create/resume/dependencies/supported_versions/source/license/limitations`；命令含 `executable`、`arguments` 数组、可选 `input`、`working_directory` 和非敏感 `environment`。`{prompt}` 为必需模板变量，续接还需准确的 `{session_id}`，禁止 `latest` 之类隐式目标。
 
 ```powershell
 dotnet .\relay.dll --home <中转站目录> cli-recipe import --agent <节点ID> --manifest <调用方案JSON>
@@ -100,7 +100,9 @@ dotnet .\relay.dll --home <中转站目录> cli-recipe import --agent <节点ID>
 | `text` | 仅最终回复的普通文本；没有真实会话 ID 时无法验证同会话续接 |
 | `relay-json` | 已有桥接的 `{"session_id":"真实标识","reply":"真实回复","accepted":true}` |
 
-选择已查证的输出格式，参数必须与安装版本的帮助及实际输出匹配。内置格式解析不等于所有版本或所有宿主都已接通。探针核对 Agent 的真实短标识回复，机器通过后还需在宿主中确认会话可见；续接需返回原会话 ID 并单独确认。真实调用可能收费，不能保证缓存或所有未来会话可见。
+选择已查证的输出格式，参数必须与安装版本的帮助及实际输出匹配。内置格式解析不等于所有版本或所有宿主都已接通。可选探针核对真实短标识回复，可单独记录界面可见性；这不代替已有会话的准确绑定与续接前验证。真实调用可能收费，不能保证缓存或所有未来会话可见。
+
+模型、工作目录和 profile 属于宿主执行配置。若新建提示未选择模型，应在宿主配置，或选择已配置的已有会话；续接默认继承原设置。当前没有跨宿主统一的模型/思考强度覆盖表单。会话 ID 由适配器输出或宿主元数据取得，不让模型自行查找；手动粘贴短 JSON 本身不能提供当前来源会话。
 
 连接图节点绿点表示已收录调用方案，悬停区分待测与已验证；探针失败为红点，无方案为灰点。线路箭头及开关表示方向状态。节点绿点本身不代表已获自动投递权限。
 

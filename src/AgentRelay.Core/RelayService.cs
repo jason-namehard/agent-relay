@@ -93,6 +93,8 @@ public sealed partial class RelayService
             .Any(t=>(t.RequesterId==id || t.RecipientId==id) && !Terminal(t.State)))
             throw new RelayException("agent_busy", "该 Agent 仍有进行中的交接，请先完成或取消交接。");
         s.Execute("DELETE FROM cli_extensions WHERE agent_id=$id", ("$id",id));
+        s.Execute("DELETE FROM session_discovery_sources WHERE agent_id=$id", ("$id",id));
+        s.Execute("DELETE FROM session_discovery_cache WHERE agent_id=$id", ("$id",id));
         s.Execute("DELETE FROM executors WHERE agent_id=$id", ("$id",id));
         s.Execute("DELETE FROM resumers WHERE agent_id=$id", ("$id",id));
         s.Execute("DELETE FROM permissions WHERE sender=$id OR recipient=$id", ("$id",id));

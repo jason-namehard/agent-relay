@@ -103,6 +103,21 @@ public static class RelayCli
             async (s, v) => await s.VerifyResumerAsync(v.Get("id"), v.Get("kind"), v.CancellationToken));
         Sync(agent, "resumers", "显示已验证的会话继续适配器", [], (s, _) => s.Resumers());
 
+        var session = Group("session", "只查询指定 Agent 的会话，并管理任务的精确绑定");
+        Sync(session,"capabilities","显示调用方案声明的能力；不代表真实调用已验证",["agent!"],(s,v)=>s.SessionCapabilities(v.Get("agent")));
+        Add(session, "query", "定向查询会话；不调用模型、不自动选择", ["agent!", "refresh?"],
+            async (s,v) => await s.QuerySessionsAsync(v.Get("agent"),v.Flag("refresh"),v.CancellationToken));
+        Sync(session, "source", "配置指定 Agent 的会话发现来源", ["agent!", "provider!", "directory!"],
+            (s,v) => s.ConfigureSessionDiscovery(v.Get("agent"),v.Get("provider"),v.Get("directory")));
+        Sync(session, "bindings", "查看任务与会话的持久绑定", ["task!"], (s,v) => s.SessionBindings(v.Get("task")));
+        Sync(session, "bind", "用户明确输入已有会话 ID；执行前仍验证宿主记录", ["task!", "agent!", "session!", "cwd", "profile", "session-path"],
+            (s,v) => s.BindManualTaskSession(v.Get("task"),v.Get("agent"),v.Get("session"),v.Optional("cwd"),v.Optional("profile"),v.Optional("session-path")));
+        Sync(session, "new", "明确为任务选择新会话；不立即调用模型", ["task!", "agent!"],
+            (s,v) => { s.UseNewTaskSession(v.Get("task"),v.Get("agent")); return new {status="new_session_selected"}; });
+        var handoff = Group("handoff", "创建文件交接；来源身份来自调用适配器上下文");
+        Sync(handoff, "create", "读取短清单，不要求 Agent 查找会话 ID", ["manifest!"],
+            (s,v) => s.CreateFileHandoffFromContext(ManualTransfers.Parse(File.ReadAllText(v.Get("manifest")),s.Agents())));
+
         var cliRecipe = Group("cli-recipe", "保存已有 CLI 调用方案，不执行或启用");
         Sync(cliRecipe, "import", "从 JSON 保存指定 Agent 的调用方案", ["agent!", "manifest!"],
             (s, v) => s.ImportCliRecipe(v.Get("agent"), File.ReadAllText(v.Get("manifest"))));

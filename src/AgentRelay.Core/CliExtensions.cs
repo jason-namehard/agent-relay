@@ -185,8 +185,7 @@ public sealed partial class RelayService
             var receipt = CliRecipes.Receipt(process, CliRecipes.OutputFormatFor(record.Recipe));
             passed = receipt is { } r && r.Reply.Trim() == marker && (operation == "create" || r.SessionId == sessionId);
             if (receipt is { } received) sessionId = received.SessionId;
-            error = passed ? null : process.TimedOut ? "探针超时或已取消，可能已经创建会话，请到目标软件检查。" :
-                process.ExitCode != 0 ? "CLI 返回错误：" + process.Error : "未能从配置的输出格式读取准确的探针回复；请检查 output_format、宿主诊断和标识。续接必须返回同一会话 ID。";
+            error = passed ? null : CliFailureDiagnostics.Explain(process);
         }
         catch (Win32Exception ex)
         {
@@ -249,6 +248,6 @@ public sealed class CliRecipeDeliveryAdapter(CliExtensionRecord extension) : IDe
         var process = await CliRecipes.InvokeAsync(extension.Recipe.Create, prompt, null, home, timeout, cancellationToken);
         return CliRecipes.Receipt(process, CliRecipes.OutputFormatFor(extension.Recipe)) is not null
             ? new("accepted", process.Output, null)
-            : new("unknown", null, process.TimedOut ? "CLI 交接超时，可能已经提交，请检查目标会话。" : "CLI 未返回可识别的提交回执：" + process.Error);
+            : new("unknown", null, CliFailureDiagnostics.Explain(process));
     }
 }

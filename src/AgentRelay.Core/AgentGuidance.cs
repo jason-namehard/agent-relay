@@ -93,8 +93,8 @@ public sealed partial class RelayService
             当前节点目录（只用于避免重复和覆盖，不是本次写入目标）：
             {{RelayJson.Write(registered)}}
             {{(relayCommand is null ? "" : "执行登记前先运行 " + relayCommand + " --home \"" + Home + "\" agent list，读取最新目录。")}}
-            请调查你自己的本机宿主与会话信息，区分会话记录、配置文件、CLI 程序和续接接口，不要把日志路径当作调用方案。
-            仅读取帮助、公开文档和不含密钥的设置。先用已有 CLI 的 --help/version 查证是否支持创建可见会话、按 session ID 续接，以及如何传入消息；不要启动模型、安装程序或修改宿主设置。
+            请仅调查本机宿主和命令行接口，区分配置文件、CLI 程序和续接接口，不要把日志路径当作调用方案。不要查找、推测自己的或目标的会话 ID；会话发现与明确绑定由 Relay 管理。
+            仅读取帮助、公开文档和不含密钥的设置。用已有 CLI 的 --help/version 查证是否支持创建持久会话、按明确 ID 续接及传入消息。不要要求模型让隐藏会话显示到桌面，不用 latest/continue 猜测会话；不要启动模型、安装程序或修改宿主设置。
             {{setup}}
             直写接口成功后，只向用户报告已登记的节点名称和返回的 agent_id；无需再粘贴相同 JSON 或在“新增”窗口重复保存，以免重复登记。
             {"name":"用户可识别的名称","host":"可识别的内部宿主类型，未知填manual","config_path":null,"cli_path":null,"host_version":null,"instruction_paths":[]}

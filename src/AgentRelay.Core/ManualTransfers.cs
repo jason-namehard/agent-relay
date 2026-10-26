@@ -76,8 +76,9 @@ public sealed partial class RelayService
 
     public string ManualReceiptPath(TaskRecord task) => Path.Combine(workspace.AttemptDirectory(task.TaskId, task.AttemptId), ".relay", "receipt.json");
 
-    public TaskView CreateFileHandoff(ManualTransferDraft draft)
+    public TaskView CreateFileHandoff(ManualTransferDraft draft, OriginSession? origin = null)
     {
+        if (origin is not null) RequireOriginContext(origin);
         var normalized = ManualTransfers.Parse(RelayJson.Write(draft), Agents());
         return store.Write(s =>
         {
@@ -105,6 +106,7 @@ public sealed partial class RelayService
             var input = new DispatchRequest(task.RequesterId, task.RecipientId, normalized.Message, "manual", "manual-file", task.TaskId);
             s.Execute("INSERT INTO tasks VALUES($id,$from,$key,$input,$json)", ("$id", task.TaskId), ("$from", task.RequesterId),
                 ("$key", task.TaskId), ("$input", RelayJson.Write(input)), ("$json", RelayJson.Write(task)));
+            if (origin is not null) RegisterOriginSession(s, task, origin);
             s.Event(task, "task.created", task.RequesterId, now);
             s.Notify(task, "waiting", "请复制交接提示词给接收方，等待读取并回报。", now);
             return ManualView(task);

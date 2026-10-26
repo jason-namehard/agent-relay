@@ -8,7 +8,7 @@ public sealed partial class RelayService
         store.Write(s =>
         {
             _ = s.Task(taskId);
-            foreach (var table in new[] { "callbacks", "artifacts", "events", "outbox", "notifications", "executions", "continuations" })
+            foreach (var table in new[] { "callbacks", "artifacts", "events", "outbox", "notifications", "executions", "continuations", "task_session_bindings" })
                 s.Execute($"DELETE FROM {table} WHERE task_id=$id", ("$id", taskId));
             s.Execute("DELETE FROM tasks WHERE id=$id", ("$id", taskId));
             return true;

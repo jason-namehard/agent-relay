@@ -83,6 +83,7 @@ public partial class MainWindow
         Heading(pane,AgentName(task.RequesterId)+" → "+AgentName(task.RecipientId),FileState(task));
         if(task.ResumeStatus=="operator_completed")pane.Children.Add(Note(T("Marked complete by the user. Agent completion was not verified.")));
         if(task.ErrorMessage is not null)pane.Children.Add(Note(task.ErrorMessage));
+        AddSessionBindings(pane,task);
         var live=task.State is not(TaskState.Succeeded or TaskState.Failed or TaskState.Cancelled or TaskState.TimedOut);
         var actions=Row(pane);
         if(live)

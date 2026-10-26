@@ -46,6 +46,7 @@ public sealed partial class RelayService
             value.RequestPath = artifact.Path;
             s.Execute("INSERT INTO tasks VALUES($id,$from,$key,$input,$json)", ("$id", taskId),
                 ("$from", request.From), ("$key", request.IdempotencyKey), ("$input", input), ("$json", RelayJson.Write(value)));
+            if (request.OriginSession is not null) RegisterOriginSession(s, value, request.OriginSession);
             AddArtifact(s, artifact);
             Queue(s, value);
             s.Event(value, "task.created", request.From, now);

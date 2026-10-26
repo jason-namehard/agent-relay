@@ -91,6 +91,16 @@ public partial class MainWindow
             var ruleActions = Row(details);
             Add(ruleActions, "Install handoff rule", () => { InstallRules(Selected().AgentId); return Task.CompletedTask; });
             Add(ruleActions, "Remove handoff rule", () => { service.RemoveGuidance(Selected().AgentId); return Task.CompletedTask; });
+            details.Children.Add(Note("Session discovery reads this Agent's local conversation store. It never selects the latest conversation."));
+            var current=service.DiscoverySource(row.Source.AgentId);
+            var provider=new ComboBox{Name="SessionDiscoveryProvider",ItemsSource=new[]{"zcode","dsh","hermes","workbuddy"},SelectedItem=current?.Provider,MinHeight=38};
+            details.Children.Add(provider);
+            var storage=EntryDialogLayout.Input("SessionStorageRoot",current?.StorageRoot??"");details.Children.Add(storage);
+            Add(Row(details),"Save session discovery",()=>
+            {
+                if(provider.SelectedItem is not string selected)throw new RelayException("session_provider_required",T("Select a session provider."));
+                service.ConfigureSessionDiscovery(row.Source.AgentId,selected,storage.Text.Trim());return Task.CompletedTask;
+            });
         }
         table.SelectionChanged += (_, _) => ShowDetails();
         table.SelectedItem = rows.SingleOrDefault(row => row.Source.AgentId == agentId) ?? rows.FirstOrDefault();
@@ -106,7 +116,7 @@ public partial class MainWindow
             { CanCreate: true } => "New session verified",
             { CreateProbe: { MachinePassed: true } } => "CLI probe passed · Confirm visibility",
             { CreateProbe: { MachinePassed: false } } => "CLI probe failed · Retry available",
-            not null => "CLI configured · Ready to test",
+            not null => "CLI configured · Choose a task conversation",
             _ when agent.CliPath is not null => "CLI program recorded · Add calling arguments",
             _ => "CLI not configured"
         });

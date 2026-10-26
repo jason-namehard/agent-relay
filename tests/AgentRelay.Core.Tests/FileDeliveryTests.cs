@@ -47,15 +47,16 @@ public sealed class FileDeliveryTests
     private int Calls(string agent) => File.Exists(CountFile(agent)) ? File.ReadAllLines(CountFile(agent)).Length : 0;
 
     [TestMethod]
-    public async Task ImportedButUnverifiedRecipeCannotSend()
+    public async Task RegisteredRecipeCanSendWithoutAVisibilityProbeWhenDirectionIsEnabled()
     {
         service.ImportCliRecipe("agent-b", RelayJson.Write(Recipe("agent-b")));
         service.SetPermission("agent-a", "agent-b", "allow");
         var task = Create();
-        Assert.IsFalse(service.CanSendFileHandoff(task));
-        await Assert.ThrowsExactlyAsync<RelayException>(() => service.SendFileHandoffAsync(task.TaskId, "Read the file."));
-        Assert.AreEqual(0, Calls("agent-b"));
-        Assert.IsNull(service.Status(task.TaskId).Task.CliFileTurn);
+        Assert.IsTrue(service.CanSendFileHandoff(task));
+        var sent = await service.SendFileHandoffAsync(task.TaskId, "Read the file.");
+        Assert.AreEqual(1, Calls("agent-b"));
+        Assert.AreEqual("created", service.TaskSession(task.TaskId,"agent-b")!.Binding);
+        Assert.AreEqual("submitted",sent.Task.CliFileStatus);
     }
 
     [TestMethod]
@@ -117,6 +118,8 @@ public sealed class FileDeliveryTests
         await Verify("agent-a");
         Assert.IsFalse(service.CanSendFileHandoff(service.Status(task.TaskId).Task));
         service.SetPermission("agent-b", "agent-a", "allow");
+        Assert.IsFalse(service.CanSendFileHandoff(service.Status(task.TaskId).Task));
+        service.UseNewTaskSession(task.TaskId,"agent-a");
         Assert.IsTrue(service.CanSendFileHandoff(service.Status(task.TaskId).Task));
         var sent = await service.SendFileHandoffAsync(task.TaskId, "Read B's reply.");
         Assert.AreEqual(1, sent.Task.CliFileTurn);

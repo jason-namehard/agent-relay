@@ -53,6 +53,8 @@ internal static class Program
         void Navigate(string page){navigation.SelectedItem=navigation.Items.Cast<ListBoxItem>().Single(i=>(string)i.Tag==page);window.UpdateLayout();}
         await Wait(()=>((TextBlock)window.FindName("StatusText")).Text!="Working…");
         await CheckTray(window);
+        await CheckCloseBehavior(window,root);
+        await CheckSessionDialogs(window,root);
         Check(navigation.Items.Cast<ListBoxItem>().Select(i=>(string)i.Tag).SequenceEqual(new[]{"Home","Agents","Connections","Settings"}),"Exactly four main pages");
         Check(Find<DataGrid>(window,"TasksTable").Items.Count==2,"Board combines all handoffs");
         SelectTask(window,task.TaskId);
@@ -291,6 +293,97 @@ internal static class Program
         Check(window.IsVisible&&window.WindowState==WindowState.Normal,"Tray Open restores the hidden window");
     }
 
+    private static async Task CheckCloseBehavior(MainWindow owner,string root)
+    {
+        const System.Reflection.BindingFlags flags=System.Reflection.BindingFlags.Instance|System.Reflection.BindingFlags.NonPublic;
+        void Restore(MainWindow window)=>typeof(MainWindow).GetMethod("OpenFromTray",flags)!.Invoke(window,null);
+        RelayService Station(string name, bool? closeToTray=null)
+        {
+            var station=new RelayService(Path.Combine(root,name));station.Initialize();
+            Appearance.Save(station.Home,new DesktopPreferences("en",CloseToTray:closeToTray));return station;
+        }
+        var station=Station("close-preferences");
+        var window=new MainWindow(station){Owner=owner};window.Show();await Task.Delay(100);
+        Check(Appearance.Load(station.Home).CloseToTray is null,"Existing preferences without a close choice ask only on the first user close");
+        var choice=HandleNextDialog<CloseBehaviorDialog>(window,dialog=>{Press(dialog,"CloseToTrayChoice");return Task.CompletedTask;});
+        window.RequestClose();await choice;
+        Check(!window.IsVisible&&Appearance.Load(station.Home).CloseToTray==true,"First close can save minimize-to-tray and hide the window");
+        Restore(window);window.RequestClose();
+        Check(!window.IsVisible&&!Application.Current.Windows.OfType<CloseBehaviorDialog>().Any(),"Later closes reuse the saved tray choice without asking again");
+        Restore(window);
+        var navigation=(ListBox)window.FindName("Navigation");
+        navigation.SelectedItem=navigation.Items.Cast<ListBoxItem>().Single(i=>(string)i.Tag=="Settings");
+        await Wait(()=>FindAll<CheckBox>(window).Any(b=>b.Name=="CloseToTraySetting"));
+        var setting=Find<CheckBox>(window,"CloseToTraySetting");
+        Check(setting.IsChecked==true,"Settings reflects the first close choice");
+        setting.IsChecked=false;await Wait(()=>Appearance.Load(station.Home).CloseToTray==false);
+        var closed=false;window.Closed+=(_,_)=>closed=true;window.RequestClose();
+        Check(closed&&!Application.Current.Windows.OfType<CloseBehaviorDialog>().Any(),"Disabling close-to-tray saves direct exit and never asks again");
+        var exitStation=Station("close-first-exit");
+        var exitWindow=new MainWindow(exitStation){Owner=owner};exitWindow.Show();await Task.Delay(100);
+        var exited=false;exitWindow.Closed+=(_,_)=>exited=true;
+        choice=HandleNextDialog<CloseBehaviorDialog>(exitWindow,dialog=>{Press(dialog,"ExitApplicationChoice");return Task.CompletedTask;});
+        exitWindow.RequestClose();await choice;
+        Check(exited&&Appearance.Load(exitStation.Home).CloseToTray==false,"Choosing direct exit on the first close respects and remembers that choice");
+        var trayStation=Station("close-force-exit",true);
+        var trayWindow=new MainWindow(trayStation){Owner=owner};trayWindow.Show();await Task.Delay(100);
+        var forced=false;trayWindow.Closed+=(_,_)=>forced=true;trayWindow.RequestExit();
+        Check(forced&&Appearance.Load(trayStation.Home).CloseToTray==true,"Tray Exit bypasses close-to-tray while preserving the saved preference");
+    }
+
+    private static async Task CheckSessionDialogs(MainWindow owner,string root)
+    {
+        var station=new RelayService(Path.Combine(root,"session-dialogs"));station.Initialize();
+        station.RegisterManual("source","fixture","Source");station.RegisterManual("target","fixture","Target");
+        var records=new SessionRecord[]{new("older","Older conversation",root,null,null,"unknown",DateTimeOffset.UtcNow.AddDays(-1)),
+            new("newer","Newer conversation",root,null,null,"unknown",DateTimeOffset.UtcNow)};
+        var cached=new SessionDiscoveryResult("target","fixture",true,records,DateTimeOffset.UtcNow,true);
+        new RelayStore(station.Home).Write(s=>s.Execute("INSERT INTO session_discovery_cache VALUES($id,$json)",("$id","target"),("$json",RelayJson.Write(cached))));
+        var picker=new SessionPickerDialog(owner,station,"target","en",root);
+        var cachedTable=Find<DataGrid>(picker,"SessionsTable");
+        Check(cachedTable.Items.Count==2&&cachedTable.SelectedItem is null,"Session Picker shows cached choices immediately without selecting a recent session");
+        await Show(picker,dialog=>
+        {
+            Check(Find<DataGrid>(dialog,"SessionsTable").SelectedItem is null,"Refresh never automatically selects an existing conversation");
+            Press(dialog,"UseSelectedSession");
+            Check(dialog.SelectedSession is null,"Using an existing conversation requires explicit selection");
+            Expand(dialog);Find<TextBox>(dialog,"ManualSessionId").Text="exact-manual-session";
+            Find<TextBox>(dialog,"ManualSessionCwd").Text=root;Press(dialog,"UseManualSession");
+            return Task.CompletedTask;
+        });
+        Check(picker.SelectedSession?.SessionId=="exact-manual-session"&&picker.Binding=="manual","Unsupported discovery allows an exact manually entered Session ID without inventing identity");
+        var source=Path.Combine(root,"session-dialog-input.md");File.WriteAllText(source,"Choose a destination conversation explicitly.");
+        var routing=new HandoffSessionDialog(owner,station,new("source","target",source),"en");
+        await Show(routing,async dialog=>
+        {
+            Check(dialog.Origin is null&&FindAll<TextBlock>(dialog).Any(t=>t.Text.Contains("not identified",StringComparison.Ordinal)),"Pasted handoff honestly reports that its source conversation is unidentified");
+            Check(Find<RadioButton>(dialog,"TargetNewSession").IsChecked==true&&!Find<Button>(dialog,"ChooseTargetSession").IsEnabled,"New target conversation is the default without silently choosing an existing conversation");
+            Find<RadioButton>(dialog,"TargetExistingSession").IsChecked=true;Press(dialog,"ConfirmSessionHandoff");
+            Check(dialog.Target is null&&station.Tasks().Count==0,"Existing-session handoff cannot proceed before a conversation is explicitly selected");
+            var selected=HandleNextDialog<SessionPickerDialog>(dialog,child=>
+            {
+                Expand(child);Find<TextBox>(child,"ManualSessionId").Text="target-bound-id";
+                Find<TextBox>(child,"ManualSessionCwd").Text=root;Press(child,"UseManualSession");return Task.CompletedTask;
+            });
+            Press(dialog,"ChooseTargetSession");await selected;
+            Check(dialog.Target?.SessionId=="target-bound-id"&&dialog.TargetBinding=="manual","Routing keeps the exact manually selected target conversation");
+            Press(dialog,"CancelSessionHandoff");
+        });
+        Check(station.Tasks().Count==0,"Cancelling conversation routing creates no task or CLI call");
+    }
+
+    private static Task HandleNextDialog<T>(Window owner,Func<T,Task> exercise) where T:Window
+    {
+        var done=new TaskCompletionSource();
+        _=owner.Dispatcher.BeginInvoke(DispatcherPriority.Background,new Action(async()=>
+        {
+            var dialog=Application.Current.Windows.OfType<T>().Single(w=>w.Owner==owner);
+            try{await exercise(dialog);done.SetResult();}
+            catch(Exception error){dialog.Close();done.SetException(error);}
+        }));
+        return done.Task;
+    }
+
     private static async Task CheckTaskOperatorActions(MainWindow window,RelayService service,string from,string root)
     {
         var source=Path.Combine(root,"operator-action.md");File.WriteAllText(source,"Work that the user may end manually.");
@@ -349,7 +442,7 @@ internal static class Program
         var graph=new ConnectionGraph(agents,edges,_=>{},"en",owner,extensions:records);
         var registered=ByAutomation<System.Windows.Shapes.Ellipse>(graph,"CliIndicator:status-0");
         var failed=ByAutomation<System.Windows.Shapes.Ellipse>(graph,"CliIndicator:status-1");
-        Check(registered.Fill==owner.FindResource("AllowedBrush")&&registered.ToolTip.ToString()!.Contains("still need confirmation"),"Registered CLI method has a green indicator without claiming a successful probe");
+        Check(registered.Fill==owner.FindResource("AllowedBrush")&&registered.ToolTip.ToString()!.Contains("Probes are optional"),"Registered CLI method has a green indicator without claiming a successful probe");
         Check(failed.Fill==owner.FindResource("DeniedBrush")&&failed.ToolTip.ToString()!.Contains("probe failed"),"Failed CLI probe has a red indicator and a test-result explanation");
     }
 

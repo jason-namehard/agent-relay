@@ -79,8 +79,8 @@ public sealed class CliProbeDialog : Window
                 resume.IsEnabled=!demo;
                 if(extension.ResumeProbe is {} resumed)ProbeResult(resumed);
             }
-            layout.Body.Children.Add(Note(extension.CanResume?"New session and resume verified":extension.CanCreate?"New session verified":"CLI is not enabled until the receipt passes and you confirm visibility."));
-            layout.Body.Children.Add(Note("New-session verification enables delivery to a new visible session. Resume verification tests the same probe session; it does not bind future work to that probe session."));
+            layout.Body.Children.Add(Note(extension.CanResume?"New session and resume verified":extension.CanCreate?"New session verified":"Probes are optional diagnostics. Enable delivery directions in the connection map; existing conversations require an exact binding and a fresh existence check."));
+            layout.Body.Children.Add(Note("A probe does not choose the conversation for a task. Choose an existing conversation in the handoff; later turns reuse that exact ID."));
         }
         var close=new Button{Name="CloseCliProbe",Content=T("Close"),IsCancel=true};
         close.Click+=(_,_)=>DialogResult=true;

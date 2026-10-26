@@ -16,12 +16,12 @@ public sealed partial class RelayService
         var permissions = ConnectionPermissions().ToDictionary(p => (p.From, p.To));
         return (from sender in agents from recipient in agents where sender.AgentId != recipient.AgentId
             let permission = permissions.TryGetValue((sender.AgentId, recipient.AgentId), out var p) ? p.Decision : "default_deny"
-            let cli = CliExtension(recipient.AgentId)?.CanCreate == true
+            let cli = CliExtension(recipient.AgentId) is not null
             let available = cli
             select new ConnectionView(sender.AgentId, recipient.AgentId, permission,
-                available ? "verified CLI" : "manual",
+                available ? "registered CLI" : "manual",
                 !available ? "Unavailable" : permission == "allow" ? "Allowed" : "Denied",
-                available ? "目标 Agent 的可见新会话已验证；该方向需要单独启用。" : "缺少已验证的自动通知方案；可在设置中扩充 CLI 接口，或手动复制提示词。"))
+                available ? "目标 Agent 已登记 CLI 调用方案；启用后会发起实际调用。已有会话须明确绑定，续接前验证存在。" : "缺少 CLI 调用方案；可登记调用方式，或手动复制提示词。"))
             .ToList();
     }
 

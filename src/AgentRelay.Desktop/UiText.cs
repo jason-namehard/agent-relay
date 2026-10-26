@@ -378,6 +378,7 @@ public static class UiText
         ManualUiText.AddTo(entries);
         TaskControlUiText.AddTo(entries);
         WorkflowUiText.AddTo(entries);
+        SessionUiText.AddTo(entries);
         AgentEntryUiText.AddTo(entries);
         return entries;
     }

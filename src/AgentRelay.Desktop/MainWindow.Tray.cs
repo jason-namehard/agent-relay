@@ -77,7 +77,7 @@ public partial class MainWindow
                 _ = SetForegroundWindow(handle);
                 var command = TrackPopupMenu(menu, 0x100 | 0x2, point.X, point.Y, 0, handle, 0);
                 if (command == 1) OpenFromTray();
-                if (command == 2) Close();
+                if (command == 2) RequestExit();
             }
             finally { _ = DestroyMenu(menu); }
         }

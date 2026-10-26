@@ -73,6 +73,7 @@ public partial class MainWindow : Window
 
     private nint ReceiveLedgerMessage(nint hwnd, int message, nint wParam, nint lParam, ref bool handled)
     {
+        if (ReceiveCloseMessage(message, wParam)) { handled = true; return 0; }
         if (ReceiveTrayMessage(message, lParam)) { handled = true; return 0; }
         // Local actions already render their committed changes and keep their own success message.
         if (message == ledgerMessage && wParam != Environment.ProcessId) QueueRefresh();
@@ -224,9 +225,24 @@ public partial class MainWindow : Window
             StatusText.Text=T("Waiting for handoff details…");
             if(dialog.ShowDialog()!=true){reviewCancelled=true;return;}
             var draft=dialog.Result!;
+            var existing=service.Tasks().FirstOrDefault(v=>v.Task.IsFileHandoff&&v.Task.RequesterId==draft.From&&v.Task.RecipientId==draft.To&&v.Task.ManualSourceFile==draft.File&&
+                v.Task.State is not(TaskState.Succeeded or TaskState.Failed or TaskState.Cancelled or TaskState.TimedOut));
+            if(existing is not null){taskId=existing.Task.TaskId;return;}
+            HandoffSessionDialog? routing=null;
+            if(service.CliExtension(draft.From) is not null||service.CliExtension(draft.To) is not null)
+            {
+                routing=new HandoffSessionDialog(this,service,draft,preferences.Language);
+                if(routing.ShowDialog()!=true){reviewCancelled=true;return;}
+            }
             var result=await Task.Run(()=>service.CreateFileHandoff(draft));
             taskId=result.Task.TaskId;
-            await AutoDeliverFile(result.Task);
+            if(routing is not null)
+            {
+                if(routing.Origin is not null)service.BindTaskSession(taskId,draft.From,routing.Origin,routing.OriginBinding);
+                if(routing.TargetIsNew)service.UseNewTaskSession(taskId,draft.To);
+                else service.BindTaskSession(taskId,draft.To,routing.Target!,routing.TargetBinding);
+            }
+            await AutoDeliverFile(service.Status(taskId).Task);
         });
         Add(actions,"Open relay folder",()=>{Process.Start(new ProcessStartInfo(service.Home){UseShellExecute=true});return Task.CompletedTask;},false);
         TaskPane(page,service.Tasks());return page;
@@ -326,6 +342,7 @@ public partial class MainWindow : Window
     private StackPanel SettingsPage()
     {
         var page=Page(); Heading(page,"Appearance","Choose language and palette");
+        AddCloseBehaviorSetting(page);
         if (demo)
         {
             page.Children.Add(Note("Demo mode blocks real CLI calls. Keep this workspace and switch to normal use to test your registered Agents."));

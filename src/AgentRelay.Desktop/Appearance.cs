@@ -11,7 +11,8 @@ namespace AgentRelay.Desktop;
 public sealed record DesktopPreferences(
     [property: JsonRequired] string Language = "zh-CN",
     [property: JsonRequired] string Palette = "mist",
-    string? Accent = null);
+    string? Accent = null,
+    bool? CloseToTray = null);
 
 public sealed record AppearanceOption(string Id, string Label);
 

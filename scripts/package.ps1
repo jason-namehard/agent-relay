@@ -34,7 +34,7 @@ $archive=[IO.Compression.ZipFile]::OpenRead($archivePath)
 try {
     $names=@($archive.Entries.FullName | ForEach-Object { $_.Replace('\','/') })
     $required=@('relay.dll','relay.runtimeconfig.json','mcp/relay-mcp.dll','mcp/relay-mcp.runtimeconfig.json',
-        'README.md','GETTING_STARTED.md','CONFIGURATION_ASSISTANT.md','LICENSE','THIRD_PARTY_NOTICES.md','DISTRIBUTION_TERMS.md',
+        'README.md','GETTING_STARTED.md','CONFIGURATION_ASSISTANT.md','SESSIONS.md','LICENSE','THIRD_PARTY_NOTICES.md','DISTRIBUTION_TERMS.md',
         'licenses/MCP-SDK-Apache-2.0.txt','licenses/Tomlyn-BSD-2-Clause.txt')
     if ($windows) { $required+=@('TryDemo.cmd','gui/AgentRelay.Desktop.exe','gui/coreclr.dll',
         'gui/PresentationFramework.dll','desktop/AgentRelay.Notify.exe') }
