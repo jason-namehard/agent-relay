@@ -9,10 +9,10 @@
 
 ## 快速开始 — Windows x64
 
-公开预览版：`0.1.0-preview.14`。在 Windows PowerShell 5.1 或 PowerShell 7 中下载并完整解压到新目录：
+公开预览版：`0.1.0-preview.15`。在 Windows PowerShell 5.1 或 PowerShell 7 中下载并完整解压到新目录：
 
 ```powershell
-$version = 'v0.1.0-preview.14'
+$version = 'v0.1.0-preview.15'
 $zip = "AgentRelay-$version-windows-x64.zip"
 $download = Join-Path $PWD $zip
 $ProgressPreference = 'SilentlyContinue'
@@ -22,7 +22,7 @@ Set-Location ".\AgentRelay-$version"
 .\gui\AgentRelay.Desktop.exe
 ```
 
-也可从 [Releases](https://github.com/jason-namehard/agent-relay/releases/tag/v0.1.0-preview.14) 下载。配置真实 Agent 请运行上述正式程序；`TryDemo.cmd` 是隔离演示，会禁止真实 CLI 调用。在设置中可保留当前演示数据并转为正式使用。GUI 与通知自带运行库，CLI/MCP 需要 [.NET 10 runtime](https://dotnet.microsoft.com/download/dotnet/10.0)。目前没有安装器和代码签名，Windows 可能给出安全提示。
+也可从 [Releases](https://github.com/jason-namehard/agent-relay/releases/tag/v0.1.0-preview.15) 下载。配置真实 Agent 请运行上述正式程序；`TryDemo.cmd` 是隔离演示，会禁止真实 CLI 调用。在设置中可保留当前演示数据并转为正式使用。GUI 与通知自带运行库，CLI/MCP 需要 [.NET 10 runtime](https://dotnet.microsoft.com/download/dotnet/10.0)。目前没有安装器和代码签名，Windows 可能给出安全提示。
 
 <details>
 <summary>核对上传的 GitHub 发布资产</summary>
@@ -133,7 +133,7 @@ pwsh ./scripts/package.ps1 -Flavor Windows
 
 ## 限制与验证边界
 
-- 真实宿主的创建会话、可见性和续接需在该宿主中测试；模拟桥接不代表真实接通，实际探针可能收费。
+- 一键配置只登记调用方式，不会同步宿主桌面端与独立 CLI 的认证。目前开发机上的 WorkBuddy 投递仍报认证失败。真实宿主的创建会话、可见性和续接需在该宿主中测试；模拟桥接不代表真实接通，实际探针可能收费。
 - 不完整或无效回执会提示处理，保存结果本身不会完成任务。旧消息任务保留原先 CLI/MCP 协议。
 - 删除任务需确认，会删除账本记录并保留文件供保留期清理。人工标记完成记录用户决定；这两项都不验证 Agent 的工作，也不终止已经运行的 Agent。
 - 迁移要求没有未完成任务，包括等待对方继续的回传。文件和账本复制后再切换；旧站作为备份不自动清理，迁移校验只继续有记录的待完成迁移。

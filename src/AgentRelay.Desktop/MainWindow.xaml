@@ -18,7 +18,7 @@
      <TextBlock x:Name="VersionLabel" Foreground="{DynamicResource NavTextBrush}" Opacity="0.8" FontSize="10"/>
      <TextBlock x:Name="BrandTagline" Text="Explicit handoffs.&#x0a;Durable results." Foreground="{DynamicResource NavTextBrush}" Opacity="0.7" FontSize="11" Margin="0,6,0,0"/>
     </StackPanel>
-    <ListBox x:Name="Navigation" Background="Transparent" BorderThickness="0" Foreground="{DynamicResource NavTextBrush}" ItemContainerStyle="{StaticResource NavigationItemStyle}" SelectionChanged="Navigate">
+    <ListBox x:Name="Navigation" Style="{StaticResource NavigationListStyle}" Background="Transparent" BorderThickness="0" Foreground="{DynamicResource NavTextBrush}" ItemContainerStyle="{StaticResource NavigationItemStyle}" SelectionChanged="Navigate">
      <ListBoxItem Tag="Home"/><ListBoxItem Tag="Agents"/><ListBoxItem Tag="Connections"/>
      <ListBoxItem Tag="Settings"/>
     </ListBox>

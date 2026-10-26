@@ -53,6 +53,7 @@ internal static class Program
         void Navigate(string page){navigation.SelectedItem=navigation.Items.Cast<ListBoxItem>().Single(i=>(string)i.Tag==page);window.UpdateLayout();}
         await Wait(()=>((TextBlock)window.FindName("StatusText")).Text!="Working…");
         await CheckTray(window);
+        await CheckNavigationAndSounds(window,root);
         await CheckCloseBehavior(window,root);
         await CheckSessionDialogs(window,root);
         await CheckCliTaskEntry(window,root);
@@ -137,7 +138,9 @@ internal static class Program
         Check(Directory.GetFiles(Path.GetDirectoryName(created.RequestPath)!).Length==1,"Binary handoff creates one visible managed file without wrapper snapshots");
         Check(!FindAll<Button>(window).Any(b=>Equals(b.Tag,"Import completed reply")||Equals(b.Tag,"Retry")),"New file handoff does not require manual result import or retry controls");
         await Click(window,"Copy prompt for 自选节点丙");
-        Check(Clipboard.GetText().Length<500&&Clipboard.GetText().Contains(created.TaskId)&&Clipboard.GetText().Contains("context.json"),"Receiver prompt is a short pointer to task context instead of a long protocol transcript");
+        var receiverPrompt=Clipboard.GetText();
+        var contextPath=Path.Combine(Path.GetDirectoryName(service.ManualReceiptPath(created))!,"context.json");
+        Check(receiverPrompt.Contains(contextPath)&&receiverPrompt.Length-contextPath.Length<180,"Receiver prompt is a short pointer to task context instead of a long protocol transcript: "+receiverPrompt);
         var context=RelayJson.Read<System.Text.Json.JsonElement>(File.ReadAllText(Path.Combine(Path.GetDirectoryName(service.ManualReceiptPath(created))!,"context.json")));
         Check(context.GetProperty("current_file").GetString()==created.RequestPath && context.GetProperty("receipt_template").GetProperty("sender").GetString()=="agent-c","Task context agrees with the installed rule and exact receipt identity");
         File.WriteAllText(service.ManualReceiptPath(created),RelayJson.Write(new ManualReceipt(created.TaskId,created.AttemptId,"agent-c",0,"working",false)));
@@ -280,6 +283,27 @@ internal static class Program
         await Click(empty,"New handoff");
         Check(((Border)empty.FindName("ErrorBanner")).Visibility==Visibility.Visible&&emptyService.Tasks().Count==0,"New handoff explains missing Agents without creating work");
         empty.Close();
+    }
+
+    private static async Task CheckNavigationAndSounds(MainWindow window,string root)
+    {
+        var navigation=(ListBox)window.FindName("Navigation");
+        navigation.IsEnabled=false;navigation.ApplyTemplate();window.UpdateLayout();
+        var frame=(Border)navigation.Template.FindName("NavigationFrame",navigation);
+        Check(frame.Background is SolidColorBrush brush&&brush.Color.A==0,"Disabled navigation retains its transparent background instead of a native white rectangle");
+        await SaveImage(window,Path.Combine(root,"Navigation-disabled.png"));
+        navigation.IsEnabled=true;
+        var frames=new List<int>();
+        foreach(var id in new[]{"default","information","warning"})
+        {
+            using var stream=Application.GetResourceStream(new Uri($"pack://application:,,,/AgentRelay.Desktop;component/Assets/Sounds/{id}.wav")).Stream;
+            using var reader=new BinaryReader(stream);
+            Check(Encoding.ASCII.GetString(reader.ReadBytes(4))=="RIFF","Embedded notification sound has a WAV header: "+id);
+            stream.Position=24;Check(reader.ReadInt32()==22050,"Notification PCM sample rate: "+id);
+            stream.Position=40;frames.Add(reader.ReadInt32()/2);
+        }
+        Check(frames.SequenceEqual(new[]{4410,8159,11466}),"Single chime, ascending pair and three low pulses have distinct embedded recordings");
+        NotificationSounds.Play("none");
     }
 
     private static async Task CheckTray(MainWindow window)
@@ -428,6 +452,10 @@ internal static class Program
         await Wait(()=>Application.Current.Windows.Cast<Window>().Any(w=>w.Name=="InAppNotification"));
         var popup=Application.Current.Windows.Cast<Window>().Single(w=>w.Name=="InAppNotification");
         Check(popup.ShowInTaskbar==false&&popup.Topmost&&service.Tasks().Count==0,"Missing native helper produces a visible in-app test notification without creating a task");
+        var header=Find<Grid>(popup,"NotificationHeader");
+        Check(ReferenceEquals(Find<Button>(popup,"CloseInAppNotification").Parent,header),"Notification close button shares the compact title header");
+        Check(ReferenceEquals(popup.Resources,window.Resources),"Notification inherits the active application theme");
+        Check(Find<Border>(popup,"NotificationCard").CornerRadius.TopLeft==14,"Notification uses a rounded themed card");
         await SaveImage(popup,Path.Combine(root,"In-app-notification.png"));popup.Close();
         var file=Path.Combine(root,"notification-work.md");File.WriteAllText(file,"A local notification fixture.");
         var task=service.CreateFileHandoff(new("notify-a","notify-b",file)).Task;

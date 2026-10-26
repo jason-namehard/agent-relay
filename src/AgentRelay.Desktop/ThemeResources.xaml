@@ -148,6 +148,23 @@
    </ControlTemplate.Triggers>
   </ControlTemplate></Setter.Value></Setter>
  </Style>
+ <Style x:Key="NavigationListStyle" TargetType="ListBox">
+  <Setter Property="Background" Value="Transparent"/>
+  <Setter Property="Foreground" Value="{DynamicResource NavTextBrush}"/>
+  <Setter Property="BorderThickness" Value="0"/>
+  <Setter Property="Padding" Value="4"/>
+  <Setter Property="ScrollViewer.HorizontalScrollBarVisibility" Value="Disabled"/>
+  <Setter Property="ScrollViewer.VerticalScrollBarVisibility" Value="Auto"/>
+  <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="ListBox">
+   <Border x:Name="NavigationFrame" Background="{TemplateBinding Background}" BorderThickness="0" Padding="{TemplateBinding Padding}" SnapsToDevicePixels="True">
+    <ScrollViewer Background="Transparent" Focusable="False" CanContentScroll="True"
+                  HorizontalScrollBarVisibility="{TemplateBinding ScrollViewer.HorizontalScrollBarVisibility}"
+                  VerticalScrollBarVisibility="{TemplateBinding ScrollViewer.VerticalScrollBarVisibility}">
+     <ItemsPresenter/>
+    </ScrollViewer>
+   </Border>
+  </ControlTemplate></Setter.Value></Setter>
+ </Style>
  <Style x:Key="NavigationItemStyle" TargetType="ListBoxItem">
   <Setter Property="Padding" Value="12,10"/><Setter Property="Margin" Value="0,3"/>
   <Setter Property="Foreground" Value="{DynamicResource NavTextBrush}"/>
@@ -164,7 +181,7 @@
     <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="Frame" Property="Background" Value="#14FFFFFF"/></Trigger>
     <Trigger Property="IsSelected" Value="True"><Setter TargetName="Frame" Property="Background" Value="#24FFFFFF"/><Setter TargetName="SelectionStripe" Property="Visibility" Value="Visible"/><Setter Property="FontWeight" Value="SemiBold"/></Trigger>
     <Trigger Property="IsKeyboardFocused" Value="True"><Setter TargetName="Frame" Property="BorderBrush" Value="{DynamicResource NavTextBrush}"/></Trigger>
-    <Trigger Property="IsEnabled" Value="False"><Setter TargetName="Frame" Property="Opacity" Value="0.45"/></Trigger>
+    <Trigger Property="IsEnabled" Value="False"><Setter TargetName="Frame" Property="Opacity" Value="0.72"/></Trigger>
    </ControlTemplate.Triggers>
   </ControlTemplate></Setter.Value></Setter>
  </Style>

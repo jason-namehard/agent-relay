@@ -12,6 +12,7 @@
   </PropertyGroup>
   <ItemGroup>
     <Resource Include="Assets/AgentRelay.ico" />
+    <Resource Include="Assets/Sounds/*.wav" />
     <ProjectReference Include="../AgentRelay.Core/AgentRelay.Core.csproj" />
   </ItemGroup>
 </Project>

@@ -65,25 +65,11 @@ public partial class MainWindow
     private void ShowApplicationNotification(DesktopNotificationContent content,string? targetTask=null)
     {
         activeNotificationWindow?.Close();
-        var popup=new Window{Name="InAppNotification",Title=T("In-app notification"),Width=380,SizeToContent=SizeToContent.Height,
-            WindowStyle=WindowStyle.None,ResizeMode=ResizeMode.NoResize,ShowInTaskbar=false,ShowActivated=false,Topmost=true,
-            AllowsTransparency=true,Background=Brushes.Transparent,FontFamily=FontFamily,FontSize=13};
-        AutomationProperties.SetAutomationId(popup,popup.Name);
-        var body=new StackPanel{Margin=new(16)};
-        var close=new Button{Content="×",Width=28,Height=28,HorizontalAlignment=HorizontalAlignment.Right,Padding=new(0)};
-        close.Click+=(_,_)=>popup.Close();body.Children.Add(close);
-        body.Children.Add(new TextBlock{Text=T("In-app notification"),Foreground=Theme("MutedBrush"),Margin=new(0,0,0,8)});
-        body.Children.Add(new TextBlock{Text=content.Title,FontWeight=FontWeights.SemiBold,TextWrapping=TextWrapping.Wrap});
-        body.Children.Add(new TextBlock{Text=content.Message,TextWrapping=TextWrapping.Wrap,Margin=new(0,8,0,0)});
-        if(targetTask is not null)
-        {
-            var open=new Button{Content=T("Open task"),Margin=new(0,12,0,0),HorizontalAlignment=HorizontalAlignment.Right};
-            open.Click+=(_,_)=>{taskId=targetTask;Go("Home");OpenFromTray();popup.Close();};body.Children.Add(open);
-        }
-        popup.Content=new Border{Background=Theme("SurfaceBrush"),BorderBrush=Theme("BorderBrush"),BorderThickness=new(1),CornerRadius=new(12),Child=body};
-        popup.Loaded+=(_,_)=>{popup.Left=SystemParameters.WorkArea.Right-popup.ActualWidth-16;popup.Top=SystemParameters.WorkArea.Bottom-popup.ActualHeight-16;};
+        var popup=new ToastNotificationWindow(this,content,T("In-app notification"),T("Close"),
+            targetTask is null?null:T("Open task"),targetTask is null?null:()=>{taskId=targetTask;Go("Home");OpenFromTray();});
         var timer=new DispatcherTimer{Interval=TimeSpan.FromSeconds(9)};
         timer.Tick+=(_,_)=>popup.Close();
+        popup.MouseEnter+=(_,_)=>timer.Stop();popup.MouseLeave+=(_,_)=>timer.Start();
         void OwnerClosed(object? sender,EventArgs args)=>popup.Close();
         Closed+=OwnerClosed;
         popup.Closed+=(_,_)=>{timer.Stop();Closed-=OwnerClosed;if(activeNotificationWindow==popup)activeNotificationWindow=null;};
@@ -91,17 +77,7 @@ public partial class MainWindow
     }
 
     private static void PlayNotificationSound(string sound)
-    {
-        switch(sound)
-        {
-            case "none":return;
-            case "default":SystemSounds.Beep.Play();return;
-            case "information":SystemSounds.Asterisk.Play();return;
-            case "warning":SystemSounds.Exclamation.Play();return;
-            case "error":SystemSounds.Hand.Play();return;
-            default:throw new ArgumentOutOfRangeException(nameof(sound),sound,"Unknown notification sound.");
-        }
-    }
+        =>NotificationSounds.Play(sound);
 
     private void AddNotificationSoundSettings(Panel page)
     {

@@ -1,6 +1,6 @@
 # Agent Relay — 第一次任务
 
-版本：`0.1.0-preview.14`。Windows 完整包从 [Release](https://github.com/jason-namehard/agent-relay/releases/tag/v0.1.0-preview.14) 下载并完整解压，运行 `gui/AgentRelay.Desktop.exe` 配置真实 Agent。`TryDemo.cmd` 是隔离演示，会禁止真实 CLI 调用；已在演示中登记资料，可在设置保留当前数据并转为正式使用。GUI/通知自带运行库，CLI/MCP 需要 .NET 10 runtime；保留随包许可证。
+版本：`0.1.0-preview.15`。Windows 完整包从 [Release](https://github.com/jason-namehard/agent-relay/releases/tag/v0.1.0-preview.15) 下载并完整解压，运行 `gui/AgentRelay.Desktop.exe` 配置真实 Agent。`TryDemo.cmd` 是隔离演示，会禁止真实 CLI 调用；已在演示中登记资料，可在设置保留当前数据并转为正式使用。GUI/通知自带运行库，CLI/MCP 需要 .NET 10 runtime；保留随包许可证。
 
 ## 直接发起 CLI 任务
 
