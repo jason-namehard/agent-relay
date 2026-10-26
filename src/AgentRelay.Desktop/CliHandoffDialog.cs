@@ -50,21 +50,21 @@ public sealed class CliHandoffDialog : Window
         from.SelectionChanged+=(_,_)=>{Origin=null;originLabel.Text=ui.T("Choose the source conversation for exact replies.");};
         to.SelectionChanged+=(_,_)=>{Target=null;targetLabel.Text=ui.T("New conversation");create.IsChecked=true;};
         var prompt=ui.Field(ui.Body,"Work request","CliTaskPrompt",multiline:true);prompt.Height=160;
-        var plan=new CheckBox{Name="CliTaskReviewPlan",Content=ui.T("Require recipient → sender → recipient before completing"),Margin=new(0,10,0,10)};
-        ui.Body.Children.Add(plan);
+        var options=new CollaborationOptionsPanel(ui,ui.Body,"CliTask",service.Settings().TaskTimeoutMinutes,true);
         var permission=new CheckBox{Name="CliTaskEnableDirections",Content=ui.T("Allow enabling the connection directions required by this task"),Margin=new(0,4,0,10)};
         ui.Body.Children.Add(permission);
-        ui.Body.Children.Add(ui.Note("Both conversations stay bound to this task. An unfinished planned step cannot be skipped by an early completion receipt."));
+        ui.Body.Children.Add(ui.Note("Chosen conversations stay bound to this task. Without a source conversation, turns for the sender are copied manually."));
         ui.Button(ui.Actions,"Create and send through CLI","SendCliTask",()=>
         {
             if(from.SelectedValue is not string sender||to.SelectedValue is not string recipient)throw new RelayException("agent_required",ui.T("Select an Agent."));
             if(sender==recipient)throw new RelayException("manual_same_agent",ui.T("Sender and recipient must be different."));
-            if(Origin is null)throw new RelayException("cli_origin_required",ui.T("Choose the source conversation for exact replies."));
             if(existing.IsChecked==true&&Target is null)throw new RelayException("session_selection_required",ui.T("Select a conversation first."));
             if(string.IsNullOrWhiteSpace(prompt.Text))throw new RelayException("cli_work_required",ui.T("Enter the work request."));
             if(service.CliExtension(recipient) is null)throw new RelayException("cli_recipe_missing",ui.T("The recipient has no CLI calling method. Configure it in Agents first."));
-            Result=new(sender,recipient,prompt.Text,Origin.SessionId,existing.IsChecked==true?Target!.SessionId:null,
-                plan.IsChecked==true,permission.IsChecked==true,Origin.Cwd,existing.IsChecked==true?Target?.Cwd:string.IsNullOrWhiteSpace(newCwd.Text)?null:newCwd.Text.Trim());
+            var choice=options.Build(sender,recipient);
+            Result=new(sender,recipient,prompt.Text,Origin?.SessionId,existing.IsChecked==true?Target!.SessionId:null,
+                permission.IsChecked==true,Origin?.Cwd,existing.IsChecked==true?Target?.Cwd:string.IsNullOrWhiteSpace(newCwd.Text)?null:newCwd.Text.Trim(),
+                choice.Collaboration,choice.AutoDeliver,choice.TurnTimeoutMinutes);
             DialogResult=true;
         },true);
         var cancel=ui.Button(ui.Actions,"Cancel","CancelCliTask",()=>DialogResult=false);cancel.IsCancel=true;

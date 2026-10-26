@@ -73,13 +73,13 @@ public sealed class CliProbeDialog : Window
             create.IsEnabled=true;
             if(demo)create.ToolTip=T("Demo mode blocks real CLI calls. Keep this workspace and switch to normal use to test your registered Agents.");
             if(extension.CreateProbe is {} probe)ProbeResult(probe);
-            if(extension.CanCreate && extension.Recipe.Resume is not null)
+            if(extension.CreateProbe is {MachinePassed:true,UserConfirmed:true} && extension.Recipe.Resume is not null)
             {
                 var resume=Action(layout.Body,"Run same-session probe","ProbeResume",()=>RunProbe("resume"));
                 resume.IsEnabled=!demo;
                 if(extension.ResumeProbe is {} resumed)ProbeResult(resumed);
             }
-            layout.Body.Children.Add(Note(extension.CanResume?"New session and resume verified":extension.CanCreate?"New session verified":"Probes are optional diagnostics. Enable delivery directions in the connection map; existing conversations require an exact binding and a fresh existence check."));
+            layout.Body.Children.Add(Note(extension.CanResume?"New session and resume verified":extension.CanCreate?"New session verified":"A probe or one real handoff whose Agent writes its receipt verifies the CLI. Only verified CLIs receive turns automatically; you can still send by hand."));
             layout.Body.Children.Add(Note("A probe does not choose the conversation for a task. Choose an existing conversation in the handoff; later turns reuse that exact ID."));
         }
         var close=new Button{Name="CloseCliProbe",Content=T("Close"),IsCancel=true};

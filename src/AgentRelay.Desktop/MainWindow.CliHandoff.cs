@@ -13,9 +13,9 @@ public partial class MainWindow
         if(dialog.ShowDialog()!=true){reviewCancelled=true;return;}
         var request=dialog.Result!;
         var created=service.CreateCliHandoff(request);taskId=created.Task.TaskId;
-        if(dialog.OriginBinding=="user_selected")service.BindTaskSession(taskId,request.From,dialog.Origin!);
+        if(dialog.Origin is not null&&dialog.OriginBinding=="user_selected")service.BindTaskSession(taskId,request.From,dialog.Origin);
         if(request.TargetSessionId is not null&&dialog.TargetBinding=="user_selected")service.BindTaskSession(taskId,request.To,dialog.Target!);
-        StatusText.Text=T("Sending through CLI…");
-        await service.SendFileHandoffAsync(taskId,service.FileHandoffPrompt(service.Status(taskId).Task));
+        StartCliSend(taskId);
+        await Task.CompletedTask;
     }
 }

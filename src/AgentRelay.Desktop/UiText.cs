@@ -381,6 +381,7 @@ public static class UiText
         SessionUiText.AddTo(entries);
         NotificationUiText.AddTo(entries);
         CliTaskUiText.AddTo(entries);
+        CollaborationUiText.AddTo(entries);
         AgentEntryUiText.AddTo(entries);
         return entries;
     }

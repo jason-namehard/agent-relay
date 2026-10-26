@@ -91,6 +91,17 @@ public partial class MainWindow
             var ruleActions = Row(details);
             Add(ruleActions, "Install handoff rule", () => { InstallRules(Selected().AgentId); return Task.CompletedTask; });
             Add(ruleActions, "Remove handoff rule", () => { service.RemoveGuidance(Selected().AgentId); return Task.CompletedTask; });
+            if(service.CliExtension(row.Source.AgentId) is {} extension)
+            {
+                details.Children.Add(Note(T("CLI capability")+": "+T(extension.CanCreate?"New conversations verified":"New conversations not verified")+" · "+
+                    T(extension.CanResume?"Resume verified":"Resume not verified")+
+                    (extension.CreateEvidence is not null||extension.ResumeEvidence is not null?" · "+T("Proven by a real handoff"):"")));
+                if(extension.Block is {} block)
+                {
+                    details.Children.Add(Note(block.Message));
+                    Add(Row(details),"I have resolved this · Allow automatic sends",()=>{service.ClearCliBlock(row.Source.AgentId);return Task.CompletedTask;});
+                }
+            }
             details.Children.Add(Note("Session discovery reads this Agent's local conversation store. It never selects the latest conversation."));
             var current=service.DiscoverySource(row.Source.AgentId);
             var provider=new ComboBox{Name="SessionDiscoveryProvider",ItemsSource=new[]{"zcode","dsh","hermes","workbuddy"},SelectedItem=current?.Provider,MinHeight=38};
@@ -110,6 +121,7 @@ public partial class MainWindow
     private string AgentCliStatus(AgentRecord agent)
     {
         var extension = service.CliExtension(agent.AgentId);
+        if (extension?.Block is not null) return T("CLI blocked · Action needed");
         return T(extension switch
         {
             { CanResume: true } => "New session and resume verified",

@@ -57,6 +57,7 @@ internal static class Program
         await CheckCloseBehavior(window,root);
         await CheckSessionDialogs(window,root);
         await CheckCliTaskEntry(window,root);
+        await CheckReviewLoopPane(window,root);
         await CheckNotificationDelivery(window,root);
         Check(navigation.Items.Cast<ListBoxItem>().Select(i=>(string)i.Tag).SequenceEqual(new[]{"Home","Agents","Connections","Settings"}),"Exactly four main pages");
         Check(Find<DataGrid>(window,"TasksTable").Items.Count==2,"Board combines all handoffs");
@@ -219,7 +220,7 @@ internal static class Program
             Press(dialog,"CloseCliProbe");
         });
         var ext=service.CliExtension("agent-c")!;
-        SaveExtension(service,ext with{ResumeProbe=new("resume-fixture","resume","RESUME-FIXTURE","fixture-session",true,false,null,DateTimeOffset.UtcNow)});
+        SaveExtension(service,ext with{ResumeProbe=new("resume-fixture","resume","RESUME-FIXTURE","fixture-session",true,false,null,DateTimeOffset.UtcNow,FileWritten:true)});
         await Show(new CliProbeDialog(window,service,"agent-c","en"),async dialog=>
         {
             Check(!service.CliExtension("agent-c")!.CanResume,"Resume machine receipt still needs same-session visibility confirmation");
@@ -414,6 +415,7 @@ internal static class Program
         {
             Check(Find<RadioButton>(dialog,"CliTaskNewSession").IsChecked==true,"Explicit CLI task entry offers a new target conversation by default");
             Check(!FindAll<TextBox>(dialog).Any(t=>t.Name=="FileHandoffReply"),"CLI work entry accepts instructions directly without a file or pasted Agent JSON");
+            Check(Find<RadioButton>(dialog,"CliTaskSingle").IsChecked==true&&FindAll<RadioButton>(dialog).Any(r=>r.Name=="CliTaskLoop")&&!FindAll<CheckBox>(dialog).Any(c=>c.Name=="CliTaskReviewPlan"),"CLI task offers a single handoff or a review loop instead of a fixed step plan");
             Find<TextBox>(dialog,"CliTaskPrompt").Text="UI fixture: perform this direct work request.";
             var selected=HandleNextDialog<SessionPickerDialog>(dialog,child=>
             {
@@ -430,6 +432,37 @@ internal static class Program
         Check(File.Exists(calls)&&task.Mode=="cli"&&task.State==TaskState.Dispatched,"Creating a CLI task invokes the configured CLI through the visible UI path");
         Check(File.ReadAllText(task.RequestPath).Contains("UI fixture: perform this direct work request.",StringComparison.Ordinal),"CLI task persists the user's work request as the actual request document");
         Check(station.TaskSession(task.TaskId,"ui-source")?.SessionId=="exact-source-ui-session"&&station.TaskSession(task.TaskId,"ui-target")?.SessionId=="created-ui-session","CLI UI binds the explicit source and records the returned new target session ID");
+        window.RequestExit();
+    }
+
+    private static async Task CheckReviewLoopPane(MainWindow owner,string root)
+    {
+        var station=new RelayService(Path.Combine(root,"review-loop-ui"));station.Initialize();
+        station.RegisterManual("loop-author","manual","Author");station.RegisterManual("loop-reviewer","manual","Reviewer");
+        var work=Path.Combine(root,"loop-work.md");File.WriteAllText(work,"Write the release notes.");
+        var task=station.CreateFileHandoff(new("loop-reviewer","loop-author",work,"Write and submit")).Task;
+        station.ConfigureFileHandoff(task.TaskId,new(new CollaborationOptions("loop-author","Covers every change",1)));
+        void Receipt(string outcome,string[]? items=null)
+        {
+            task=station.Status(task.TaskId).Task;
+            var reply=station.TurnReplyPath(task);File.WriteAllText(reply,"Version "+task.ManualTurn);
+            File.WriteAllText(station.ManualReceiptPath(task),RelayJson.Write(new ManualReceipt(task.TaskId,task.AttemptId,task.AwaitingAgentId!,task.ManualTurn,"done",
+                null,outcome=="submitted"?reply:null,null,outcome,items)));
+            station.ImportManualReceipts();
+        }
+        Receipt("submitted");Receipt("changes_requested",["Missing the CLI changes"]);Receipt("submitted");
+        Check(station.Status(task.TaskId).Task is {State:TaskState.Paused,PauseReason:"round_limit"},"Review loop pauses when its review budget is used up");
+        Appearance.Save(station.Home,new DesktopPreferences("en",NotificationSound:"none"));
+        var window=new MainWindow(station){Owner=owner};window.Show();
+        await Wait(()=>((TextBlock)window.FindName("StatusText")).Text!="Working…");
+        var table=Find<DataGrid>(window,"TasksTable");table.SelectedItem=table.Items.Cast<object>().Single();
+        await Wait(()=>FindAll<Button>(window).Any(b=>Equals(b.Tag,"Continue with 2 more rounds")));
+        Check(FindAll<TextBlock>(window).Any(t=>t.Text.Contains("Reviewer Reviewer",StringComparison.Ordinal)&&t.Text.Contains("1/1",StringComparison.Ordinal)),"Review loop card names both roles and the round budget");
+        Check(!FindAll<Button>(window).Any(b=>Equals(b.Tag,"Copy prompt for Reviewer")),"Paused loop does not offer to hand the next turn on before the user decides");
+        await SaveImage(window,Path.Combine(root,"Review-loop-paused.png"));
+        await Click(window,"Continue with 2 more rounds");
+        await Wait(()=>station.Status(task.TaskId).Task.State==TaskState.AwaitingReply);
+        Check(station.Status(task.TaskId).Task.Collaboration!.MaxReviewRounds==3,"Continuing records the user's extra review rounds");
         window.RequestExit();
     }
 
@@ -566,6 +599,8 @@ internal static class Program
             while (-not (Test-Path -LiteralPath $args[1])) { Start-Sleep -Milliseconds 25 }
             $reply=[regex]::Match($text,'RELAY-[A-Z0-9]+').Value
             if (Test-Path -LiteralPath $args[2]) { $reply='wrong-marker' }
+            $file=[regex]::Match($text,'Create the file (.+?) containing').Groups[1].Value
+            if ($file) { [IO.File]::WriteAllText($file,$reply) }
             @{session_id='progress-session';reply=$reply;accepted=$true}|ConvertTo-Json -Compress
             """);
         var command=new CliCommand("pwsh",["-NoLogo","-NoProfile","-NonInteractive","-File",script,started,release,fail],"{prompt}",null);
@@ -640,7 +675,7 @@ internal static class Program
     {
         var command=new CliCommand(Path.Combine(service.Home,"never-executed-fixture.exe"),["{prompt}"],null,null);
         var recipe=new CliRecipe(1,"Smoke fixture","fixture",command,command,[],"fixture","local smoke fixture","MIT","Never executed.");
-        SaveExtension(service,new(id,Guid.NewGuid().ToString(),recipe,new("create-fixture-"+id,"create","CREATE-FIXTURE","fixture-session",true,confirmed,null,DateTimeOffset.UtcNow),null));
+        SaveExtension(service,new(id,Guid.NewGuid().ToString(),recipe,new("create-fixture-"+id,"create","CREATE-FIXTURE","fixture-session",true,confirmed,null,DateTimeOffset.UtcNow,FileWritten:true),null));
     }
     private static void SaveExtension(RelayService service,CliExtensionRecord record)
     {

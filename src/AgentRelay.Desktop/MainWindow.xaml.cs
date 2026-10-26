@@ -109,12 +109,7 @@ public partial class MainWindow : Window
         {
             await action();
             var receipts=service.ImportManualReceipts();
-            foreach(var updatedId in receipts.UpdatedTaskIds)
-            {
-                var updated=service.Status(updatedId).Task;
-                if(updated.State is not(TaskState.AwaitingReply or TaskState.Succeeded or TaskState.Failed or TaskState.TimedOut))continue;
-                if(updated.State==TaskState.AwaitingReply) { _=FilePrompt(updated); await AutoDeliverFile(updated); }
-            }
+            StartAutoDeliveries();
             var notificationHint=await DeliverPendingDesktopNotificationsAsync();
             if (refresh && !reviewCancelled) { RenderPage(); LedgerHint.Text = ""; }
             if(receipts.Errors.Length>0)LedgerHint.Text=T("Receipt needs attention")+": "+receipts.Errors[0].Message;
@@ -232,14 +227,14 @@ public partial class MainWindow : Window
             }
             var result=await Task.Run(()=>service.CreateFileHandoff(draft));
             taskId=result.Task.TaskId;
-            if(dialog.RequireRoundTrip)service.ConfigureHandoffPlan(taskId,[draft.To,draft.From,draft.To]);
+            service.ConfigureFileHandoff(taskId,dialog.Options(draft));
             if(routing is not null)
             {
                 if(routing.Origin is not null)service.BindTaskSession(taskId,draft.From,routing.Origin,routing.OriginBinding);
                 if(routing.TargetIsNew)service.UseNewTaskSession(taskId,draft.To);
                 else service.BindTaskSession(taskId,draft.To,routing.Target!,routing.TargetBinding);
             }
-            await AutoDeliverFile(service.Status(taskId).Task);
+            StartAutoDeliveries();
         });
         Add(actions,"Open relay folder",()=>{Process.Start(new ProcessStartInfo(service.Home){UseShellExecute=true});return Task.CompletedTask;},false);
         TaskPane(page,service.Tasks());return page;
@@ -279,7 +274,7 @@ public partial class MainWindow : Window
         var rows=views.OrderByDescending(v=>v.Task.CreatedAt).Select(v=>new TaskRow(v.Task.TaskId,AgentName(v.Task.RequesterId)+" → "+AgentName(v.Task.RecipientId),T(v.Task.Mode=="manual"?"Manual handoff":"CLI"),v.Task.IsFileHandoff||v.Task.Mode=="manual"?FileState(v.Task):v.Task.State.ToString(),v.Task.CreatedAt.ToLocalTime(),v.Task.State.ToString())).ToArray();
         var table=Table("TasksTable",("Route","Route"),("Delivery","Mode"),("State","State"),("Created","Created"));table.Height=230;
         var stateStyle=new Style(typeof(TextBlock),(Style)FindResource("TableTextStyle"));
-        foreach(var state in new[]{"Succeeded","Failed","TimedOut","DeliveryUnknown","Running","Acknowledged"})
+        foreach(var state in new[]{"Succeeded","Failed","TimedOut","DeliveryUnknown","Running","Acknowledged","Paused"})
         {
             var trigger=new DataTrigger{Binding=new Binding("StateCode"),Value=state};
             trigger.Setters.Add(new Setter(TextBlock.ForegroundProperty,state=="Succeeded"?Theme("AllowedBrush"):state is "Running" or "Acknowledged"?Brush("#8C691F"):Theme("DeniedBrush")));
