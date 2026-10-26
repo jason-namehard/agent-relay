@@ -179,6 +179,9 @@ public sealed partial class RelayService
         return record with { Block = null };
     });
 
+    // A probe starts the host, makes one tool call and replies; the 30-second transport timeout is far too short for that.
+    private static readonly TimeSpan ProbeTimeout = TimeSpan.FromMinutes(3);
+
     public async Task<CliProbe> RunCliProbeAsync(string agentId, string operation, CancellationToken cancellationToken = default)
     {
         if (operation is not ("create" or "resume")) throw new RelayException("cli_probe_operation", "探针类型应为 create 或 resume。");
@@ -200,7 +203,7 @@ public sealed partial class RelayService
         try
         {
             var process = await CliRecipes.InvokeAsync(command, prompt, sessionId, Home,
-                TimeSpan.FromSeconds(Settings().DeliveryTimeoutSeconds), cancellationToken);
+                ProbeTimeout, cancellationToken);
             var output = $"exit_code: {process.ExitCode}\ntimed_out: {process.TimedOut}\nstdout:\n{process.Output}\nstderr:\n{process.Error}";
             diagnostic = output.Length <= 16 * 1024 ? output : output[^(16 * 1024)..];
             var receipt = CliRecipes.Receipt(process, CliRecipes.OutputFormatFor(record.Recipe));

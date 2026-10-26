@@ -130,7 +130,7 @@ public sealed partial class RelayService
         {
             status = "failed"; error = "无法启动 CLI：" + launch.Message;
         }
-        return store.Write(s =>
+        store.Write(s =>
         {
             var current = s.Task(taskId);
             if (current.AttemptId == task.AttemptId && status == "submitted")
@@ -159,8 +159,9 @@ public sealed partial class RelayService
                     current.State = TaskState.Dispatched;
                 s.Save(current); s.Event(current, "file.cli_" + status, "operator", Now, error ?? session ?? "");
             }
-            return View(current, s);
+            return true;
         });
+        return Status(taskId);
     }
 
     /// <summary>The user checked the target conversation and confirms this turn never arrived, so one new send is allowed.</summary>

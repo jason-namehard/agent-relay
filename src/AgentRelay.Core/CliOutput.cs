@@ -78,7 +78,10 @@ internal static class CliOutput
         if (format is "zcode-json" or "claude-json")
         {
             using var document = JsonDocument.Parse(output);
-            yield return document.RootElement;
+            // CodeBuddy Code 2.17x prints the whole transcript as an array ending with the result record.
+            if (format == "claude-json" && document.RootElement.ValueKind == JsonValueKind.Array)
+                foreach (var item in document.RootElement.EnumerateArray()) yield return item;
+            else yield return document.RootElement;
             yield break;
         }
         foreach (var line in output.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))

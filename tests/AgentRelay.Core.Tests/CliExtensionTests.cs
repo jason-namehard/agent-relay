@@ -181,6 +181,7 @@ public sealed class CliExtensionTests
     [DataRow("zcode-json", "{\"type\":\"result\",\"sessionId\":\"native-session\",\"response\":\"{marker}\"}")]
     [DataRow("hermes-jsonl", "{\"type\":\"system\",\"subtype\":\"init\",\"session_id\":\"\"}\n{\"type\":\"text\",\"text\":\"partial\"}\n{\"type\":\"result\",\"session_id\":\"native-session\",\"exit_code\":0,\"text\":\"{marker}\"}")]
     [DataRow("claude-json", "{\"type\":\"result\",\"subtype\":\"success\",\"is_error\":false,\"session_id\":\"native-session\",\"result\":\"{marker}\"}")]
+    [DataRow("claude-json", "[{\"type\":\"reasoning\",\"content\":[],\"sessionId\":\"native-session\"},{\"type\":\"message\",\"role\":\"assistant\",\"status\":\"completed\",\"content\":[{\"type\":\"output_text\",\"text\":\"{marker}\"}]},{\"type\":\"result\",\"subtype\":\"success\",\"is_error\":false,\"result\":\"{marker}\",\"session_id\":\"native-session\",\"permission_denials\":[]}]")]
     public async Task NativeOutputCanBeProbedWithoutASeparateBridge(string format, string output)
     {
         Import(Recipe(create: NativeCommand(output)) with { OutputFormat = format });
