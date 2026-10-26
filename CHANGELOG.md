@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased
+
+- CLI 任务与文件交接增加协作方式：单次交接，或持续修改与验收。用户指定作者，另一方按验收标准验收，回执以 `outcome`、`open_items`、`deliverable` 表达提交、要求修改、通过与交付；只有作者 `accepted` 才显示“已交付”。新任务不再使用固定交接计划，旧任务仍按原计划完成。
+- 增加非终态“已暂停”：轮数用完、单轮超时、无进展或 Agent 失败时保留会话与文件，由用户继续（可附说明、追加轮数）、取消或标记完成。单轮时限每轮重新计时，迟到回执仍被接受。
+- 自动 CLI 投递改为任务显式选择，并要求该 Agent 的新建或续接能力已验证：探针（含写文件检查）加可见性确认，或一次真实交接写回了回执。未验证方案仍可手动发送。
+- 识别登录被拒、未选模型和缺少工具权限并阻止该 Agent 的自动投递，用户处理后解除；调用方案可附 `login` 提示命令。CLI 发送持续到本轮时限，GUI 后台执行；投递未确认时可确认未收到后重发一次。
+- 每轮回稿使用独立 `reply_file`；上下文为持续修改与验收提供 `collaboration` 与预填 `outcome` 的回执模板。
+- CLI 增加 `handoff configure/sync/progress/continue/allow-resend` 与 `cli-recipe unblock`；`task status` 返回 `progress`。`cli-create` 清单以 `collaboration`、`auto_deliver`、`turn_timeout_minutes` 取代 `review_and_apply`。
+- 任务卡显示角色、轮次、阶段、待解决问题、下一步、投递方式与验收记录；Agent 管理显示 CLI 能力与阻塞。“新建 CLI 任务”的来源会话改为可选。
+- 说明 WorkBuddy 桌面登录不能用于其自带 CLI，改用官方 CodeBuddy Code CLI 的方案与限制。
+
 ## 0.1.0-preview.15 — 2026-10-26
 
 - 右下角通知采用紧凑圆角卡片，继承当前配色，关闭按钮与标题同排；长正文可滚动，悬停暂停关闭计时。

@@ -111,7 +111,10 @@ internal static class SessionProviders
         if (format is "zcode-json" or "zcode-jsonl") return "zcode";
         if (format == "hermes-jsonl") return "hermes";
         if (format == "dsh-jsonl") return "dsh";
-        if (agent.Host.Equals("WorkBuddy", StringComparison.OrdinalIgnoreCase)) return "workbuddy";
+        // workbuddy.db belongs to the desktop app and the CLI bundled with it; the standalone CodeBuddy CLI keeps its own sessions.
+        if (agent.Host.Equals("WorkBuddy", StringComparison.OrdinalIgnoreCase))
+            return recipe is null || recipe.Create.Arguments.Prepend(recipe.Create.Executable)
+                .Any(value => value.Replace('\\', '/').EndsWith("/codebuddy-lite-wb.mjs", StringComparison.OrdinalIgnoreCase)) ? "workbuddy" : null;
         if (agent.Host.StartsWith("ZCode", StringComparison.OrdinalIgnoreCase)) return "zcode";
         if (agent.Host.StartsWith("Hermes", StringComparison.OrdinalIgnoreCase)) return "hermes";
         if (agent.Host.Equals("DeepSeek Harness", StringComparison.OrdinalIgnoreCase) || agent.Host.Equals("dsh", StringComparison.OrdinalIgnoreCase)) return "dsh";

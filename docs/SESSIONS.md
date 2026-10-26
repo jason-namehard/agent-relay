@@ -10,11 +10,11 @@
 
 任务详情“会话”折叠区显示双方绑定，可主动更换或明确新建。会话已失效、存储不可访问或返回的 ID 不一致时，自动续接停止；用户可以重新选择或手动复制提示。不会自动跳到其他对话。
 
-## 完成计划与会话绑定
+## 协作方式与会话绑定
 
-会话绑定只确定下一轮进入哪里，完成计划确定还有谁必须处理。可选的审阅落实计划在任务 `handoff_plan` 中记录 `[接收方,发送方,接收方]`，对应 B 处理、A 审阅、B 落实；`turn` 是当前步骤。中间步骤即使错误声明 `needs_reply:false`，也不能提前结束任务；必须提交真实回稿及具体下一步才能推进，缺少则保持当前步骤并提示补齐。
+会话绑定只确定下一轮进入哪里，协作方式确定下一轮由谁处理。单次交接由回执的 `needs_reply` 决定是否回传，默认最多 4 轮。持续修改与验收由用户指定作者，另一方验收，按回执 `outcome` 在 `implement`/`revise`、`review`、`accept` 阶段间推进，只有作者 `accepted` 才完成；格式见 [配置与回执](CONFIGURATION_ASSISTANT.md#持续修改与验收)。
 
-上下文提供 `required_next_agent`、剩余步骤和正确的回执模板。无计划旧任务保留原语义，但“无需继续”与非空 `next_action` 相互矛盾，会被拒绝。Relay 不从自然语言猜计划，也不自动追改已经结束的历史任务；必要的额外往返仍受四轮上限约束。
+经 CLI 把轮次送回发送方需要其准确来源会话和续接命令；未绑定来源时这些轮次手动复制。轮数用完、单轮超时或无进展时任务暂停，绑定保留，继续后仍进入同一对话。新任务不再使用固定 `handoff_plan`；早期版本已带计划的任务仍按原计划完成。
 
 ## 来源身份
 
@@ -63,9 +63,23 @@ Relay 缓存用于快速展示，不能证明续接仍然有效。每次 resume 
 | WorkBuddy 兼容 JSON | 有效成功结果的 session_id | 同上 | 已实现 | 未实现 | 继承宿主/原会话 |
 | 普通 text | 无 ID，仅一次性执行 | 不支持凭文本伪造 ID | 取决于另配提供器 | 未实现 | 由命令与宿主管理 |
 
-`session_open` 没有统一实现，也不会用“请模型把会话显示出来”代替。可见性与可续接性分别展示；可见性未知不自动阻断一个准确且存在的绑定。
+`session_open` 没有统一实现，也不会用“请模型把会话显示出来”代替。可见性与可续接性分别展示；可见性未知不自动阻断一个准确且存在的绑定。Relay 为本任务创建的会话没有发现能力也可续接，返回 ID 仍须一致；用户选择的已有会话仍需发现确认。
 
 模型和思考强度属于执行配置，当前没有统一跨宿主覆盖表单。新建会话若提示未选模型，需要在宿主设置或选择已经配置的旧会话；续接默认继承旧会话。Relay 不把模型参数塞进任务正文，也不伪造宿主不支持的参数。
+
+## WorkBuddy CLI
+
+WorkBuddy 应用自带的 print 模式 CLI（应用内的 `codebuddy-lite-wb.mjs`）不能使用桌面登录：桌面令牌加密保存，只供 GUI 进程使用。桌面已登录不等于 CLI 已登录。
+
+可用路线是官方 CodeBuddy Code CLI，命令为 `codebuddy`，见 [CLI 快速开始](https://www.workbuddy.ai/docs/cli/quickstart)：
+
+```powershell
+npm install -g @tencent-ai/codebuddy-code
+# 在终端运行一次，按提示交互登录
+codebuddy
+```
+
+调用方案的 create 参数使用 `-p {prompt} --output-format json` 和非交互权限参数：`--permission-mode acceptEdits` 允许直接改文件、写回执，终端命令在 print 模式下会被拒绝；需要无人值守运行命令时改用 `-y`（高风险操作仍会被拒绝）；resume 另加 `--resume {session_id}`；`output_format` 为 `claude-json`，`login` 可填 `codebuddy`。该 CLI 的会话保存在它自己的存储中，不是 WorkBuddy 桌面对话；已有的 WorkBuddy 桌面对话不能通过它续接，Relay 也不再用桌面会话库校验这类方案的会话。
 
 ## CLI
 
@@ -83,4 +97,4 @@ dotnet .\relay.dll --home <中转站目录> session bind --task <任务ID> --age
 dotnet .\relay.dll --home <中转站目录> session new --task <任务ID> --agent <节点ID>
 ```
 
-`cli-create` 不加 `--send` 只保存工作要求和绑定，发送必须显式 `--approve`；清单结构见 [配置与回执](CONFIGURATION_ASSISTANT.md)。`source` 的 provider 可选 `dsh`、`zcode`、`hermes`、`workbuddy`，数据目录应与该提供器对应。查询只读元数据，`capabilities` 返回已登记方案声明的能力，不代表实际调用已经验证。`bind` 保存用户提供的精确 ID，保存不等于已验证；自动发送前仍核实存在。未知提供器或不能访问的存储不会回退到 latest。短探针属于可选诊断，真实发送和续接可能产生模型费用。
+`cli-create` 不加 `--send` 只保存工作要求和绑定，发送必须显式 `--approve`；清单结构见 [配置与回执](CONFIGURATION_ASSISTANT.md)。`source` 的 provider 可选 `dsh`、`zcode`、`hermes`、`workbuddy`，数据目录应与该提供器对应。查询只读元数据，`capabilities` 返回已登记方案声明的能力，不代表实际调用已经验证。`bind` 保存用户提供的精确 ID，保存不等于已验证；自动发送前仍核实存在。未知提供器或不能访问的存储不会回退到 latest。自动投递需任务允许且该 Agent 对应能力已验证，见 [配置与回执](CONFIGURATION_ASSISTANT.md#高级-cli-接口扩充)；真实发送和续接可能产生模型费用。

@@ -41,7 +41,7 @@ dotnet .\relay.dll --home <中转站目录> guidance remove --all
 
 任务看板的“新建 CLI 任务”直接接受工作要求、来源会话和目标会话。软件保存工作要求、生成上下文提示并调用已配置的程序；不需要先生成文件交接 JSON。目标可选新建或已有会话，使用已有会话时明确绑定一次，后续按准确 ID 续接。
 
-选择“接收方 → 发送方 → 接收方”会保存 `[B,A,B]` 完成计划，表示 B 执行、A 审阅、B 落实。单步任务保留一次完成的语义。未启用的连接方向需要明确授权，实际发送可能产生模型费用。
+协作方式分为“单次交接”和“持续修改与验收”。后者由用户指定作者，另一方为验收者，按验收标准往返，直到作者确认交付，见下文[持续修改与验收](#持续修改与验收)。来源会话可选；不选时，轮到发送方的步骤改为手动复制。未启用的连接方向需要明确授权，实际发送可能产生模型费用。
 
 CLI 也能直接创建。将下列占位值替换为实际登记节点和准确会话 ID，保存为清单：
 
@@ -52,12 +52,14 @@ CLI 也能直接创建。将下列占位值替换为实际登记节点和准确�
   "prompt":"请检查并完成这项工作",
   "origin_session_id":"<来源会话ID>",
   "target_session_id":null,
-  "review_and_apply":true,
+  "collaboration":{"author_id":"<接收节点ID>","criteria":"验收标准","max_review_rounds":5},
+  "auto_deliver":true,
+  "turn_timeout_minutes":60,
   "enable_direction":false
 }
 ```
 
-`target_session_id:null` 表示新建，已有目标则填写明确 ID。多轮计划要求双方配置续接命令及来源绑定；`enable_direction:true` 明确允许启用任务所需方向，默认不改变方向设置。
+字段为 snake_case，顺序不限。`target_session_id:null` 表示新建，已有目标则填写明确 ID。`collaboration` 可省略，省略即单次交接；`max_review_rounds` 取 1–20，默认 5。经 CLI 把回稿送回发送方时，发送方需配置续接命令并提供 `origin_session_id`。`auto_deliver:true` 表示本任务允许无人值守投递，仍需对应能力已验证。`turn_timeout_minutes` 为单轮时限，省略时使用任务超时设置。`enable_direction:true` 明确允许启用任务所需方向，默认不改变方向设置。
 
 ```powershell
 # 只保存，不调用目标
@@ -67,6 +69,23 @@ dotnet .\relay.dll --home <中转站目录> handoff cli-create --manifest <清�
 # 发送已创建任务的当前轮次
 dotnet .\relay.dll --home <中转站目录> handoff send --task <任务ID> --approve
 ```
+
+文件交接（含“新建交接”创建的任务）在首次投递前也可设置协作方式；回执导入和自动投递由 Core 执行，GUI 与 CLI 共用：
+
+```powershell
+# 首次投递前：指定作者、验收标准、验收轮数、单轮时限，并允许自动投递
+dotnet .\relay.dll --home <中转站目录> handoff configure --task <任务ID> --author <作者节点ID> --criteria "<验收标准>" --max-rounds 5 --turn-timeout-minutes 60 --auto-deliver
+# 导入回执；加 --deliver 时发送已允许自动投递且能力已验证的轮次
+dotnet .\relay.dll --home <中转站目录> handoff sync --deliver --approve
+# 当前处理者、阶段、投递方式、是否在等用户
+dotnet .\relay.dll --home <中转站目录> handoff progress --task <任务ID>
+# 继续已暂停任务；轮数用完时须追加轮数，说明会放在下一轮请求开头
+dotnet .\relay.dll --home <中转站目录> handoff continue --task <任务ID> --note "<说明>" --extra-rounds 2
+# 确认本轮未送达后允许再发送一次
+dotnet .\relay.dll --home <中转站目录> handoff allow-resend --task <任务ID> --reason "<原因>" --approve
+```
+
+`task status` 对文件交接返回 `progress` 对象：`current_agent_id`、`phase`、`waiting_on`（`agent`/`user`/`none`）、`delivery`（`cli_auto`/`cli_ready`/`cli_in_flight`/`agent_working`/`cli_unconfirmed`/`copy_prompt`/`none`）、`turn`、`max_turns`、`review_round`、`max_review_rounds`、`next_if_passed`、`next_if_changed`、`pause_reason`、`pause_message`、`finished` 与 `completion`（`delivered`/`completed`/`operator_completed`/`cancelled`/`failed`/`timed_out`）。
 
 ## A 输出文件交接 JSON
 
@@ -82,9 +101,9 @@ dotnet .\relay.dll --home <中转站目录> handoff send --task <任务ID> --app
 
 ## B 写回执，软件更新状态
 
-给 B 的短提示只指向上下文文件，可通过手动复制或已启用的 CLI 路线投递。该文件与回执在任务的隐藏 `.relay` 子目录中；上下文给出当前文件、工作要求、回稿位置、回执位置及模板，不把协议正文反复复制到用户消息里。
+给 B 的短提示只指向上下文文件，可通过手动复制或已启用的 CLI 路线投递。该文件与回执在任务的隐藏 `.relay` 子目录中；上下文给出当前文件、工作要求、回稿位置、回执位置及模板，不把协议正文反复复制到用户消息里。`reply_file` 每轮是新路径（第 0 轮 `reply.md`，之后 `reply-N.md`），回稿不互相覆盖。单次交接的上下文给出 `remaining_handoffs`。
 
-回执结构：
+单次交接的回执结构：
 
 ```json
 {
@@ -101,23 +120,58 @@ dotnet .\relay.dll --home <中转站目录> handoff send --task <任务ID> --app
 
 任务 ID、尝试 ID、发送节点与轮次必须采用当前上下文原值。可先写 `received` 或 `working` 表示收到/处理，再写 `done` 或 `failed`。旧轮次不覆盖新轮次，错误或未写完的 JSON 不会当作完成。
 
-- 有明确计划且仍有后续步骤：当前完成声明不能结束整个任务。必须给出真实 `result_file` 和具体 `next_action`，否则保持当前步骤并提示补齐，不猜测文件或发起空的下一轮。
-- 无未完成计划步骤时，`done` 且 `needs_reply: false` 表示结束，无需回复寒暄或重复确认；同时给出非空 `next_action` 会因声明矛盾被拒绝。
+- `done` 且 `needs_reply: false` 表示结束，无需回复寒暄或重复确认；同时给出非空 `next_action` 会因声明矛盾被拒绝。
 - `done` 且 `needs_reply: true`：必须给出真实 `result_file` 与具体 `next_action`；任务继续等待另一方，按下一方向的设置自动投递或提供复制按钮。
 - `failed`：任务失败，说明待处理原因；不能自动开启新一轮。
-- 达到四轮上限：停止继续传递，交由用户判断。
+- 单次交接不能使用 `outcome`、`open_items`、`deliverable`。
+- 默认 4 轮用完时任务暂停（`round_limit`），交由用户判断。
+
+### 持续修改与验收
+
+用户指定作者，另一方为验收者；角色与宿主类型无关。接收方为作者时从 `implement` 开始；发送方已有成果时接收方先验收（`review`），原工作要求文件作为第一次提交。上下文的 `collaboration` 对象给出 `role`、`phase`、`review_round`、`max_review_rounds`、`author`、`reviewer`、`acceptance_criteria`、`submission_file`、`open_items`、`allowed_outcomes`，`receipt_template` 已预填 `outcome`。
+
+| 阶段 | 角色 | `outcome` | 要求与结果 |
+| --- | --- | --- | --- |
+| `implement` / `revise` | 作者 | `submitted` | 必须给出 `result_file`，进入验收 |
+| `review` | 验收者 | `changes_requested` | `open_items` 为非空列表，作者修改 |
+| `review` | 验收者 | `approved` | 不带 `open_items`，作者确认 |
+| `accept` | 作者 | `accepted` | `deliverable` 写最终成果位置或简短交付说明，任务完成 |
+| `accept` | 作者 | `submitted` | 作者有改动，回到验收，之前的通过作废 |
+
+验收回执示例：
+
+```json
+{"task_id":"…","attempt_id":"…","sender":"…","turn":1,"status":"done","outcome":"changes_requested","open_items":["…"],"result_file":null,"next_action":null}
+```
+
+只有 `accepted` 结束任务，状态为 Succeeded，界面显示“已交付”。此类任务可省略 `needs_reply`；如提供，必须与 `outcome` 一致。`status:"failed"` 使任务暂停，原因 `agent_failed`。
+
+### 暂停与用户决定
+
+`paused` 不是终态，会话和文件保留。`pause_reason`：
+
+- `round_limit`：单次交接默认 4 轮用完，或持续修改与验收的验收轮数用完。
+- `turn_timeout`：单轮时限到期。时限取任务超时设置或任务的 `turn_timeout_minutes`，每轮重新计时。
+- `no_progress`：作者重交字节相同的文件，或验收者重复完全相同的 `open_items`。
+- `agent_failed`：持续修改与验收中某方回执 `failed`。
+
+用户可继续（可附说明，放在下一轮请求开头；`round_limit` 须追加轮数）、取消或标记完成。标记完成记为 `operator_completed`，区别于 Agent 交付。超时轮次迟到的有效回执仍被接受，任务随之恢复。受管文件保留期到期时，未完成任务仍以超时结束。
 
 GUI 通过文件事件读取回执，启动和手动刷新也会补读。已接收或正在处理时提示等待回执，不再把重复复制列为下一步。普通文件快照只能记录变更，不能代替 Agent 的明确完成声明。所有进程退出后没有常驻监视进程；通过 × 关闭到托盘时 GUI 仍在运行。
 
 任务可以取消，也可以在确认后删除账本记录；删除保留磁盘文件，之后仍可按保留期清理。人工标记完成会记录用户决定并停止等待，不代表获得 Agent 完成证据，也不会停止已运行的外部进程。
 
-计划保存在任务的 `handoff_plan` 中，按 `turn` 推进。上下文明确 `required_next_agent` 和剩余步骤；中间步骤的模板设 `needs_reply:true`。模型仍负责提交实际结果，Relay 不从自然语言推测未登记的计划。
+新任务不再使用固定交接计划（`handoff_plan`）。早期版本创建、已带计划的任务仍按原计划完成，上下文继续给出 `required_next_agent`。
 
 ## 高级 CLI 接口扩充
 
-文件交接在接收方已登记 CLI 方案、发送方向明确启用时投递，短探针和界面可见性是可选诊断。默认新建目标会话，也可明确选择已有会话；新建返回的真实 ID 或用户选择都存入同一 SQLite。后续往返按当前 attempt 的绑定精确续接，发送前核实宿主记录、检查返回 ID 一致。来源未识别、会话失效或能力不足时保留手动复制，不猜最近会话。每轮只提交一次，投递不确定时不自动重发。细节见 [Session Registry 与发现](SESSIONS.md)。
+文件交接在接收方已登记 CLI 方案、发送方向明确启用时可通过 CLI 投递。无人值守的自动投递还要求任务选择 `auto_deliver`，且该 Agent 对应能力已验证：新建会话需“新建已验证”，已有或已绑定会话需“续接已验证”。验证方式有两种：探针通过（Agent 还须写出标记文件，证明无人值守时有写回执的工具权限）并由用户确认会话可见；或经该方案真实投递的一轮交接，且 Agent 写出了本轮回执，记为证据。已登记但未验证的方案仍可手动点击“通过 CLI 发送”。
 
-方案可由一键配置直接导入，也可在编辑 Agent 中分区填写；CLI 仍提供 JSON 导入接口。包含 `version/name/host/output_format/create/resume/dependencies/supported_versions/source/license/limitations`；命令含 `executable`、`arguments` 数组、可选 `input`、`working_directory` 和非敏感 `environment`。`{prompt}` 为必需模板变量，续接还需准确的 `{session_id}`，禁止 `latest` 之类隐式目标。
+登录被拒（CLI 退出码为 0 时同样识别）、未选模型或缺少工具权限会为该 Agent 设置阻塞，停止自动投递，直到用户点击“我已处理 · 允许自动发送”或运行 `relay cli-recipe unblock --agent <节点ID>`。CLI 发送持续到本轮时限（print 模式宿主在 Agent 完成后才返回），GUI 在后台执行。投递未确认（超时、返回不同会话 ID、输出无法识别）时不自动重发；用户确认“未收到”后允许重发一次（`relay handoff allow-resend --task <任务ID> --reason <原因> --approve`）。
+
+默认新建目标会话，也可明确选择已有会话；新建返回的真实 ID 或用户选择都存入同一 SQLite。后续往返按当前 attempt 的绑定精确续接，发送前核实宿主记录、检查返回 ID 一致。Relay 为本任务创建的会话无需发现能力即可续接，返回 ID 仍须一致；用户选择的已有会话仍需发现确认。来源未识别、会话失效或能力不足时保留手动复制，不猜最近会话。每轮只提交一次，投递不确定时不自动重发。细节见 [Session Registry 与发现](SESSIONS.md)。
+
+方案可由一键配置直接导入，也可在编辑 Agent 中分区填写；CLI 仍提供 JSON 导入接口。包含 `version/name/host/output_format/create/resume/login/dependencies/supported_versions/source/license/limitations`；可选 `login` 是展示给用户的登录命令，Relay 不执行；命令含 `executable`、`arguments` 数组、可选 `input`、`working_directory` 和非敏感 `environment`。`{prompt}` 为必需模板变量，续接还需准确的 `{session_id}`，禁止 `latest` 之类隐式目标。
 
 ```powershell
 dotnet .\relay.dll --home <中转站目录> cli-recipe import --agent <节点ID> --manifest <调用方案JSON>
@@ -134,7 +188,7 @@ dotnet .\relay.dll --home <中转站目录> cli-recipe import --agent <节点ID>
 | `text` | 仅最终回复的普通文本；没有真实会话 ID 时无法验证同会话续接 |
 | `relay-json` | 已有桥接的 `{"session_id":"真实标识","reply":"真实回复","accepted":true}` |
 
-选择已查证的输出格式，参数必须与安装版本的帮助及实际输出匹配。内置格式解析不等于所有版本或所有宿主都已接通。可选探针核对真实短标识回复，可单独记录界面可见性；这不代替已有会话的准确绑定与续接前验证。真实调用可能收费，不能保证缓存或所有未来会话可见。
+选择已查证的输出格式，参数必须与安装版本的帮助及实际输出匹配。内置格式解析不等于所有版本或所有宿主都已接通。探针核对真实短标识回复与标记文件，并单独记录界面可见性，用于验证自动投递能力；这不代替已有会话的准确绑定与续接前验证。真实调用可能收费，不能保证缓存或所有未来会话可见。
 
 模型、工作目录和 profile 属于宿主执行配置。若新建提示未选择模型，应在宿主配置，或选择已配置的已有会话；续接默认继承原设置。当前没有跨宿主统一的模型/思考强度覆盖表单。会话 ID 由适配器输出或宿主元数据取得，不让模型自行查找；手动粘贴短 JSON 本身不能提供当前来源会话。
 

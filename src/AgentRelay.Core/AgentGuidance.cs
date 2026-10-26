@@ -251,7 +251,7 @@ public sealed partial class RelayService
 
             ## 收到交接
 
-            先读取短提示指定的 context 文件，再处理其中 current_file 指定的工作文件；按 context 中的回执路径和 receipt_template 写回明确状态。原样保留任务 ID、尝试 ID 与轮次，不用文件修改冒充完成。已有交接只写原任务回执，必要回传由 needs_reply 表达，不再另发一份新建交接 JSON。
+            先读取短提示指定的 context 文件，再处理其中 current_file 指定的工作文件；按 context 中的回执路径和 receipt_template 写回明确状态。原样保留任务 ID、尝试 ID 与轮次，不用文件修改冒充完成。已有交接只写原任务回执，不再另发一份新建交接 JSON；单次交接的必要回传由 needs_reply 表达，持续修改与验收任务按 context 中 collaboration.allowed_outcomes 与 receipt_template 用 outcome（及 open_items 或 deliverable）写明结论。
             只有仍有具体工作、问题或必须确认的结果要交回对方时才需要再次传递；写明下一步工作。已经处理或确认的事项直接结束，不发送礼貌回合、重复确认或寒暄。
 
             ## 节点目录

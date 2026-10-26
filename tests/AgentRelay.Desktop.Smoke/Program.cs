@@ -577,7 +577,7 @@ internal static class Program
         var graph=new ConnectionGraph(agents,edges,_=>{},"en",owner,extensions:records);
         var registered=ByAutomation<System.Windows.Shapes.Ellipse>(graph,"CliIndicator:status-0");
         var failed=ByAutomation<System.Windows.Shapes.Ellipse>(graph,"CliIndicator:status-1");
-        Check(registered.Fill==owner.FindResource("AllowedBrush")&&registered.ToolTip.ToString()!.Contains("Probes are optional"),"Registered CLI method has a green indicator without claiming a successful probe");
+        Check(registered.Fill==owner.FindResource("AllowedBrush")&&registered.ToolTip.ToString()!.Contains("not yet verified"),"Registered CLI method has a green indicator without claiming a successful probe");
         Check(failed.Fill==owner.FindResource("DeniedBrush")&&failed.ToolTip.ToString()!.Contains("probe failed"),"Failed CLI probe has a red indicator and a test-result explanation");
     }
 

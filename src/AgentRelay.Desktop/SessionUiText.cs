@@ -7,7 +7,6 @@ internal static class SessionUiText
         void Add(string en,string cn,string tw,string ja,string ko,string es)=>entries[en]=[en,cn,tw,ja,ko,es];
         Add("Choose existing conversation","选择已有会话","選擇已有會話","既存の会話を選択","기존 대화 선택","Elegir conversación existente");
         Add("CLI configured · Choose a task conversation","CLI 已配置 · 在任务中选择会话","CLI 已設定 · 在任務中選擇會話","CLI 設定済み・会話を選択","CLI 설정됨 · 작업 대화 선택","CLI configurado · Elige conversación");
-        Add("Probes are optional diagnostics. Enable delivery directions in the connection map; existing conversations require an exact binding and a fresh existence check.","探针仅作可选诊断。投递方向在连接图启用；续接已有会话需要明确绑定，并在执行前核实存在。","探針為選用診斷。投遞方向在連線圖啟用；續接需要明確綁定及執行前核實。","テストは任意。再開には明示した ID と存在確認が必要です。","테스트는 선택 사항이며 재개 시 정확한 ID와 존재 확인이 필요합니다.","Las pruebas son opcionales; reanudar requiere enlace explícito y comprobación actual.");
         Add("A probe does not choose the conversation for a task. Choose an existing conversation in the handoff; later turns reuse that exact ID.","探针不替任务选择会话。交接时明确选择一次已有会话，后续复用同一准确 ID。","探針不會替任務選會話；明確選擇後，後續重用同一 ID。","テストは作業会話を選びません。選択した ID を再利用します。","테스트는 작업 대화를 선택하지 않습니다. 선택한 ID를 재사용합니다.","La prueba no elige la conversación de trabajo. Se reutiliza el ID elegido.");
         Add("Conversation routing","会话选择","會話選擇","会話の選択","대화 선택","Selección de conversación");
         Add("Conversations","会话","會話","会話","대화","Conversaciones");
