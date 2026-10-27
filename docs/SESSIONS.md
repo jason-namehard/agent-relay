@@ -128,8 +128,8 @@ $env:ZCODE_BUILTIN_PROVIDER_CONFIG_FILE = "D:\Zcode\resources\config\provider\zc
 | 宿主 | 类型 | 现状 |
 | --- | --- | --- |
 | Zcode | 每次启动现建 | 已对齐，见上节。导入方案时自动补齐，doctor 检查 |
-| Hermes | 网关型 | `hermes acp` 连接桌面同一个网关，会话的系统提示与工具集在创建时固定，并存在 `state.db`，两边续接发出的前缀相同。Relay 续接时用会话自己的 cwd，且不带 MCP 服务器（cwd 不同会让网关迁移会话并重建提示）。用量取自 `HERMES_HOME\logs\agent.log` |
-| DSH | 桌面接口（`dsh-desktop`） | 由运行中的 DSH 桌面执行回合：Relay 找到桌面主机的本机端口，用 `DSH_HOME\.credentials.yaml` 里桌面自己的签名密钥，在内存中签出 v1 浏览器 cookie（用户已同意；密钥不保存、不显示）。之后调用 `session/create`（preset `standard`）、`session/prompt`、`session/projections`、`session/page`。新会话与桌面会话的组成完全相同（系统提示 1,838、工具 8,424 token），用的是桌面自己的默认模型。桌面没开时这一轮失败并说明原因。旧的 headless 方案（`dsh-jsonl`）与桌面工具集不同、不能续接桌面会话，doctor 以 `host.parity.dsh` 提示 |
+| Hermes | 网关型 | `hermes acp` 连接桌面同一个网关，会话的系统提示与工具集在创建时固定，并存在 `state.db`，两边续接发出的前缀相同。Relay 续接时用会话自己的 cwd，且不带 MCP 服务器（cwd 不同会让网关迁移会话并重建提示）。用量取自 `HERMES_HOME\logs\agent.log`。实测：桌面会话里，桌面一轮之后，Relay 的 ACP 一轮命中 98%；再之后的桌面一轮命中 99% |
+| DSH | 桌面接口（`dsh-desktop`） | 由运行中的 DSH 桌面执行回合：Relay 找到桌面主机的本机端口，用 `DSH_HOME\.credentials.yaml` 里桌面自己的签名密钥，在内存中签出 v1 浏览器 cookie（用户已同意；密钥不保存、不显示）。之后调用 `session/create`（preset `standard`）、`session/prompt`、`session/projections`、`session/page`。新会话与桌面会话的组成完全相同（系统提示 1,838、工具 8,424 token），用的是桌面自己的默认模型。实测：Relay 一轮之后，桌面一轮命中 99%；桌面一轮之后，Relay 一轮命中 98–99%。桌面没开时这一轮失败并说明原因。旧的 headless 方案（`dsh-jsonl`）与桌面工具集不同、不能续接桌面会话，doctor 以 `host.parity.dsh` 提示 |
 | 其他 | 未测 | 按技能步骤判断类型，找用量来源，在用户同意后做对照实验，再把对齐项写进调用方案；Relay 还不认识的宿主，写进方案的 `limitations` |
 
 ## 新会话默认模型

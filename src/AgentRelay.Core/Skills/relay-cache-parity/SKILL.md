@@ -86,7 +86,7 @@ Doctor also checks two things:
 
 ### Hermes: type A
 
-The `hermes acp` process attaches to the desktop's gateway, which runs every turn. Each session's system prompt and pinned tools are stored in `state.db` and reused, so a continued session sends the same prefix from either side. A different platform only adds a short note at the end of the request.
+The `hermes acp` process attaches to the desktop's gateway, which runs every turn. Each session's system prompt and pinned tools are stored in `state.db` and reused, so a continued session sends the same prefix from either side. A different platform only adds a short note at the end of the request. Measured: in a desktop-created session, a Relay ACP turn after a desktop turn read 98% from cache, and the next desktop turn read 99%.
 
 What can break it:
 - **A different working directory.** The gateway moves the session and rebuilds its prompt. Relay passes the session's own `cwd` when it continues one.
@@ -131,6 +131,8 @@ Requirements and limits:
 - **Default model.** New sessions use the desktop's own default model.
 
 `relay agent cache-check` reads DSH usage through the same API.
+
+Measured with this recipe: a desktop turn right after a Relay turn read 99% from cache, and a Relay turn right after a desktop turn read 98–99%.
 
 **Where to look:**
 - **Usage without the API:** the session log `DSH_HOME\sessions\<cwd>\session-<id>\session.v4.jsonl.zstd`. The file is a series of zstd frames; split it at `28 b5 2f fd`. Read `assistant/message` → `data.usage.cacheReadTokens`. In DSH, `inputTokens` is only the uncached part.
