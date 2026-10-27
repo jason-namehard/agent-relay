@@ -72,10 +72,17 @@ Relay 缓存用于快速展示，不能证明续接仍然有效。每次 resume 
 WorkBuddy 桌面版目前没有对外可用的调用接口，只能复制提示词手动交接：
 
 - 应用自带的 CLI（`codebuddy-lite-wb.mjs`）单独启动时用不了桌面登录，报 `Authentication required`。
-- 每个打开中的对话由一个本机工作进程承载，`~/.workbuddy/sessions/<pid>.json` 记录其 ACP 地址。WorkBuddy 5.9.2 中该地址接受连接和 `initialize`，但外部发来的 `session/prompt` 被静默忽略，对话里不出现；桌面自己的消息走内部通道。
+- 每个打开中的对话由一个本机工作进程承载，`~/.workbuddy/sessions/<pid>.json` 记录其 ACP 地址。WorkBuddy 5.9.2 对每个对话只允许一个写入方：桌面在线时外部连接只能旁观，外部 `session/prompt` 被忽略、`session/load` 报 `Persistent Session already has an external writer`。这是程序规则，不是可调的客户端设置。
 - 官方 CodeBuddy Code CLI 有独立的登录、额度和会话存储，建的会话不出现在 WorkBuddy 里，不能代替 WorkBuddy。
 
 会话发现仍读取 `~/.workbuddy/workbuddy.db`，手动交接时可以绑定 WorkBuddy 的对话以便记录。
+
+## DSH
+
+DSH 用自带的 headless profile 接入：`DeepSeek Harness.exe`（环境变量 `ELECTRON_RUN_AS_NODE=1`、`DSH_HOME` 指向 dsh-home）运行 `...\dsh-desktop-host\lib\cli.js --profile headless --json {prompt}`，续接加 `--session-id {session_id}`，`output_format` 为 `dsh-jsonl`，会话发现提供器为 `dsh`、目录为 dsh-home。
+
+- headless profile 默认权限是 workspace-write，写不了工作区外的 Relay 回执。用 `--patch` 叠加一个只含 `permission.defaultPreset: danger-full-access` 的补丁（与桌面 profile 的默认相同）。
+- headless 使用它自己的模型与凭据。直接叠加桌面 profile 的补丁会改用桌面的供应商，但凭据按 profile 存放，会报 `MISSING_CREDENTIAL`。
 
 ## Zcode CLI
 
@@ -86,7 +93,7 @@ $env:ZCODE_BUILTIN_PROVIDER_CONFIG_FILE = "D:\Zcode\resources\config\provider\zc
 & <Zcode 自带 node.exe> "D:\Zcode\resources\glm\zcode.cjs" login zai --no-browser
 ```
 
-不设该变量时，登录会因找不到内置供应商配置而失败。Windows 自动打开浏览器时会在第一个 `&` 处截断授权地址，页面报缺少 `response_type`、`redirect_uri`、`state`；加 `--no-browser` 后复制终端打印的完整地址到浏览器打开。`relay cli-recipe doctor` 会检查命令行是否已登记套餐。续接已选过模型的会话不受影响。
+不设该变量时，登录会因找不到内置供应商配置而失败。Windows 自动打开浏览器时会在第一个 `&` 处截断授权地址，页面报缺少 `response_type`、`redirect_uri`、`state`；加 `--no-browser` 后复制终端打印的完整地址到浏览器打开。`relay cli-recipe doctor` 会检查命令行是否已登记套餐。命令行的供应商只来自它自己登记的账号套餐和 `~/.zcode/cli/config.json` 中的自定义供应商（`provider` 与 `model` 字段，仅在 `~/.zcode/v2/provider_config.json` 不存在时导入一次）；桌面里配置的自定义供应商（如 OpenCode Go）由桌面经内部协议交给自己的进程，命令行看不到，因此 `defaultModelSelection` 只能指向命令行已登记的供应商。续接已选过模型的会话不受影响。
 
 ## CLI
 

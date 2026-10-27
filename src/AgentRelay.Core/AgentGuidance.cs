@@ -108,7 +108,7 @@ public sealed partial class RelayService
     private string BridgeGuidance(string relayCommand) => $"""
         优先查证宿主是否支持 Agent Client Protocol（帮助中的 --acp 选项或 acp 子命令）；支持时 output_format 用 acp，命令只启动 ACP 服务，create 与 resume 写同一条命令。
         宿主自带的命令行若不能无人值守调用（需另装官方 CLI、社区 ACP 适配器或其他桥接工具），不要自行安装。先向用户说明：工具名称、来源链接、许可证、为什么需要、不安装的后果（该 Agent 不能通过 CLI 自动接收任务，仍可复制提示词手动交接）。用户明确同意后才安装，并写入方案 dependencies。需要用户在终端登录的工具，把登录命令写入方案的 login 字段，由用户自己运行。
-        已知情况：WorkBuddy 桌面版没有对外可用的调用接口，不要为它登记调用方案，也不要另装 CodeBuddy CLI；它通过复制提示词手动交接。
+        已知情况：WorkBuddy 桌面版没有对外可用的调用接口，不要为它登记调用方案，也不要另装 CodeBuddy CLI；它通过复制提示词手动交接。DSH 用 headless profile（--profile headless --json，续接加 --session-id），并用 --patch 叠加 permission.defaultPreset: danger-full-access，否则写不了回执。
         导入后运行 {relayCommand} --home "{Home}" cli-recipe doctor --agent <Agent ID> 检查本机前提（不调用模型），把未通过的项和修复方法告诉用户。
         """;
 
