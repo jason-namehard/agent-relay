@@ -111,6 +111,7 @@ public sealed partial class RelayService
         已知情况：WorkBuddy 桌面版没有对外可用的调用接口，不要为它登记调用方案，也不要另装 CodeBuddy CLI；它通过复制提示词手动交接。DSH 用 headless profile（--profile headless --json，续接加 --session-id），并用 --patch 叠加 permission.defaultPreset: danger-full-access，否则写不了回执。
         桌面版 Agent 常把模型、供应商和 API key 存在桌面自己的配置里，命令行单独启动时看不到（例如 Zcode 桌面的自定义供应商在工作区 .zcode\v2\provider_config.json，DSH 的 key 在 DSH_HOME 的 .credentials.yaml）。先查证能否让命令行直接使用桌面那份配置（环境变量指向它、叠加桌面 profile 等），这样不必再填 key。只有命令行确实单独保存 key 时，才向用户说明：Relay 通过命令行调用该 Agent，而它的命令行与桌面分开保存 key，需要再提供一次才能使用同一个第三方供应商；由用户决定是否提供。不要自行读取桌面加密存储里的凭据，也不要把 key 写进 Relay 的调用方案。
         导入后运行 {relayCommand} --home "{Home}" cli-recipe doctor --agent <Agent ID> 检查本机前提（不调用模型），把未通过的项和修复方法告诉用户。
+        然后阅读并执行缓存对齐技能 {Skill("relay-cache-parity").Path}：让 Relay 续接会话时发出的请求与该 Agent 桌面端一致，切换两边时仍命中提示缓存。其中的静态检查必须做；需要真实调用模型的对照实验，先说明轮数和会话并取得用户同意。
         """;
 
     public IReadOnlyList<GuidanceRegistration> GuidanceRegistrations() => ReadGuidanceState()?.Registrations ?? [];

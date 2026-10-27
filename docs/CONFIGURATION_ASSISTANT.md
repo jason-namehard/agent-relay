@@ -200,6 +200,15 @@ dotnet .\relay.dll --home <中转站目录> cli-recipe doctor --agent <节点ID>
 dotnet .\relay.dll --home <中转站目录> cli-recipe confirm --agent <节点ID> --probe <探针ID> --visible
 ```
 
+导入方案后，一键配置还要按 Relay 自带的 `relay-cache-parity` 技能做缓存对齐：让 Relay 续接会话时发出的请求与该 Agent 桌面端一致，用户在两边切换时不必为整段历史重新付费。技能写在 `<中转站目录>\skills\relay-cache-parity\SKILL.md`，配置提示词里会给出这个路径；也可以复制到 Agent 自己的技能目录。静态检查必须做；需要真实调用模型的对照实验，先说明轮数和会话，并取得用户同意。
+
+```powershell
+dotnet .\relay.dll --home <中转站目录> skill list
+dotnet .\relay.dll --home <中转站目录> skill install --name relay-cache-parity --target <Agent 技能目录>
+# 逐次请求的输入与缓存读取；对照桌面轮与 Relay 轮（目前支持 Zcode、Hermes）
+dotnet .\relay.dll --home <中转站目录> agent cache-check --agent <节点ID> --session <会话ID>
+```
+
 `confirm` 记录用户已在宿主中看到探针会话，与测试窗口中的勾选相同。一键配置发现宿主需另装官方 CLI、ACP 适配器或其他桥接时，只向用户说明名称、来源、许可证、用途及不安装的后果（只能复制提示词手动交接），得到同意才安装，并写入方案 `dependencies`；需要交互登录的，把登录命令写入 `login`，由用户自己运行。
 
 模型、工作目录和 profile 属于宿主执行配置。若新建提示未选择模型，应在宿主配置，或选择已配置的已有会话；续接默认继承原设置。当前没有跨宿主统一的模型/思考强度覆盖表单。会话 ID 由适配器输出或宿主元数据取得，不让模型自行查找；手动粘贴短 JSON 本身不能提供当前来源会话。

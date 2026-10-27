@@ -91,6 +91,13 @@ public static class RelayCli
             async (s, v) => await s.AgentModelsAsync(v.Get("agent"), v.CancellationToken));
         Add(agent, "set-model", "设置 Relay 新建会话时的默认模型与思考强度（写入宿主自己的配置）", ["agent!", "provider!", "model!", "reasoning"],
             async (s, v) => await s.SetAgentModelAsync(v.Get("agent"), new(v.Get("provider"), v.Get("model"), v.Optional("reasoning")), v.CancellationToken));
+        Sync(agent, "cache-check", "读取宿主记录的逐次请求用量，对照桌面与 Relay 轮次的缓存命中；不调用模型", ["agent!", "session!", "limit"],
+            (s, v) => s.CacheUsage(v.Get("agent"), v.Get("session"),
+                v.Optional("limit") is { } limit && int.TryParse(limit, out var count) ? count : 30));
+        var skill = Group("skill", "Relay 自带的 Agent 技能");
+        Sync(skill, "list", "列出自带技能及其在 Relay 数据目录中的路径", [], (s, _) => RelayService.SkillNames.Select(s.Skill));
+        Sync(skill, "install", "把技能复制到 Agent 自己的技能目录（如 ~/.claude/skills）", ["name!", "target!"],
+            (s, v) => s.InstallSkill(v.Get("name"), v.Get("target")));
         Sync(agent, "register", "登记或手工修正路径（需要重新 validate）",
             ["id!", "host", "config-path!", "cli-path", "host-version", "instruction-path"],
             (s, v) => s.Register(v.Get("id"), v.Optional("host") ?? "manual", v.Get("config-path"),

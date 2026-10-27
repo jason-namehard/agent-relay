@@ -52,6 +52,8 @@ public sealed partial class RelayService
             if (!arguments.Any(a => a is "-y" or "--dangerously-skip-permissions" or "--permission-mode"))
                 yield return new("host.permission", "fail", "缺少非交互权限参数（-y 或 --permission-mode acceptEdits）：无人值守时 Agent 无法写回执。");
         }
+        if (format == "dsh-jsonl")
+            yield return new("host.parity.dsh", "warn", "DSH 命令行（headless）与桌面的工具集不同：它不能续接桌面建的会话；Relay 新建的会话在桌面继续时，第一轮会整段重新计费，之后再命中缓存。要完全一致，需要由运行中的 DSH 桌面执行回合（见 relay-cache-parity 技能）。");
         if (format is "zcode-json" or "zcode-jsonl")
         {
             foreach (var (name, command) in new[] { ("create", recipe.Create), ("resume", recipe.Resume) })

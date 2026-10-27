@@ -119,6 +119,17 @@ $env:ZCODE_BUILTIN_PROVIDER_CONFIG_FILE = "D:\Zcode\resources\config\provider\zc
 
 不设该变量时，登录会因找不到内置供应商配置而失败。Windows 自动打开浏览器时会在第一个 `&` 处截断授权地址，页面报缺少 `response_type`、`redirect_uri`、`state`；加 `--no-browser` 后复制终端打印的完整地址到浏览器打开。`relay cli-recipe doctor` 会检查命令行是否已登记套餐。Zcode 桌面的供应商配置在工作区数据目录（如 `E:\Zspace\.zcode\v2\provider_config.json`，含 OpenCode Go 等自定义供应商及其模型规则）。调用方案把 `ZCODE_PERSONAL_PROVIDER_CONFIG_FILE` 指向这份文件，命令行就使用与桌面相同的供应商，不必另填 key；默认模型写在其中的 `defaultModelSelection`，思考强度须是该模型支持的档位。否则，命令行的供应商只来自它自己登记的账号套餐和 `~/.zcode/cli/config.json` 中的自定义供应商（`provider` 与 `model` 字段，仅在 `~/.zcode/v2/provider_config.json` 不存在时导入一次）；桌面里配置的自定义供应商（如 OpenCode Go）由桌面经内部协议交给自己的进程，命令行看不到，因此 `defaultModelSelection` 只能指向命令行已登记的供应商。续接已选过模型的会话不受影响。
 
+## 续接会话的缓存对齐（各宿主）
+
+续接原会话是为了让供应商复用提示缓存，前提是两次请求的前缀（工具定义、系统提示、历史）逐字相同。各宿主构建前缀的方式不同，对齐的可行性也不同。完整方法写在 Relay 自带的技能 `src/AgentRelay.Core/Skills/relay-cache-parity/SKILL.md` 里；一键配置会让 Agent 按它检查。逐次用量用 `relay agent cache-check --agent <ID> --session <会话>` 读取。
+
+| 宿主 | 类型 | 现状 |
+| --- | --- | --- |
+| Zcode | 每次启动现建 | 已对齐，见上节。导入方案时自动补齐，doctor 检查 |
+| Hermes | 网关型 | `hermes acp` 连接桌面同一个网关，会话的系统提示与工具集在创建时固定，并存在 `state.db`，两边续接发出的前缀相同。Relay 续接时用会话自己的 cwd，且不带 MCP 服务器（cwd 不同会让网关迁移会话并重建提示）。用量取自 `HERMES_HOME\logs\agent.log` |
+| DSH | headless 不能对齐 | 桌面会话带 `standard` preset，比 headless 多 17 个工具，headless 也拒绝续接这类会话。Relay 新建的会话在桌面继续时会换成 preset 工具集，第一轮整段重新计费。doctor 以 `host.parity.dsh` 提示。完全对齐的路线是由运行中的桌面执行回合，即调用它本机的 `session/create`、`session/prompt`、`session/follow` 接口；认证方式待用户决定 |
+| 其他 | 未测 | 按技能步骤判断类型，找用量来源，在用户同意后做对照实验，再把对齐项写进调用方案；Relay 还不认识的宿主，写进方案的 `limitations` |
+
 ## 新会话默认模型
 
 Agent 管理的“新会话默认模型”和 `relay agent models --agent <ID>` / `relay agent set-model --agent <ID> --provider <供应商> --model <模型> [--reasoning <档位>]` 列出并设置 Relay 新建会话时用的模型。Zcode 写入调用方案 `ZCODE_PERSONAL_PROVIDER_CONFIG_FILE` 指向的供应商配置（修改前留 `.bak-relay-model`）；DSH 写入调用方案中位于 `中转站\bridges\` 的补丁层，并通过 `--dump-config` 读取可选模型（不调用模型）。思考强度只能选该模型支持的档位，界面默认取中档：有 `medium` 用 `medium`，否则取中间那档。续接已有会话不传任何模型参数：Zcode 续接时忽略默认值，DSH 只给没有会话级选择的 Agent 用默认值，所以续接沿用会话自己的模型与思考强度。其他宿主暂在宿主自己的设置里选择。
