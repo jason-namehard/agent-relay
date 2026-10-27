@@ -88,6 +88,27 @@ DSH 用自带的 headless profile 接入：`DeepSeek Harness.exe`（环境变量
 
 Zcode 桌面按需加载 MCP 与 skill 的工具定义（工具搜索模式 `local`），命令行默认 `off`，会把全部工具定义随每次请求发送：本机仅 REA 一个 MCP 就有 207 个工具，每次请求约 26 万 token。Relay 导入 Zcode 调用方案时自动给 create 与 resume 追加 `--toolsearch-mode local`，`cli-recipe doctor` 在缺少时报错。用 `local` 而不是 `auto`：`auto` 取决于供应商是否声明原生工具搜索，换供应商时行为会变。实测最小提示的单次输入从约 26.3 万 token 降到 16,399，与桌面会话首轮（16,693）同量级，模型仍可经工具搜索找到并调用 REA 的工具。
 
+### 续接桌面会话时保持缓存命中
+
+Zcode 每次启动都会重新生成工具集和系统提示，这两样不随会话保存；而供应商只有在请求前缀完全一致时才复用提示缓存。所以命令行续接桌面会话时，启动方式必须和桌面一致。否则这一轮会把整段历史重新计费，桌面的下一轮也一样。除工具搜索外，命令行与桌面还有三处默认不同：
+
+| 差异 | 桌面 | 命令行默认 | Relay 的处理 |
+| --- | --- | --- | --- |
+| 动态工作流 | `~/.zcode/v2/setting.json` 的 `dynamicWorkflowMode`，决定技能列表里有没有 dynamic-workflows | disabled | 导入时按桌面设置追加 `--workflow-mode` |
+| 生成界面说明 | 系统提示里写明桌面的 visualizations 目录 | surface 默认为 terminal；即使用 `--surface desktop`，也要设置 `ZCODE_GEN_UI_OUTPUT_ROOT` 才写 | 导入时追加 `--surface desktop`，并把 `ZCODE_GEN_UI_OUTPUT_ROOT` 设为桌面数据目录下的 `visualizations`（surface 不影响请求的其他部分） |
+| 记忆 | `memoryEnabled` 关闭时，向运行时传 `memory.enabled=false` | 开启，系统提示里多一段记忆说明 | doctor 检查；需在 `~/.zcode/cli/config.json` 设 `"features": { "memory": false }` |
+
+桌面的设置始终放在 `~/.zcode/v2/setting.json`。数据目录如果迁移过，会记在 setting.json 的 `dataBaseDir` 里，实际位置是 `<dataBaseDir>\.zcode\v2`；没迁移过就是 `~/.zcode/v2`。桌面用的供应商配置和 visualizations 都在这个目录下。调用方案的 `ZCODE_PERSONAL_PROVIDER_CONFIG_FILE` 应指向这里的 `provider_config.json`，否则 doctor 报 `host.parity.provider`。
+
+记忆开关只能写在 `~/.zcode/cli/config.json` 里，命令行没有对应的参数或环境变量。这个文件桌面也会读：桌面开启记忆时不传开关，直接沿用这一项。所以 Relay 只做检查，不替用户写入。以后在桌面开启记忆，要同时删掉这一项。桌面设置改动后，doctor 会提示重新导入调用方案。
+
+实测会话 `session_fc4427…`，模型 deepseek-v4.1-flash：
+
+- 未对齐时，桌面一轮的缓存命中为 0，此前命令行刚刚连续命中 99%，所以不是缓存过期，是前缀不同。
+- 三项对齐后，命令行请求的前 27 条消息与桌面请求逐字相同，仅最后一条的缓存断点标记不同。
+- 紧接着的命令行一轮读到 20,480 token 缓存，与桌面那次 21,912 token 请求的前缀相当，说明命中的是桌面写下的缓存。
+- 去掉记忆说明，每次请求还少约 2,300 token。
+
 从桌面应用外启动 `zcode.cjs` 时，命令行只认自己登记过的账号套餐；桌面已登录、或在桌面里切换模型，都不会为它登记，于是新建会话报 “Select a model before sending a message”。在终端登录一次即可登记套餐并写入默认模型：
 
 ```powershell

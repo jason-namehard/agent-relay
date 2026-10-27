@@ -32,6 +32,7 @@ public sealed partial class RelayService
             ? new("resume", "warn", "方案没有续接命令：每轮都会新建会话，回稿不能回到同一对话。")
             : new("resume", "pass", "已配置续接命令。"));
         checks.AddRange(HostChecks(recipe, format));
+        if (CliRecipes.IsZcode(recipe)) checks.AddRange(ZcodeParityChecks(recipe));
         if (extension.Block is { } block) checks.Add(new("block", "fail", block.Message));
         checks.Add(new("verified.create", extension.CanCreate ? "pass" : "warn", extension.CanCreate
             ? "新建会话已验证。" : "新建会话尚未验证：探针通过并确认可见，或一次新建会话的真实交接写回回执后才会自动投递。"));
@@ -70,6 +71,52 @@ public sealed partial class RelayService
                 ? new("host.model", "pass", "已设置命令行默认模型（" + config + "）。")
                 : new("host.model", "warn", "Zcode 命令行没有默认模型；登录后会自动写入，在桌面切换模型不会写入这一项。");
         }
+    }
+
+    /// <summary>Launch settings whose difference from the desktop makes a continued conversation miss the prompt cache.</summary>
+    private IEnumerable<CliHealthCheck> ZcodeParityChecks(CliRecipe recipe)
+    {
+        const string Reimport = "请重新导入调用方案，Relay 会按桌面设置补齐。";
+        var desktopWorkflow = CliRecipes.ZcodeDesktopSetting(ZcodeUserDirectory, "dynamicWorkflowMode");
+        foreach (var (name, command) in new[] { ("create", recipe.Create), ("resume", recipe.Resume) })
+        {
+            if (command is null) continue;
+            if (desktopWorkflow is not null && CliRecipes.ZcodeArgument(command, "--workflow-mode") != desktopWorkflow)
+                yield return new($"host.parity.workflow.{name}", "warn", $"桌面的动态工作流设置是 {desktopWorkflow}，命令行没有按它启动：两边的技能列表不同，续接桌面会话时缓存会整段失效。" + Reimport);
+            var genUi = CliRecipes.ZcodeVisualizationsDirectory(command, ZcodeUserDirectory);
+            if (CliRecipes.ZcodeArgument(command, "--surface") != "desktop" ||
+                command.Environment?.GetValueOrDefault("ZCODE_GEN_UI_OUTPUT_ROOT") is not { Length: > 0 } root || !SamePath(Path.GetFullPath(root), Path.GetFullPath(genUi)))
+                yield return new($"host.parity.genui.{name}", "warn", $"命令行没有用 --surface desktop 和 ZCODE_GEN_UI_OUTPUT_ROOT={genUi} 启动：系统提示里的生成界面说明与桌面不同，续接桌面会话时缓存会整段失效。" + Reimport);
+        }
+        if (CliRecipes.ZcodeDesktopDataDirectory(ZcodeUserDirectory) is { } data)
+        {
+            var desktop = Path.Combine(data, "provider_config.json");
+            var used = recipe.Create.Environment?.GetValueOrDefault("ZCODE_PERSONAL_PROVIDER_CONFIG_FILE") ?? Path.Combine(ZcodeUserDirectory, "v2", "provider_config.json");
+            if (!SamePath(Path.GetFullPath(used), Path.GetFullPath(desktop)))
+                yield return new("host.parity.provider", "warn", $"命令行读的供应商配置是 {used}，桌面用的是 {desktop}：两边可选的模型与供应商不同。请把 ZCODE_PERSONAL_PROVIDER_CONFIG_FILE 设为桌面这份。");
+        }
+        // The desktop sends memory.enabled=false when its memory is off; when on, it falls back to this shared setting.
+        var desktopMemory = CliRecipes.ZcodeDesktopSetting(ZcodeUserDirectory, "memoryEnabled") == "true";
+        var cliConfig = Path.Combine(ZcodeUserDirectory, "cli", "config.json");
+        var cliMemory = ZcodeCliMemory(cliConfig);
+        if (desktopMemory == cliMemory)
+            yield return new("host.parity.memory", "pass", desktopMemory ? "桌面与命令行都开启了记忆。" : "桌面与命令行都关闭了记忆。");
+        else if (!desktopMemory)
+            yield return new("host.parity.memory", "warn", $"桌面关闭了记忆，命令行仍会在系统提示里加入记忆说明，续接桌面会话时缓存会整段失效。请在 {cliConfig} 里设置 \"features\": {{ \"memory\": false }}；以后若在桌面开启记忆，要同时删掉这一项，否则桌面的记忆开关不起作用。");
+        else
+            yield return new("host.parity.memory", "warn", $"桌面开启了记忆，但 {cliConfig} 里的 features.memory 为 false，这一项会让桌面的记忆也不起作用。请删掉它。");
+    }
+
+    private static bool ZcodeCliMemory(string path)
+    {
+        if (!File.Exists(path)) return true;
+        try
+        {
+            using var document = JsonDocument.Parse(File.ReadAllText(path));
+            return !(document.RootElement.ValueKind == JsonValueKind.Object && document.RootElement.TryGetProperty("features", out var features) &&
+                features.ValueKind == JsonValueKind.Object && features.TryGetProperty("memory", out var memory) && memory.ValueKind == JsonValueKind.False);
+        }
+        catch (Exception exception) when (exception is JsonException or IOException) { return true; }
     }
 
     // Reads key names only; credential values are never loaded into Relay.

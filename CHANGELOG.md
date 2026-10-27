@@ -3,6 +3,7 @@
 ## Unreleased
 
 - Zcode 调用方案导入时自动追加 `--toolsearch-mode local`，与桌面一样按需加载工具定义，避免每次请求携带全部 MCP 工具（本机实测单次输入约 26.3 万 → 1.6 万 token）；`cli-recipe doctor` 检查缺失。
+- Relay 续接 Zcode 桌面会话时保持缓存命中：导入方案时按桌面设置追加 `--workflow-mode`，并以 `--surface desktop` 加 `ZCODE_GEN_UI_OUTPUT_ROOT` 启动；doctor 检查这两项和记忆开关是否与桌面一致。实测三项对齐后命令行请求前缀与桌面一致，续接轮缓存命中从 0 升到约 93%。
 - Agent 管理新增“新会话默认模型”（`relay agent models/set-model`）：Zcode 写入桌面同一份供应商配置的 `defaultModelSelection`，DSH 写入 Relay 的补丁层；思考强度只能选模型支持的档位，默认取中档。续接会话沿用其自身的模型与思考强度。
 - 读取 Zcode 0.17 的 JSON 输出；持续修改与验收的回执忽略与结论矛盾的 `needs_reply`；Relay 新建的会话提示宿主可能要重开窗口才显示。
 - WorkBuddy 在新建任务和 Agent 详情中说明为何无法桥接；手动配置调用方式可填环境变量；一键配置先让命令行使用桌面自己的配置，确需另填 key 时由用户决定。

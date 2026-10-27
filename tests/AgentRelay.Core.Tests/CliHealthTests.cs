@@ -12,7 +12,7 @@ public sealed class CliHealthTests
     public void Setup()
     {
         root = Path.Combine(Path.GetTempPath(), "AgentRelay.Tests", Guid.NewGuid().ToString());
-        service = new RelayService(Path.Combine(root, "relay")); service.Initialize();
+        service = new RelayService(Path.Combine(root, "relay")) { ZcodeUserDirectory = Path.Combine(root, "zcode-user") }; service.Initialize();
         service.RegisterManual("agent-b", "fixture", "乙");
     }
 
@@ -72,6 +72,46 @@ public sealed class CliHealthTests
         Assert.IsFalse(service.CliHealth("zcode").Any(c => c.Id.StartsWith("host.toolsearch", StringComparison.Ordinal)));
         var other = service.ImportCliRecipe("agent-b", RelayJson.Write(new CliRecipe(1, "f", "fixture", new("pwsh", ["{prompt}"], null, null), null, [], "", "", "", "", "text")));
         Assert.DoesNotContain("--toolsearch-mode", other.Recipe.Create.Arguments);
+    }
+
+    [TestMethod]
+    public void ZcodeRecipesLaunchTheWayTheDesktopDoesSoContinuedConversationsKeepTheirCache()
+    {
+        var user = Path.Combine(root, "zcode-user"); Directory.CreateDirectory(Path.Combine(user, "v2"));
+        var settings = new Dictionary<string, object> { ["dynamicWorkflowMode"] = "onDemand", ["memoryEnabled"] = false, ["dataBaseDir"] = Path.Combine(root, "workspace") };
+        File.WriteAllText(Path.Combine(user, "v2", "setting.json"), System.Text.Json.JsonSerializer.Serialize(settings));
+        var provider = Path.Combine(root, "workspace", ".zcode", "v2", "provider_config.json");
+        service.RegisterManual("zcode", "ZCode Desktop", "Zcode");
+        var command = new CliCommand("node", ["zcode.cjs", "-p", "{prompt}", "--json"], null, null,
+            new() { ["ZCODE_PERSONAL_PROVIDER_CONFIG_FILE"] = provider });
+        var imported = service.ImportCliRecipe("zcode", RelayJson.Write(new CliRecipe(1, "z", "ZCode Desktop", command,
+            command with { Arguments = ["zcode.cjs", "--resume", "{session_id}", "-p", "{prompt}", "--json"] }, [], "", "", "", "", "zcode-json")));
+        foreach (var launch in new[] { imported.Recipe.Create, imported.Recipe.Resume! })
+        {
+            Assert.AreEqual("desktop", CliRecipes.ZcodeArgument(launch, "--surface"));
+            Assert.AreEqual("onDemand", CliRecipes.ZcodeArgument(launch, "--workflow-mode"));
+            Assert.AreEqual(Path.Combine(Path.GetDirectoryName(provider)!, "visualizations"), launch.Environment!["ZCODE_GEN_UI_OUTPUT_ROOT"]);
+        }
+        Assert.IsFalse(service.CliHealth("zcode").Any(c => c.Id.StartsWith("host.parity.", StringComparison.Ordinal) && c.Id != "host.parity.memory"));
+
+        // Memory is a command-line setting the desktop also reads, so Relay reports a mismatch instead of writing it.
+        var health = () => service.CliHealth("zcode").Single(c => c.Id == "host.parity.memory");
+        Assert.AreEqual("warn", health().Status);
+        StringAssert.Contains(health().Message, "\"memory\": false");
+        Directory.CreateDirectory(Path.Combine(user, "cli"));
+        File.WriteAllText(Path.Combine(user, "cli", "config.json"), """{"features":{"memory":false}}""");
+        Assert.AreEqual("pass", health().Status);
+        File.WriteAllText(Path.Combine(user, "v2", "setting.json"), """{"dynamicWorkflowMode":"alwaysOn","memoryEnabled":true}""");
+        Assert.AreEqual("warn", health().Status);
+        Assert.AreEqual("warn", service.CliHealth("zcode").Single(c => c.Id == "host.parity.workflow.resume").Status);
+        // Without dataBaseDir the desktop keeps its data in ~/.zcode/v2, so this provider file is no longer the desktop's.
+        Assert.AreEqual("warn", service.CliHealth("zcode").Single(c => c.Id == "host.parity.provider").Status);
+
+        // An explicit surface is kept, and doctor reports that it differs from the desktop's.
+        var terminal = service.ImportCliRecipe("agent-b", RelayJson.Write(new CliRecipe(1, "f", "fixture",
+            new("pwsh", ["zcode.cjs", "-p", "{prompt}", "--json", "--surface", "terminal"], null, null), null, [], "", "", "", "", "zcode-json")));
+        Assert.IsNull(terminal.Recipe.Create.Environment);
+        Assert.AreEqual("warn", service.CliHealth("agent-b").Single(c => c.Id == "host.parity.genui.create").Status);
     }
 
     [TestMethod]

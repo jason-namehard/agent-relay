@@ -31,20 +31,76 @@ public static class CliRecipes
 {
     public static readonly string[] OutputFormats = ["relay-json", "dsh-jsonl", "zcode-json", "zcode-jsonl", "hermes-jsonl", "claude-json", "text", "acp"];
 
+    public static bool IsZcode(CliRecipe recipe) => recipe.Create.Arguments.Prepend(recipe.Create.Executable)
+        .Select(value => value.Replace('\\', '/').Split('/').Last())
+        .Any(p => p.Equals("zcode.cjs", StringComparison.OrdinalIgnoreCase) || p.Equals("zcode", StringComparison.OrdinalIgnoreCase) ||
+            p.Equals("zcode.exe", StringComparison.OrdinalIgnoreCase) || p.Equals("zcode.cmd", StringComparison.OrdinalIgnoreCase));
+
     /// <summary>
-    /// The Zcode desktop loads MCP and skill tool schemas on demand (tool search mode local); its command line defaults to off
-    /// and sends every schema with every request, about 260k input tokens per request on a machine with a large MCP server.
-    /// A Zcode command-line launch therefore always declares --toolsearch-mode local. local, not auto: auto depends on whether
-    /// the provider advertises native tool search, so it would change with the provider.
+    /// Zcode builds the tool set and system prompt at every launch instead of storing them with the conversation, and the
+    /// provider reuses its prompt cache only for an identical request prefix. A command-line turn that continues a desktop
+    /// conversation must therefore launch the way the desktop does; otherwise that turn, and the desktop's next one, pay for
+    /// the whole history again. Three launch differences are fixed here:
+    /// - Tool search. The desktop loads MCP and skill tool schemas on demand (local). The command line defaults to off and
+    ///   sends every schema with every request, about 260k input tokens on a machine with a large MCP server. The mode is
+    ///   always local, not auto, because auto depends on whether the provider advertises native tool search.
+    /// - Dynamic workflows. The desktop setting dynamicWorkflowMode decides whether the dynamic-workflows skill is listed.
+    ///   The command line defaults to disabled.
+    /// - Generated UI. The desktop always runs as surface desktop, and its system prompt names its visualizations folder. The
+    ///   command line defaults to surface terminal, and even as desktop adds that section only when ZCODE_GEN_UI_OUTPUT_ROOT
+    ///   is set. The surface affects nothing else in the request.
+    /// The fourth difference, memory, is a command-line config setting the desktop also reads, so doctor reports it instead.
     /// </summary>
-    public static CliRecipe WithZcodeToolSearch(CliRecipe recipe)
+    public static CliRecipe WithZcodeDesktopParity(CliRecipe recipe, string zcodeUserDirectory)
     {
-        var programs = recipe.Create.Arguments.Prepend(recipe.Create.Executable).Select(value => value.Replace('\\', '/').Split('/').Last());
-        if (!programs.Any(p => p.Equals("zcode.cjs", StringComparison.OrdinalIgnoreCase) || p.Equals("zcode", StringComparison.OrdinalIgnoreCase) ||
-            p.Equals("zcode.exe", StringComparison.OrdinalIgnoreCase) || p.Equals("zcode.cmd", StringComparison.OrdinalIgnoreCase))) return recipe;
-        static CliCommand Ensure(CliCommand command) => command.Arguments.Contains("--toolsearch-mode")
-            ? command : command with { Arguments = [.. command.Arguments, "--toolsearch-mode", "local"] };
+        if (!IsZcode(recipe)) return recipe;
+        var workflowMode = ZcodeDesktopSetting(zcodeUserDirectory, "dynamicWorkflowMode");
+        CliCommand Ensure(CliCommand command)
+        {
+            var arguments = command.Arguments.ToList();
+            if (!arguments.Contains("--surface")) arguments.AddRange(["--surface", "desktop"]);
+            if (!arguments.Contains("--toolsearch-mode")) arguments.AddRange(["--toolsearch-mode", "local"]);
+            if (workflowMode is not null && !arguments.Contains("--workflow-mode")) arguments.AddRange(["--workflow-mode", workflowMode]);
+            var launch = command with { Arguments = [.. arguments] };
+            if (ZcodeArgument(launch, "--surface") != "desktop") return launch;
+            var environment = launch.Environment is null ? new Dictionary<string, string>() : new(launch.Environment);
+            environment["ZCODE_GEN_UI_OUTPUT_ROOT"] = ZcodeVisualizationsDirectory(launch, zcodeUserDirectory);
+            return launch with { Environment = environment };
+        }
         return recipe with { Create = Ensure(recipe.Create), Resume = recipe.Resume is null ? null : Ensure(recipe.Resume) };
+    }
+
+    public static string? ZcodeArgument(CliCommand command, string name)
+    {
+        var index = Array.IndexOf(command.Arguments, name);
+        return index >= 0 && index + 1 < command.Arguments.Length ? command.Arguments[index + 1] : null;
+    }
+
+    /// <summary>
+    /// The desktop's data folder: &lt;dataBaseDir&gt;/.zcode/v2 when the user moved it, else ~/.zcode/v2. Its provider file and
+    /// its generated UI (visualizations) live there; its settings always stay in ~/.zcode/v2.
+    /// </summary>
+    public static string? ZcodeDesktopDataDirectory(string zcodeUserDirectory) =>
+        ZcodeDesktopSetting(zcodeUserDirectory, "dataBaseDir") is { Length: > 0 } moved ? Path.Combine(moved, ".zcode", "v2")
+        : File.Exists(Path.Combine(zcodeUserDirectory, "v2", "setting.json")) ? Path.Combine(zcodeUserDirectory, "v2") : null;
+
+    public static string ZcodeVisualizationsDirectory(CliCommand command, string zcodeUserDirectory) => Path.Combine(
+        ZcodeDesktopDataDirectory(zcodeUserDirectory) ?? Path.GetDirectoryName(command.Environment?.GetValueOrDefault("ZCODE_PERSONAL_PROVIDER_CONFIG_FILE")
+            ?? Path.Combine(zcodeUserDirectory, "v2", "provider_config.json"))!, "visualizations");
+
+    /// <summary>Reads one top-level value from the desktop's settings (~/.zcode/v2/setting.json); null when absent or unreadable.</summary>
+    public static string? ZcodeDesktopSetting(string zcodeUserDirectory, string name)
+    {
+        var path = Path.Combine(zcodeUserDirectory, "v2", "setting.json");
+        if (!File.Exists(path)) return null;
+        try
+        {
+            using var document = JsonDocument.Parse(File.ReadAllText(path));
+            return document.RootElement.ValueKind == JsonValueKind.Object && document.RootElement.TryGetProperty(name, out var value)
+                ? value.ValueKind switch { JsonValueKind.String => value.GetString(), JsonValueKind.True => "true", JsonValueKind.False => "false", _ => null }
+                : null;
+        }
+        catch (Exception exception) when (exception is JsonException or IOException) { return null; }
     }
 
     public static string OutputFormatFor(CliRecipe recipe)
@@ -127,7 +183,7 @@ public static class CliRecipes
         input 为标准输入模板或 null；working_directory 为绝对路径或 null。
         调用必须将请求交给真实 Agent 会话。Relay 已支持这些 output_format：
         relay-json：独立桥接器返回 {"session_id":"真实标识","reply":"真实回复","accepted":true}；
-        dsh-jsonl：DSH --profile headless --json；zcode-json：Zcode -p {prompt} --json --toolsearch-mode local（命令行默认不按需加载工具，必须声明）；
+        dsh-jsonl：DSH --profile headless --json；zcode-json：Zcode -p {prompt} --json --surface desktop --toolsearch-mode local（命令行默认不按需加载工具，必须声明；Relay 导入时会按桌面设置补上 --workflow-mode 和 ZCODE_GEN_UI_OUTPUT_ROOT，让续接桌面会话时命中缓存）；
         hermes-jsonl：Hermes chat -q {prompt} --format stream-json；claude-json：CodeBuddy/WorkBuddy -p --output-format json；
         text：只输出最终回复的普通文本命令，可测试回复，但无会话 ID 时不能测试同会话续接。
         acp：宿主支持 Agent Client Protocol（如 hermes acp、codebuddy --acp）时优先使用；命令只启动 ACP 服务，不含 {prompt}/{session_id}，input 为 null，resume 填与 create 相同的命令；Relay 通过协议新建或续接会话。
@@ -169,9 +225,13 @@ public sealed partial class RelayService
     public string PreferredDeliveryAdapter(string recipientId) => CliExtension(recipientId) is { CanCreate: true }
         ? "cli:" + recipientId : "amq-cli";
 
+    /// <summary>Zcode's per-user folder (~/.zcode) holding the desktop settings and the command line's own config.</summary>
+    public string ZcodeUserDirectory { get; init; } =
+        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".zcode");
+
     public CliExtensionRecord ImportCliRecipe(string agentId, string json)
     {
-        var recipe = CliRecipes.WithZcodeToolSearch(CliRecipes.Parse(json));
+        var recipe = CliRecipes.WithZcodeDesktopParity(CliRecipes.Parse(json), ZcodeUserDirectory);
         return store.Write(s =>
         {
             var agent = Agent(s, agentId);
