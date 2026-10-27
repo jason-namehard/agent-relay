@@ -31,7 +31,7 @@ internal static class BridgePresentation
     public static string Label(AgentBridge bridge, Func<string, string> t) => bridge.Kind switch
     {
         "none" => t("None · Copy prompts manually"),
-        _ => (bridge.Kind == "acp" ? "ACP" : "CLI") + " · " + t(bridge.State switch
+        _ => (bridge.Kind switch { "acp" => "ACP", "desktop" => t("Desktop"), _ => "CLI" }) + " · " + t(bridge.State switch
         {
             "verified" => "Verified",
             "blocked" => "Needs attention",
@@ -69,7 +69,7 @@ internal static class BridgePresentation
     {
         var (title, body, bar) = ((TextBlock, TextBlock, Border))card.Tag;
         bar.Background = Accent(card, bridge);
-        string Format(string text) => string.Format(CultureInfo.CurrentUICulture, t(text), agentName, bridge.Kind.ToUpperInvariant());
+        string Format(string text) => string.Format(CultureInfo.CurrentUICulture, t(text), agentName, bridge.Kind == "desktop" ? t("Desktop") : bridge.Kind.ToUpperInvariant());
         (title.Text, body.Text) = bridge switch
         {
             { Kind: "none", HostNote: { } note } => (Format("{0} has no Agent bridge"), note),

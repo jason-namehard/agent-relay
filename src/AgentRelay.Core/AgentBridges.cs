@@ -1,6 +1,6 @@
 namespace AgentRelay.Core;
 
-/// <param name="Kind">acp, cli, or none when only manual copy works.</param>
+/// <param name="Kind">acp, desktop (the running desktop app's own API), cli, or none when only manual copy works.</param>
 /// <param name="State">verified, unverified, blocked or manual.</param>
 /// <param name="HostNote">Why this host cannot have a bridge at all, when that is known.</param>
 public sealed record AgentBridge(string AgentId, string Kind, string State, bool CanCreate, bool CanResume, string? BlockMessage,
@@ -13,7 +13,7 @@ public sealed partial class RelayService
     {
         var host = Agents().Single(a => a.AgentId == agentId).Host;
         if (CliExtension(agentId) is not { } extension) return new(agentId, "none", "manual", false, false, null, HostLimitation(host));
-        var kind = CliRecipes.OutputFormatFor(extension.Recipe) == "acp" ? "acp" : "cli";
+        var kind = CliRecipes.OutputFormatFor(extension.Recipe) switch { "acp" => "acp", "dsh-desktop" => "desktop", _ => "cli" };
         var state = extension.Block is not null ? "blocked" : extension.CanCreate || extension.CanResume ? "verified" : "unverified";
         return new(agentId, kind, state, extension.CanCreate, extension.CanResume, extension.Block?.Message, HostLimitation(host));
     }

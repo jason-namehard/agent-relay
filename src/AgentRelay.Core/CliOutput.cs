@@ -10,8 +10,8 @@ internal static class CliOutput
         if (format == "text") return string.IsNullOrWhiteSpace(process.Output) ? null : (null, process.Output);
         try
         {
-            // The ACP client reports the finished turn in relay-json.
-            if (format is "relay-json" or "acp")
+            // The ACP and DSH desktop clients report the finished turn in relay-json.
+            if (format is "relay-json" or "acp" or "dsh-desktop")
             {
                 using var document = JsonDocument.Parse(process.Output);
                 var root = document.RootElement;

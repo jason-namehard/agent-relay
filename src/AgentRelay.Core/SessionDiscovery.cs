@@ -110,7 +110,7 @@ internal static class SessionProviders
         var format = recipe is null ? null : CliRecipes.OutputFormatFor(recipe);
         if (format is "zcode-json" or "zcode-jsonl") return "zcode";
         if (format == "hermes-jsonl") return "hermes";
-        if (format == "dsh-jsonl") return "dsh";
+        if (format is "dsh-jsonl" or "dsh-desktop") return "dsh";
         if (agent.Host.Equals("WorkBuddy", StringComparison.OrdinalIgnoreCase)) return "workbuddy";
         if (agent.Host.StartsWith("ZCode", StringComparison.OrdinalIgnoreCase)) return "zcode";
         if (agent.Host.StartsWith("Hermes", StringComparison.OrdinalIgnoreCase)) return "hermes";

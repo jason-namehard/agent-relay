@@ -52,7 +52,7 @@ public sealed class CacheUsageTests
     {
         var hermes = Path.Combine(root, "hermes"); Directory.CreateDirectory(Path.Combine(hermes, "logs"));
         File.WriteAllLines(Path.Combine(hermes, "logs", "agent.log.1"),
-            ["2026-10-27 10:00:00,001 INFO [local-a] agent.conversation_loop: API call #1: model=m provider=custom in=1000 out=5 total=1005 latency=1s cache=0/1000 (0%) id=x"]);
+            ["2026-10-27 10:00:00,001 INFO [local-a] agent.conversation_loop: API call #1: model=m provider=custom in=1000 out=5 total=1005 latency=1s id=x"]);
         File.WriteAllLines(Path.Combine(hermes, "logs", "agent.log"),
         [
             "2026-10-27 11:00:00,001 INFO [local-a] agent.conversation_loop: API call #2: model=m provider=custom in=28858 out=376 total=29234 latency=3.6s cache=28288/28858 (98%) id=y",

@@ -30,6 +30,8 @@ public sealed partial class RelayService
             "zcode-json" or "zcode-jsonl" => ZcodeModels(agentId, recipe),
             "dsh-jsonl" when DshRelayPatch(recipe) is { } patch => await DshModelsAsync(agentId, recipe, patch, cancellationToken),
             "dsh-jsonl" => new(agentId, false, null, null, [], "DSH 调用方案里没有 Relay 管理的补丁层（--patch 中转站\\bridges\\…），无法设置新会话默认模型。"),
+            // Sessions are created by the desktop itself, so they start on its own default, the same as the user's.
+            "dsh-desktop" => new(agentId, false, null, null, [], "Relay 通过 DSH 桌面新建会话，用的是桌面自己的默认模型；请在 DSH 桌面的设置里修改。续接的会话沿用它自己的模型。"),
             _ => new(agentId, false, null, null, [], "这个宿主的默认模型暂不能由 Relay 设置，请在宿主自己的设置里选择；续接的会话沿用它自己的模型。")
         };
     }

@@ -69,6 +69,7 @@ internal static class CollaborationUiText
         Add("Send via bridge","通过桥接发送","透過橋接傳送","ブリッジで送信","브리지로 보내기","Enviar por el puente");
         Add("Check bridge setup (no model call)","检查桥接配置（不调用模型）","檢查橋接設定（不呼叫模型）","ブリッジ設定を確認（モデル呼び出しなし）","브리지 설정 확인(모델 호출 없음)","Revisar el puente (sin llamar al modelo)");
         Add("None · Copy prompts manually","无 · 手动复制提示词","無 · 手動複製提示詞","なし · プロンプトを手動でコピー","없음 · 프롬프트 수동 복사","Ninguno · Copiar el prompt a mano");
+        Add("Desktop","桌面","桌面","デスクトップ","데스크톱","Escritorio");
         Add("Verified","已验证","已驗證","検証済み","검증됨","Verificado");
         Add("Needs attention","需要处理","需要處理","対応が必要","조치 필요","Requiere atención");
         Add("Not yet verified","待验证","待驗證","未検証","미검증","Sin verificar");

@@ -29,7 +29,7 @@ public sealed record CliExtensionRecord(string AgentId, string Revision, CliReci
 
 public static class CliRecipes
 {
-    public static readonly string[] OutputFormats = ["relay-json", "dsh-jsonl", "zcode-json", "zcode-jsonl", "hermes-jsonl", "claude-json", "text", "acp"];
+    public static readonly string[] OutputFormats = ["relay-json", "dsh-jsonl", "zcode-json", "zcode-jsonl", "hermes-jsonl", "claude-json", "text", "acp", "dsh-desktop"];
 
     public static bool IsZcode(CliRecipe recipe) => recipe.Create.Arguments.Prepend(recipe.Create.Executable)
         .Select(value => value.Replace('\\', '/').Split('/').Last())
@@ -146,8 +146,9 @@ public static class CliRecipes
             throw new RelayException("cli_recipe_invalid", "方案需要 version=1、名称、宿主、create、dependencies 和来源/版本/许可证/限制说明。未知说明请填空字符串。");
         if (!OutputFormats.Contains(recipe.OutputFormat))
             throw new RelayException("cli_recipe_invalid", "不支持的输出格式。可选：" + string.Join(", ", OutputFormats));
-        // An ACP command only starts the agent; Relay sends the prompt and session over the protocol.
-        var acp = recipe.OutputFormat == "acp";
+        // An ACP command only starts the agent, and a DSH desktop command only names the running app; Relay sends the
+        // prompt and session over the protocol.
+        var acp = recipe.OutputFormat is "acp" or "dsh-desktop";
         ValidateCommand(recipe.Create, false, acp);
         if (recipe.Resume is not null) ValidateCommand(recipe.Resume, true, acp);
         return recipe;
@@ -164,7 +165,7 @@ public static class CliRecipes
         if (acp)
         {
             if (command.Input is not null || templates.Any(t => t.Contains("{prompt}", StringComparison.Ordinal) || t.Contains("{session_id}", StringComparison.Ordinal)))
-                throw new RelayException("cli_recipe_invalid", "acp 方案只写启动 ACP 服务的命令，input 为 null；提示词和会话由 Relay 通过协议传递，不使用 {prompt} 或 {session_id}。");
+                throw new RelayException("cli_recipe_invalid", "acp 与 dsh-desktop 方案只写宿主程序，input 为 null；提示词和会话由 Relay 通过协议传递，不使用 {prompt} 或 {session_id}。");
             return;
         }
         if (!templates.Any(t => t.Contains("{prompt}", StringComparison.Ordinal)))
@@ -187,6 +188,7 @@ public static class CliRecipes
         hermes-jsonl：Hermes chat -q {prompt} --format stream-json；claude-json：CodeBuddy/WorkBuddy -p --output-format json；
         text：只输出最终回复的普通文本命令，可测试回复，但无会话 ID 时不能测试同会话续接。
         acp：宿主支持 Agent Client Protocol（如 hermes acp、codebuddy --acp）时优先使用；命令只启动 ACP 服务，不含 {prompt}/{session_id}，input 为 null，resume 填与 create 相同的命令；Relay 通过协议新建或续接会话。
+        dsh-desktop：DSH 优先使用。由运行中的 DSH 桌面执行回合，请求与桌面完全一致；executable 为 DeepSeek Harness.exe 的完整路径，arguments 为空数组，environment 设 DSH_HOME，working_directory 为新会话的工作区，resume 与 create 相同。Relay 用 DSH 桌面自己的签名密钥登录它的本机接口，须先向用户说明并取得同意。
         原生输出由 Relay 转换，不要求目标软件改成 relay-json，也不需要为已支持的格式额外编写桥接。
         探针要求真实回复准确返回短标识；不得由脚本自行生成回复。退出成功表示本次调用结束，不表示文件任务完成，任务仍以回执为准。
         environment 可提供非敏感环境变量，如宿主数据根目录；不要输出或导入认证信息。
@@ -204,6 +206,8 @@ public static class CliRecipes
     {
         if (format == "acp")
             return AcpClient.RunAsync(command, prompt, sessionId, command.WorkingDirectory ?? home, timeout, cancellationToken);
+        if (format == "dsh-desktop")
+            return DshDesktopClient.RunAsync(command, prompt, sessionId, command.WorkingDirectory ?? home, timeout, cancellationToken);
         string Expand(string template) => template.Replace("{session_id}", sessionId ?? "", StringComparison.Ordinal)
             .Replace("{relay_home}", home, StringComparison.Ordinal).Replace("{prompt}", prompt, StringComparison.Ordinal);
         return RelayProcess.RunAsync(command.Executable, command.Arguments.Select(Expand),

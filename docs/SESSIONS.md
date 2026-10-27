@@ -79,6 +79,8 @@ WorkBuddy 桌面版目前没有对外可用的调用接口，只能复制提示�
 
 ## DSH
 
+推荐 `dsh-desktop` 方案：由运行中的桌面执行回合，见下方“续接会话的缓存对齐（各宿主）”。下面是旧的 headless 方案，桌面不开时仍可用，但与桌面的请求不一致。
+
 DSH 用自带的 headless profile 接入：`DeepSeek Harness.exe`（环境变量 `ELECTRON_RUN_AS_NODE=1`、`DSH_HOME` 指向 dsh-home）运行 `...\dsh-desktop-host\lib\cli.js --profile headless --json {prompt}`，续接加 `--session-id {session_id}`，`output_format` 为 `dsh-jsonl`，会话发现提供器为 `dsh`、目录为 dsh-home。
 
 - headless profile 默认权限是 workspace-write，写不了工作区外的 Relay 回执。用 `--patch` 叠加一个只含 `permission.defaultPreset: danger-full-access` 的补丁（与桌面 profile 的默认相同）。
@@ -127,7 +129,7 @@ $env:ZCODE_BUILTIN_PROVIDER_CONFIG_FILE = "D:\Zcode\resources\config\provider\zc
 | --- | --- | --- |
 | Zcode | 每次启动现建 | 已对齐，见上节。导入方案时自动补齐，doctor 检查 |
 | Hermes | 网关型 | `hermes acp` 连接桌面同一个网关，会话的系统提示与工具集在创建时固定，并存在 `state.db`，两边续接发出的前缀相同。Relay 续接时用会话自己的 cwd，且不带 MCP 服务器（cwd 不同会让网关迁移会话并重建提示）。用量取自 `HERMES_HOME\logs\agent.log` |
-| DSH | headless 不能对齐 | 桌面会话带 `standard` preset，比 headless 多 17 个工具，headless 也拒绝续接这类会话。Relay 新建的会话在桌面继续时会换成 preset 工具集，第一轮整段重新计费。doctor 以 `host.parity.dsh` 提示。完全对齐的路线是由运行中的桌面执行回合，即调用它本机的 `session/create`、`session/prompt`、`session/follow` 接口；认证方式待用户决定 |
+| DSH | 桌面接口（`dsh-desktop`） | 由运行中的 DSH 桌面执行回合：Relay 找到桌面主机的本机端口，用 `DSH_HOME\.credentials.yaml` 里桌面自己的签名密钥，在内存中签出 v1 浏览器 cookie（用户已同意；密钥不保存、不显示）。之后调用 `session/create`（preset `standard`）、`session/prompt`、`session/projections`、`session/page`。新会话与桌面会话的组成完全相同（系统提示 1,838、工具 8,424 token），用的是桌面自己的默认模型。桌面没开时这一轮失败并说明原因。旧的 headless 方案（`dsh-jsonl`）与桌面工具集不同、不能续接桌面会话，doctor 以 `host.parity.dsh` 提示 |
 | 其他 | 未测 | 按技能步骤判断类型，找用量来源，在用户同意后做对照实验，再把对齐项写进调用方案；Relay 还不认识的宿主，写进方案的 `limitations` |
 
 ## 新会话默认模型

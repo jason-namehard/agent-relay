@@ -53,7 +53,19 @@ public sealed partial class RelayService
                 yield return new("host.permission", "fail", "缺少非交互权限参数（-y 或 --permission-mode acceptEdits）：无人值守时 Agent 无法写回执。");
         }
         if (format == "dsh-jsonl")
-            yield return new("host.parity.dsh", "warn", "DSH 命令行（headless）与桌面的工具集不同：它不能续接桌面建的会话；Relay 新建的会话在桌面继续时，第一轮会整段重新计费，之后再命中缓存。要完全一致，需要由运行中的 DSH 桌面执行回合（见 relay-cache-parity 技能）。");
+            yield return new("host.parity.dsh", "warn", "DSH 命令行（headless）与桌面的工具集不同：它不能续接桌面建的会话；Relay 新建的会话在桌面继续时，第一轮会整段重新计费，之后再命中缓存。改用 dsh-desktop 调用方案，可由运行中的 DSH 桌面执行回合，两边请求一致。");
+        if (format == "dsh-desktop")
+        {
+            var dshHome = recipe.Create.Environment?.GetValueOrDefault("DSH_HOME");
+            yield return dshHome is null
+                ? new("host.desktop.auth", "fail", "调用方案缺少 DSH_HOME 环境变量，Relay 找不到 DSH 的数据目录。")
+                : DshDesktopClient.SecretProblem(dshHome) is { } problem
+                ? new("host.desktop.auth", "fail", problem)
+                : new("host.desktop.auth", "pass", "可以用 DSH 桌面自己的签名密钥登录它的本机接口。密钥只在发送时读入内存，不保存、不显示。");
+            yield return DshDesktopClient.DesktopRunning(recipe.Create.Executable)
+                ? new("host.desktop.running", "pass", "DSH 桌面正在运行。")
+                : new("host.desktop.running", "warn", "DSH 桌面没有运行。Relay 通过运行中的桌面执行回合，发送时需要它开着。");
+        }
         if (format is "zcode-json" or "zcode-jsonl")
         {
             foreach (var (name, command) in new[] { ("create", recipe.Create), ("resume", recipe.Resume) })

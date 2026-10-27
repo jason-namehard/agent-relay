@@ -98,7 +98,7 @@ Sessions created by Relay through `session/new` are ACP sessions. Their tool set
 - Usage: `HERMES_HOME\logs\agent.log`, one `API call #` line per model request (`cache=<read>/<input>`).
 - Full requests: set `HERMES_DUMP_REQUESTS=true` in the gateway's environment (`HERMES_HOME\.env`), then restart the gateway. Dumps go to `HERMES_HOME\sessions\request_dump_*`.
 
-### DSH (DeepSeek Harness): type C through headless; type A through the running desktop
+### DSH (DeepSeek Harness): use the `dsh-desktop` recipe (type A); headless is type C
 
 **Headless cannot match the desktop.** Relay's DSH recipe runs `--profile headless`. Desktop sessions are created under agent preset `standard`, which adds desktop-only tools: the desktop sends 42 tools against headless's 25, and its system prompt is about 1,800 tokens against 700.
 
@@ -106,15 +106,33 @@ Sessions created by Relay through `session/new` are ACP sessions. Their tool set
 - **The desktop changes the tool set of a session Relay created.** Such a session has no preset, so when the desktop continues it, the `standard` preset applies and the tool list changes. The first desktop turn misses the whole cache; later turns on the same side hit again.
 - **Patch layers cannot close this gap.** The preset is mounted only by the desktop's web-app composition, and the desktop profile cannot be started from the command line.
 
-**The aligned route is the running desktop host.** The desktop serves an HTTP/WebSocket API on `127.0.0.1` with a random port. The turn is then built by the desktop process itself, so the requests are identical:
+**Relay's aligned route is `output_format: dsh-desktop`.** The running desktop executes the turn, so the request is the desktop's own: same preset, plugins, tools, system prompt and model. Use this recipe:
 
-- `POST /api/session/create` with `{cwd, agentPreset:"standard"}`
-- `POST /api/session/prompt` with `{requestId, sessionId, mode:"queue", content:[{type:"text",text}], clientTimeZone}`
-- the `session/follow` stream on `ws://…/api/remote.mux`, finished at `turn/end`
+```json
+{
+  "executable": "<install>\\DeepSeek Harness.exe",
+  "arguments": [],
+  "input": null,
+  "working_directory": "<workspace>",
+  "environment": { "DSH_HOME": "<install>\\dsh-home" }
+}
+```
 
-Authentication is a cookie signed with a secret from the user's credential file, or a per-launch token. Whichever way, it needs the user's decision. Do not read the credential file on your own.
+Use the same command for `create` and `resume`.
+
+How the bridge works:
+- It finds the desktop host's loopback port: a listener owned by `DeepSeek Harness.exe` whose `GET /` answers 401 with "dsh web authentication required".
+- For each turn it signs the desktop's v1 browser cookie in memory, with the secret at `DSH_HOME\.credentials.yaml` → `records` → `client-connection/browser-session` → `payload.secret`.
+- It then calls `POST /api/session/create` (`{cwd, agentPreset:"standard"}`), `POST /api/session/prompt` and `session/projections`, and reads `session/page` until `turn/end`.
+
+Requirements and limits:
+- **Consent.** Reading that secret needs the user's consent, so explain it before choosing this recipe. Never print or store the secret, or anything else from that file.
+- **The desktop must be running.** If it is not, the turn fails with a clear message.
+- **Default model.** New sessions use the desktop's own default model.
+
+`relay agent cache-check` reads DSH usage through the same API.
 
 **Where to look:**
-- **Usage:** the session log `DSH_HOME\sessions\<cwd>\session-<id>\session.v4.jsonl.zstd`. The file is a series of zstd frames; split it at `28 b5 2f fd`. Read `assistant/message` → `data.usage.cacheReadTokens`. In DSH, `inputTokens` is only the uncached part.
+- **Usage without the API:** the session log `DSH_HOME\sessions\<cwd>\session-<id>\session.v4.jsonl.zstd`. The file is a series of zstd frames; split it at `28 b5 2f fd`. Read `assistant/message` → `data.usage.cacheReadTokens`. In DSH, `inputTokens` is only the uncached part.
 - **Full request:** the same log. `request/header` holds the tool schemas, and `system/message` holds the system prompt.
 - **Session totals:** `DSH_HOME\storages\session_projcache\sessions\<id>.json`.

@@ -35,6 +35,7 @@ public sealed partial class RelayService
             {
                 "zcode" => ZcodeCacheUsage(source.StorageRoot, sessionId),
                 "hermes" => HermesCacheUsage(source.StorageRoot, sessionId),
+                "dsh" => DshCacheUsage(agentId, source.StorageRoot, sessionId),
                 _ => throw new RelayException("cache_usage_unsupported",
                     "Relay 还不会读取 " + source.Provider + " 的逐次用量记录。可按 relay-cache-parity 技能里的方法手动对照。")
             };
@@ -64,6 +65,14 @@ public sealed partial class RelayService
         return findings;
     }
 
+    // DSH keeps usage in compressed session logs; the running desktop serves the same events through its API.
+    private (string, List<CacheRequest>) DshCacheUsage(string agentId, string dshHome, string sessionId)
+    {
+        var executable = CliExtension(agentId)?.Recipe.Create.Executable ?? "DeepSeek Harness.exe";
+        var requests = Task.Run(() => DshDesktopClient.UsageAsync(executable, dshHome, sessionId, CancellationToken.None)).GetAwaiter().GetResult();
+        return ("DSH 桌面接口 · session/page", requests);
+    }
+
     private static (string, List<CacheRequest>) ZcodeCacheUsage(string root, string sessionId)
     {
         var database = Path.Combine(root, "cli", "db", "db.sqlite");
@@ -80,7 +89,8 @@ public sealed partial class RelayService
         return (database + " · model_usage", requests);
     }
 
-    [GeneratedRegex(@"^(?<at>\d{4}-\d\d-\d\d \d\d:\d\d:\d\d),\d+ \S+ \[(?<session>[^\]]+)\] .*?API call #\d+: model=(?<model>\S+).*? cache=(?<read>\d+)/(?<input>\d+)")]
+    // A request that read nothing from the cache is logged without the cache field.
+    [GeneratedRegex(@"^(?<at>\d{4}-\d\d-\d\d \d\d:\d\d:\d\d),\d+ \S+ \[(?<session>[^\]]+)\] .*?API call #\d+: model=(?<model>\S+).*? in=(?<input>\d+)(?:.*? cache=(?<read>\d+)/\d+)?")]
     private static partial Regex HermesApiCall();
 
     private static (string, List<CacheRequest>) HermesCacheUsage(string root, string sessionId)
@@ -101,7 +111,8 @@ public sealed partial class RelayService
                     match.Groups["session"].Value != sessionId) continue;
                 var at = DateTime.ParseExact(match.Groups["at"].Value, "yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture, DateTimeStyles.AssumeLocal);
                 requests.Add(new(new DateTimeOffset(at), match.Groups["model"].Value,
-                    long.Parse(match.Groups["input"].Value, CultureInfo.InvariantCulture), long.Parse(match.Groups["read"].Value, CultureInfo.InvariantCulture)));
+                    long.Parse(match.Groups["input"].Value, CultureInfo.InvariantCulture),
+                    match.Groups["read"].Success ? long.Parse(match.Groups["read"].Value, CultureInfo.InvariantCulture) : 0));
             }
         }
         return (logs + " · agent.log", requests);
