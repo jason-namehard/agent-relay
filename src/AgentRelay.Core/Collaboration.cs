@@ -185,8 +185,7 @@ public sealed partial class RelayService
         var allowed = AllowedOutcomes(phase);
         if (receipt.Outcome is null || !allowed.Contains(receipt.Outcome))
             throw new RelayException("collaboration_outcome", "当前阶段的 outcome 只能是：" + string.Join(" / ", allowed) + "。");
-        if (receipt.NeedsReply is { } needsReply && needsReply != (receipt.Outcome != "accepted"))
-            throw new RelayException("manual_receipt_contradiction", "needs_reply 与 outcome 矛盾；持续修改与验收任务以 outcome 为准，可省略 needs_reply。");
+        // The outcome decides who works next; Agents often copy needs_reply from the single-handoff template, so it is ignored here.
         if (items.Length > 0 && receipt.Outcome != "changes_requested")
             throw new RelayException("collaboration_open_items", receipt.Outcome == "approved"
                 ? "仍有未解决问题时不能通过验收，请改为 changes_requested。" : "只有要求修改时填写 open_items。");

@@ -179,6 +179,7 @@ public sealed class CliExtensionTests
     [TestMethod]
     [DataRow("dsh-jsonl", "{\"type\":\"session\",\"sessionId\":\"native-session\"}\n{\"type\":\"status\",\"phase\":\"turn_end\",\"reason\":{\"kind\":\"completed\"}}\n{\"type\":\"final\",\"text\":\"{marker}\"}")]
     [DataRow("zcode-json", "{\"type\":\"result\",\"sessionId\":\"native-session\",\"response\":\"{marker}\"}")]
+    [DataRow("zcode-json", "{\"sessionId\":\"native-session\",\"traceId\":\"t\",\"response\":\"{marker}\",\"usage\":{\"source\":\"provider\"},\"projection\":{\"status\":\"idle\"}}")]
     [DataRow("hermes-jsonl", "{\"type\":\"system\",\"subtype\":\"init\",\"session_id\":\"\"}\n{\"type\":\"text\",\"text\":\"partial\"}\n{\"type\":\"result\",\"session_id\":\"native-session\",\"exit_code\":0,\"text\":\"{marker}\"}")]
     [DataRow("claude-json", "{\"type\":\"result\",\"subtype\":\"success\",\"is_error\":false,\"session_id\":\"native-session\",\"result\":\"{marker}\"}")]
     [DataRow("claude-json", "[{\"type\":\"reasoning\",\"content\":[],\"sessionId\":\"native-session\"},{\"type\":\"message\",\"role\":\"assistant\",\"status\":\"completed\",\"content\":[{\"type\":\"output_text\",\"text\":\"{marker}\"}]},{\"type\":\"result\",\"subtype\":\"success\",\"is_error\":false,\"result\":\"{marker}\",\"session_id\":\"native-session\",\"permission_denials\":[]}]")]

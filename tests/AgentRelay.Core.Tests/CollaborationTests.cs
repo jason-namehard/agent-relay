@@ -109,10 +109,17 @@ public sealed class CollaborationTests
         Rejected(Send("accepted", deliverable: "x"), "changes_requested / approved");
         Rejected(Send("changes_requested"), "open_items");
         Rejected(Send("approved", ["仍有问题"]), "changes_requested");
-        Rejected(Send("approved", needsReply: false), "矛盾");
-        Accepted(Send("approved"));
+        Accepted(Send("approved", needsReply: true));
         Rejected(Send("accepted"), "deliverable");
         Assert.AreEqual(TaskState.AwaitingReply, task.State);
+    }
+
+    [TestMethod]
+    public void SubmissionWithAStrayNeedsReplyFalseStillGoesToReview()
+    {
+        Loop();
+        Accepted(Send("submitted", content: "版本 1", needsReply: false, deliverable: "E:/project/out.md"));
+        Assert.AreEqual("review", task.Collaboration!.Phase); Assert.AreEqual("agent-a", task.AwaitingAgentId);
     }
 
     [TestMethod]

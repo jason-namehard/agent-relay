@@ -37,7 +37,8 @@ internal static class CliOutput
                         break;
                     case "zcode-json":
                     case "zcode-jsonl":
-                        if (type == "result")
+                        // Zcode 0.17 prints a single untyped summary object for --json.
+                        if (type == "result" || type is null && format == "zcode-json" && Text(root, "response") is not null)
                         {
                             if (True(root, "is_error") || Text(root, "error") is { Length: > 0 }) return null;
                             sessionId = Text(root, "sessionId");
