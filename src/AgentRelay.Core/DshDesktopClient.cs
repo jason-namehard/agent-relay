@@ -74,25 +74,75 @@ public static partial class DshDesktopClient
 
     private static async Task<Host> Connect(string executable, string dshHome, CancellationToken token)
     {
-        var processes = Process.GetProcessesByName(Path.GetFileNameWithoutExtension(executable)).Select(p => p.Id).ToHashSet();
-        if (processes.Count == 0) throw new DshDesktopException("DSH 桌面没有运行。请先打开 DSH，Relay 会在桌面里执行这一轮。");
-        var secret = BrowserSessionSecret(Path.Combine(dshHome, ".credentials.yaml"));
-        foreach (var port in await LoopbackPorts(processes, token))
+        var credentialFile = Path.Combine(dshHome, ".credentials.yaml");
+        IReadOnlyList<string> failures = [];
+        for (var attempt = 0; attempt < 3; attempt++)
         {
-            var host = new Host(port, secret);
-            if (await host.IsDesktopHost(token)) return host;
-            host.Dispose();
+            var processes = new Dictionary<int, DateTimeOffset>();
+            foreach (var process in Process.GetProcessesByName(Path.GetFileNameWithoutExtension(executable)))
+            {
+                using (process)
+                {
+                    // Electron subprocesses can exit while its desktop is restarting.
+                    try { processes.Add(process.Id, process.StartTime.ToUniversalTime()); }
+                    catch (InvalidOperationException) { }
+                }
+            }
+            if (processes.Count == 0)
+                throw new DshDesktopException("DSH 桌面没有运行。请先打开 DSH，Relay 会在桌面里执行这一轮。");
+            var listeners = await LoopbackPorts(processes, token);
+            var selected = await FindHost(listeners, BrowserSessionSecret(credentialFile), credentialFile, null, token);
+            if (selected.Host is not null) return selected.Host;
+            failures = selected.Failures;
+            // Only discovery and a read-only call are retried. No session/prompt has been submitted yet.
+            if (attempt < 2) await Task.Delay(TimeSpan.FromSeconds(1), token);
         }
-        throw new DshDesktopException("找到了 DSH 进程，但没有找到它的本机接口。DSH 可能还在启动，请稍后重试。");
+        throw new DshDesktopException("找到了 DSH 进程，但没有可用的本机接口。请确认 DSH 已完成启动且调用方案的 DSH_HOME 正确。" +
+            (failures.Count == 0 ? "没有发现该进程的本机监听端口。" : string.Join("\n", failures)));
     }
 
     /// <summary>Loopback listeners owned by the given processes, from netstat (the owning process is not exposed by .NET).</summary>
-    private static async Task<IReadOnlyList<int>> LoopbackPorts(HashSet<int> processes, CancellationToken token)
+    private static async Task<IReadOnlyList<DesktopListener>> LoopbackPorts(IReadOnlyDictionary<int, DateTimeOffset> processes, CancellationToken token)
     {
         var result = await RelayProcess.RunAsync("netstat", ["-ano", "-p", "TCP"], null, TimeSpan.FromSeconds(15), token);
+        if (result.TimedOut || result.ExitCode != 0) throw new DshDesktopException("无法读取 DSH 的本机监听端口：" + result.Error);
         return [.. result.Output.Split('\n').Select(line => NetstatListener().Match(line))
-            .Where(m => m.Success && processes.Contains(int.Parse(m.Groups["pid"].Value)))
-            .Select(m => int.Parse(m.Groups["port"].Value)).Distinct()];
+            .Where(m => m.Success && processes.ContainsKey(int.Parse(m.Groups["pid"].Value)))
+            .Select(m => new DesktopListener(int.Parse(m.Groups["port"].Value), int.Parse(m.Groups["pid"].Value),
+                processes[int.Parse(m.Groups["pid"].Value)])).Distinct()];
+    }
+
+    internal sealed record DesktopListener(int Port, int ProcessId, DateTimeOffset StartedAt);
+
+    /// <summary>Selects a listener only after its authenticated, read-only session list succeeds.</summary>
+    internal static async Task<(Host? Host, IReadOnlyList<string> Failures)> FindHost(IReadOnlyList<DesktopListener> listeners,
+        byte[] secret, string credentialFile, Func<DesktopListener, HttpMessageHandler>? handlerFactory, CancellationToken token)
+    {
+        var failures = new List<string>();
+        foreach (var listener in listeners)
+        {
+            var host = new Host(listener, secret, credentialFile, handlerFactory?.Invoke(listener));
+            var selected = false;
+            using var readiness = CancellationTokenSource.CreateLinkedTokenSource(token);
+            readiness.CancelAfter(TimeSpan.FromSeconds(2));
+            try
+            {
+                // The installed desktop schema calls this argument _request and returns { items: [...] }.
+                // Reading the list never creates, resumes or prompts an Agent.
+                var value = await host.Call("session/list", new JsonObject(), readiness.Token, "_request");
+                if (value is not JsonObject list || list["items"] is not JsonArray)
+                    throw new DshDesktopException("DSH session/list 返回了无法识别的结构。" + host.Diagnostic);
+                selected = true;
+                return (host, failures);
+            }
+            catch (OperationCanceledException) when (!token.IsCancellationRequested)
+            { failures.Add("DSH 本机接口就绪检查超时。" + host.Diagnostic); }
+            catch (DshDesktopException error) { failures.Add(error.Message); }
+            catch (Exception error) when (error is HttpRequestException or JsonException or IOException)
+            { failures.Add(error.Message + " " + host.Diagnostic); }
+            finally { if (!selected) host.Dispose(); }
+        }
+        return (null, failures);
     }
 
     [GeneratedRegex(@"^\s*TCP\s+127\.0\.0\.1:(?<port>\d+)\s+\S+\s+LISTENING\s+(?<pid>\d+)")]
@@ -144,19 +194,21 @@ public static partial class DshDesktopClient
         catch (FormatException) { return null; }
     }
 
-    private sealed class Host(int port, byte[] secret) : IDisposable
+    internal sealed class Host : IDisposable
     {
-        private readonly HttpClient http = new() { BaseAddress = new Uri("http://127.0.0.1:" + port + "/"), Timeout = TimeSpan.FromSeconds(30) };
+        private readonly int port;
+        private readonly byte[] secret;
+        private readonly HttpClient http;
+        internal string Diagnostic { get; }
+        internal int Port => port;
 
-        public async Task<bool> IsDesktopHost(CancellationToken token)
+        internal Host(DesktopListener listener, byte[] secret, string credentialFile, HttpMessageHandler? handler = null)
         {
-            try
-            {
-                using var response = await http.GetAsync("", token);
-                return response.StatusCode == HttpStatusCode.Unauthorized &&
-                    (await response.Content.ReadAsStringAsync(token)).Contains("dsh web authentication required", StringComparison.Ordinal);
-            }
-            catch (HttpRequestException) { return false; }
+            port = listener.Port; this.secret = secret;
+            http = handler is null ? new HttpClient() : new HttpClient(handler);
+            http.BaseAddress = new Uri("http://127.0.0.1:" + port + "/");
+            http.Timeout = TimeSpan.FromSeconds(30);
+            Diagnostic = $"[pid={listener.ProcessId}; started={listener.StartedAt:O}; port={port}; DSH_HOME={Path.GetDirectoryName(credentialFile)}; credentials_modified={File.GetLastWriteTimeUtc(credentialFile):O}]";
         }
 
         public async Task<JsonNode?> Call(string method, JsonObject request, CancellationToken token, string argument = "request")
@@ -171,11 +223,13 @@ public static partial class DshDesktopClient
             call.Headers.Add("Cookie", Cookie(port, secret, DateTimeOffset.UtcNow));
             using var response = await http.SendAsync(call, token);
             if (response.StatusCode == HttpStatusCode.Unauthorized)
-                throw new DshDesktopException("DSH 桌面拒绝了 Relay 的登录（401）。DSH 可能更新了本机界面的登录方式。");
+                throw new DshDesktopException("DSH 桌面拒绝了 Relay 的登录（401）。请检查 DSH_HOME、桌面启动状态与桥接版本。" + Diagnostic);
             response.EnsureSuccessStatusCode();
-            var result = JsonNode.Parse(await response.Content.ReadAsStringAsync(token))?["result"];
-            if (result?["ok"]?.GetValue<bool>() != true)
-                throw new DshDesktopException($"DSH {method} 失败：{result?["error"]?["code"]} {result?["error"]?["message"]}");
+            var envelope = JsonNode.Parse(await response.Content.ReadAsStringAsync(token)) as JsonObject;
+            if (envelope?["result"] is not JsonObject result)
+                throw new DshDesktopException($"DSH {method} 返回了无法识别的 RPC 结构。" + Diagnostic);
+            if (result["ok"]?.GetValue<bool>() != true)
+                throw new DshDesktopException($"DSH {method} 失败：{result["error"]?["code"]} {result["error"]?["message"]}" + Diagnostic);
             return result["value"];
         }
 
@@ -231,7 +285,7 @@ public static partial class DshDesktopClient
         public void Dispose() => http.Dispose();
     }
 
-    private sealed record SessionEvent(string Type, long Seq, long Time, JsonNode? Data);
+    internal sealed record SessionEvent(string Type, long Seq, long Time, JsonNode? Data);
 
     private sealed class DshDesktopException(string message) : Exception(message);
 }

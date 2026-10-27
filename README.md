@@ -7,7 +7,7 @@
 
 A local handoff desk for people working with several AI agents. Pass a file from A to B, see who needs to act next, and finish without unnecessary back-and-forth.
 
-The current source is the `0.1.0-preview.16` release candidate; it has not been published. The download below is the published `preview.15`. The bridge and review-loop features described here require the candidate or a source build.
+The current source is the `0.1.0-preview.17` release candidate; it has not been published. The download below is the published `preview.15`. The bridge and review-loop features described here require the candidate or a source build.
 
 ## Quick start — Windows x64
 
@@ -93,6 +93,8 @@ The Agents toolbar contains **New Agent**, **Edit Agent**, **Delete Agent**, **T
 Relay adapts supported native JSON, JSONL and final text outputs; the host does not have to emit Relay's private receipt format. Sending through CLI by hand needs only a registered method and an enabled direction. Automatic delivery also needs the task's opt-in and a verified capability: a passing probe (including a marker file the Agent writes) with visibility confirmation, or one real handoff turn whose receipt the Agent wrote. Login refusal, a missing model or missing tool permission blocks automatic sends for that Agent until you choose **I have resolved this · Allow automatic sends**. Enable the desired direction in Connections after configuring its command. Resuming an existing conversation requires an exact binding, a fresh host-store check and a matching session ID in the response. A green node dot means a method is recorded; its tooltip states diagnostic status. Red means a failed probe, grey means no method. A session log or CLI executable path alone is not a complete calling method.
 
 Source identity is automatic only when the calling adapter supplies exact session context. Relay does not ask models to discover IDs or make hidden conversations visible. Native create commands may still require a model configured in the host. Resume normally inherits that conversation's model and settings; Relay does not invent a common model or reasoning override.
+
+Zcode may need its client restarted before CLI-created sessions or continued turns appear. A stale view is separate from delivery failure; refresh or reopen first, and do not rerun a paid probe just to refresh it. DSH desktop bridging normally appears live. The task board distinguishes sending, blocked bridges, unconfirmed delivery and unverified automatic capability. Use its leading checkboxes to mark selected tasks complete or delete them after confirmation.
 
 A bridge is one of three kinds:
 - ACP;

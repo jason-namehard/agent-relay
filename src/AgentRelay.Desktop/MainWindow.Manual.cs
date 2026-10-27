@@ -52,6 +52,14 @@ public partial class MainWindow
     private string FileState(TaskRecord task)
     {
         var agent=AgentName(task.AwaitingAgentId??task.RecipientId);
+        var progress=task.IsFileHandoff?service.FileHandoffProgress(task):null;
+        if(sendingTasks.Contains(task.TaskId) || progress?.Delivery=="cli_in_flight")
+            return string.Format(CultureInfo.CurrentUICulture,T("Sending to {0}…"),agent);
+        if(task.State==TaskState.Paused && progress?.DeliveryMessage is not null)return T("Paused · Bridge needs attention");
+        if(progress?.Delivery=="cli_blocked")return string.Format(CultureInfo.CurrentUICulture,T("Bridge blocked · {0}"),agent);
+        if(progress?.Delivery=="cli_unconfirmed")return string.Format(CultureInfo.CurrentUICulture,T("Delivery unconfirmed · {0}"),agent);
+        if(progress?.Delivery=="cli_ready" && progress.DeliveryMessage is not null)
+            return string.Format(CultureInfo.CurrentUICulture,T("Automatic delivery not verified · {0}"),agent);
         string Phase(string phase)=>T(phase switch{"implement"=>"Implementing","revise"=>"Revising","review"=>"Reviewing","accept"=>"Accepting the result",_=>phase});
         return task.State switch
         {
@@ -117,8 +125,8 @@ public partial class MainWindow
             else
             {
                 Add(actions,string.Format(CultureInfo.CurrentUICulture,T("Copy prompt for {0}"),recipient),()=>{Clipboard.SetText(FilePrompt(task));return Task.CompletedTask;},false);
-                AddFileDeliveryAction(actions,task,progress);
             }
+            AddFileDeliveryAction(actions,task,progress);
             Add(actions,"Cancel",()=>{service.Cancel(task.TaskId,"Cancelled by user");return Task.CompletedTask;});
         }
         AddTaskOperatorActions(actions,task);

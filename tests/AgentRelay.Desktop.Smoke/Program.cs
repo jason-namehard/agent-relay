@@ -60,6 +60,8 @@ internal static class Program
         await CheckReviewLoopPane(window,root);
         await CheckModelDefaults(window,root);
         await CheckNotificationDelivery(window,root);
+        await CheckBatchTasks(window,root);
+        await CheckBlockedDeliveryUi(window,root);
         Check(navigation.Items.Cast<ListBoxItem>().Select(i=>(string)i.Tag).SequenceEqual(new[]{"Home","Agents","Connections","Settings"}),"Exactly four main pages");
         Check(Find<DataGrid>(window,"TasksTable").Items.Count==2,"Board combines all handoffs");
         SelectTask(window,task.TaskId);
@@ -230,6 +232,19 @@ internal static class Program
             Check(service.CliExtension("agent-c")!.CanResume,"Separate same-session confirmation enables resume");
             Press(dialog,"CloseCliProbe");
         });
+
+        var visibilityExtension=service.CliExtension("agent-c")!;
+        foreach(var format in new[]{"zcode-json","dsh-desktop"})
+        {
+            SaveExtension(service,visibilityExtension with {Recipe=visibilityExtension.Recipe with {OutputFormat=format}});
+            await Show(new CliProbeDialog(window,service,"agent-c","en"),dialog=>
+            {
+                var hint=Find<TextBlock>(dialog,"ProbeVisibilityHint").Text;
+                Check(format=="zcode-json"?hint.Contains("restart Zcode"):hint.Contains("without restarting"),"Probe advice distinguishes Zcode display delays from the live DSH desktop bridge");
+                Press(dialog,"CloseCliProbe");return Task.CompletedTask;
+            });
+        }
+        SaveExtension(service,visibilityExtension);
 
         Navigate("Settings");
         Check(!FindAll<TextBox>(window).Any(box=>box.Name=="CliRecipeReply")&&!FindAll<ComboBox>(window).Any(box=>box.Name=="ExtensionAgent"),"Settings links to Agent configuration instead of duplicating CLI entry fields");
@@ -575,6 +590,92 @@ internal static class Program
         Check(service.Tasks().All(v=>v.Task.TaskId!=active.TaskId),"User can confirm deletion of an unfinished handoff");
     }
 
+    private static async Task CheckBlockedDeliveryUi(MainWindow owner,string root)
+    {
+        var service=new RelayService(Path.Combine(root,"blocked-delivery"));service.Initialize();
+        service.RegisterManual("source","fixture","Source");service.RegisterManual("target","fixture","Target");
+        SeedExtension(service,"target",true);service.SetPermission("source","target","allow");
+        var file=Path.Combine(root,"blocked-work.md");File.WriteAllText(file,"Blocked fixture.");
+        var task=service.CreateFileHandoff(new("source","target",file)).Task;
+        var extension=service.CliExtension("target")!;
+        SaveExtension(service,extension with {Block=new("auth_required","The desktop bridge rejected authentication.",DateTimeOffset.UtcNow)});
+        Appearance.Save(service.Home,new DesktopPreferences("en",NotificationSound:"none"));
+        var window=new MainWindow(service){Owner=owner};window.Show();await Task.Delay(100);
+        SelectTask(window,task.TaskId);
+        var row=Find<DataGrid>(window,"TasksTable").SelectedItem;
+        Check(((string)row.GetType().GetProperty("State")!.GetValue(row)!).Contains("Bridge blocked"),"Blocked bridge is visible in the task row instead of waiting for the Agent");
+        Check(!FindAll<Button>(window).Any(b=>Equals(b.Tag,"Send via bridge"))&&FindAll<Button>(window).Any(b=>Equals(b.Tag,"Check Agent bridge")),"Blocked tasks offer bridge diagnostics instead of an ineffective Send button");
+        Check(FindAll<TextBlock>(window).Any(t=>t.Text.Contains("rejected authentication")),"The task card preserves the actual bridge failure");
+        await SaveImage(window,Path.Combine(root,"Blocked-task.png"));
+        new RelayStore(service.Home).Write(s=>
+        {
+            var current=s.Task(task.TaskId);current.DeadlineAt=DateTimeOffset.UtcNow.AddMinutes(-1);s.Save(current);return true;
+        });
+        service.ImportManualReceipts();await Click(window,"Refresh");
+        Check(service.Status(task.TaskId).Task.PauseReason=="delivery_failed"&&FindAll<Button>(window).Any(b=>Equals(b.Tag,"Check Agent bridge")),"A paused delivery preserves its bridge failure and diagnostic action");
+        await Click(window,"Check Agent bridge");
+        Check(FindAll<DataGrid>(window).Any(g=>g.Name=="AgentsTable"),"Task diagnostics open Agent management");
+        window.RequestExit();
+    }
+
+    private static async Task CheckBatchTasks(MainWindow owner,string root)
+    {
+        var service=new RelayService(Path.Combine(root,"batch-tasks"));service.Initialize();
+        service.RegisterManual("batch-a","fixture","Writer");service.RegisterManual("batch-b","fixture","Reader");
+        var files=new[]{"first","second","unselected"}.Select(name=>Path.Combine(root,"batch-work-"+name+".md")).ToArray();
+        foreach(var source in files)File.WriteAllText(source,"Batch fixture only.");
+        var file=files[0];
+        TaskRecord Create(int index)=>service.CreateFileHandoff(new("batch-a","batch-b",files[index])).Task;
+        var first=Create(0);var second=Create(1);var unselected=Create(2);
+        Check(service.Tasks().Count==3&&new[]{first.TaskId,second.TaskId,unselected.TaskId}.Distinct().Count()==3,
+            "Batch fixture creates three distinct handoffs instead of reusing the same active source file");
+        Appearance.Save(service.Home,new DesktopPreferences("en",NotificationSound:"none"));
+        var window=new MainWindow(service){Owner=owner};window.Show();await Task.Delay(100);
+        CheckBox Choice(string id)=>ByAutomation<CheckBox>(window,"SelectTask_"+id);
+        void ToggleChoice(string id)=>Choice(id).RaiseEvent(new MouseButtonEventArgs(Mouse.PrimaryDevice,Environment.TickCount,MouseButton.Left)
+            {RoutedEvent=UIElement.PreviewMouseLeftButtonDownEvent});
+        bool SelectedInModel(string id)
+        {
+            var row=Find<DataGrid>(window,"TasksTable").Items.Cast<object>().Single(item=>(string)item.GetType().GetProperty("TaskId")!.GetValue(item)! == id);
+            return (bool)row.GetType().GetProperty("BatchSelected")!.GetValue(row)!;
+        }
+        bool ClearShown()=>Find<Button>(window,"ClearTaskSelection").Visibility==Visibility.Visible;
+        SelectTask(window,unselected.TaskId);window.UpdateLayout();
+        var table=Find<DataGrid>(window,"TasksTable");
+        Check(table.Columns[0] is DataGridTemplateColumn,"Task board has a leading checkbox column for batch management");
+        ToggleChoice(first.TaskId);
+        Check(Choice(first.TaskId).IsChecked==true&&SelectedInModel(first.TaskId)&&!ClearShown(),"Selecting one task updates its model and shows actions without Clear selection");
+        Check((string)table.SelectedItem.GetType().GetProperty("TaskId")!.GetValue(table.SelectedItem)! == unselected.TaskId,
+            "Checkbox selection does not replace the task currently being inspected");
+        ToggleChoice(second.TaskId);await Task.Delay(20);
+        Check(SelectedInModel(second.TaskId)&&ClearShown()&&System.Windows.Data.BindingOperations.IsDataBound(Choice(second.TaskId),CheckBox.IsCheckedProperty),
+            "Mouse selection updates the second task model, preserves binding and reveals Clear selection");
+        await Click(window,"Refresh");
+        Check(Choice(first.TaskId).IsChecked==true&&Choice(second.TaskId).IsChecked==true&&Choice(unselected.TaskId).IsChecked==false,
+            "Batch selection survives refresh by exact task ID");
+        await Click(window,"Clear selection");
+        Check(!ClearShown()&&Choice(first.TaskId).IsChecked==false&&Choice(second.TaskId).IsChecked==false,
+            "Clear selection unchecks every task");
+        ToggleChoice(first.TaskId);ToggleChoice(second.TaskId);
+        await ConfirmAction(window,"Mark selected complete",false);
+        Check(service.Tasks().All(view=>view.Task.State==TaskState.AwaitingManual),"Cancelling bulk completion changes no selected or unselected task");
+        await ConfirmAction(window,"Mark selected complete",true);
+        Check(new[]{first,second}.All(task=>service.Status(task.TaskId).Task.ResumeStatus=="operator_completed")&&
+            service.Status(unselected.TaskId).Task.State==TaskState.AwaitingManual,"Bulk completion marks exactly the checked tasks and leaves the other task active");
+        ToggleChoice(first.TaskId);ToggleChoice(second.TaskId);
+        await SaveImage(window,Path.Combine(root,"Task-batch-selection.png"));
+        await ConfirmAction(window,"Delete selected tasks",false);
+        Check(service.Tasks().Count==3,"Cancelling bulk deletion retains all task history");
+        await ConfirmAction(window,"Delete selected tasks",true);
+        Check(service.Tasks().Single().Task.TaskId==unselected.TaskId&&File.Exists(file)&&File.Exists(first.RequestPath),
+            "Bulk deletion removes only checked tasks and preserves their files");
+        ToggleChoice(unselected.TaskId);service.DeleteTask(unselected.TaskId,true);
+        await Click(window,"Refresh");
+        Check(Find<WrapPanel>(window,"TaskBatchActions").Visibility==Visibility.Collapsed&&!ClearShown(),
+            "Refresh discards selections for tasks removed by another client");
+        window.RequestExit();
+    }
+
     private static async Task ConfirmAction(MainWindow owner,string button,bool accept)
     {
         var handle=new System.Windows.Interop.WindowInteropHelper(owner).Handle;
@@ -764,7 +865,14 @@ internal static class Program
     private static void SelectTask(MainWindow window,string id)
     {var table=Find<DataGrid>(window,"TasksTable");table.SelectedItem=table.Items.Cast<object>().Single(r=>(string)r.GetType().GetProperty("TaskId")!.GetValue(r)! == id);}
     private static async Task Click(MainWindow window,string label)
-    {FindAll<Button>(window).Single(b=>Equals(b.Tag,label)||Equals(b.Content,label)).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));await Wait(()=>((TextBlock)window.FindName("StatusText")).Text!="Working…");await Task.Delay(30);}
+    {
+        await Wait(()=>((FrameworkElement)window.FindName("PageContent")).IsEnabled);
+        var button=FindAll<Button>(window).Single(b=>Equals(b.Tag,label)||Equals(b.Content,label));
+        await Wait(()=>button.IsEnabled);
+        button.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+        await Wait(()=>((FrameworkElement)window.FindName("PageContent")).IsEnabled);
+        await Task.Delay(30);
+    }
     private static async Task Wait(Func<bool> predicate,int attempts=100)
     {for(var i=0;i<attempts;i++){if(predicate())return;await Task.Delay(50);}throw new TimeoutException("UI condition not reached.");}
     private static T Find<T>(DependencyObject root,string name)where T:FrameworkElement=>FindAll<T>(root).Single(e=>e.Name==name);

@@ -37,6 +37,21 @@ public sealed class CliExtensionTests
     private CliExtensionRecord Import(CliRecipe? recipe = null) => service.ImportCliRecipe("agent-b", RelayJson.Write(recipe ?? Recipe()));
 
     [TestMethod]
+    [DataRow("acp")]
+    [DataRow("dsh-desktop")]
+    public void ProtocolContinuationUsesTheSameEntryPointWithoutASecondCommand(string format)
+    {
+        var command=new CliCommand("protocol-host",[],null,null);
+        var recipe=Recipe(command) with {OutputFormat=format};
+        var imported=Import(recipe);
+        Assert.AreSame(imported.Recipe.Create,CliRecipes.ResumeCommand(imported.Recipe));
+        Assert.IsFalse(imported.CanResume);
+        var verified=imported with {ResumeEvidence=new("task",2,"exact-session",DateTimeOffset.UtcNow)};
+        Assert.IsTrue(verified.CanResume);
+        Assert.IsNull(CliRecipes.ResumeCommand(Recipe()));
+    }
+
+    [TestMethod]
     public void ImportDoesNotLaunchAProcessAndIsNotVerified()
     {
         var recipe = Recipe() with { Create = Command() with { Executable = "not-an-installed-program" } };

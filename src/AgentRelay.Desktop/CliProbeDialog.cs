@@ -66,6 +66,10 @@ public sealed class CliProbeDialog : Window
         else
         {
             layout.Body.Children.Add(Note("This sends a real, short probe to the selected CLI. Model charges may apply, including host context. It does not run project work. Check the command before starting."));
+            var visibility=Note(VisibilityAdvice(extension.Recipe));
+            visibility.Name="ProbeVisibilityHint";
+            System.Windows.Automation.AutomationProperties.SetAutomationId(visibility,visibility.Name);
+            layout.Body.Children.Add(visibility);
             var plan=EntryDialogLayout.Input("ProbeRecipe",RelayJson.Write(extension.Recipe),true);plan.IsReadOnly=true;plan.Height=170;
             layout.Body.Children.Add(new Expander{Header=T("Calling recipe"),Content=plan});
             if(demo)layout.Body.Children.Add(Note("Demo mode does not run external CLI calls. Use a normal workspace to test a real Agent."));
@@ -73,7 +77,7 @@ public sealed class CliProbeDialog : Window
             create.IsEnabled=true;
             if(demo)create.ToolTip=T("Demo mode blocks real CLI calls. Keep this workspace and switch to normal use to test your registered Agents.");
             if(extension.CreateProbe is {} probe)ProbeResult(probe);
-            if(extension.CreateProbe is {MachinePassed:true,UserConfirmed:true} && extension.Recipe.Resume is not null)
+            if(extension.CreateProbe is {MachinePassed:true,UserConfirmed:true} && CliRecipes.ResumeCommand(extension.Recipe) is not null)
             {
                 var resume=Action(layout.Body,"Run same-session probe","ProbeResume",()=>RunProbe("resume"));
                 resume.IsEnabled=!demo;
@@ -86,6 +90,13 @@ public sealed class CliProbeDialog : Window
         close.Click+=(_,_)=>DialogResult=true;
         layout.Actions.Children.Add(close);
     }
+
+    private static string VisibilityAdvice(CliRecipe recipe)=>CliRecipes.OutputFormatFor(recipe) switch
+    {
+        "zcode-json" or "zcode-jsonl"=>"Zcode may show CLI-created sessions and continued turns only after its client restarts. First try refreshing the session list or reopening the conversation. If it is still missing, save your work and restart Zcode. A stale view does not mean the call failed; do not rerun the probe just to refresh it.",
+        "dsh-desktop"=>"The DSH desktop bridge runs inside the open DSH client, so new sessions and continued turns normally appear without restarting. Check the returned session ID and refresh or reopen that conversation if needed. Do not restart DSH while a turn is running.",
+        _=>"A successful machine receipt does not confirm that the host's desktop has refreshed. For new and continued sessions, refresh the session list or reopen the conversation; if needed, save your work and restart that client. A missing marker in a stale view is not a reason to run the probe again."
+    };
 
     private async Task<string> RunProbe(string operation)
     {
@@ -107,6 +118,7 @@ public sealed class CliProbeDialog : Window
             layout.Body.Children.Add(new Expander{Header=T("CLI diagnostics"),Content=diagnostic});
         }
         if(!probe.MachinePassed)return;
+        layout.Body.Children.Add(Note("The call succeeded. Confirm visibility only after you see this marker in the correct conversation. If the desktop has not refreshed, leave the confirmation unchecked; it is not a failed call."));
         var confirm=new CheckBox{Content=new TextBlock{Text=T(probe.Operation=="create"?
             "I found this marker in the target Agent's session list.":"I found this marker in the SAME session, not a new session."),TextWrapping=TextWrapping.Wrap},
             IsChecked=probe.UserConfirmed,Margin=new(0,8,0,10),Name=probe.Operation=="create"?"ConfirmCreateVisible":"ConfirmResumeVisible"};

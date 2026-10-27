@@ -16,9 +16,9 @@ public sealed partial class RelayService
         var recipient = task.AwaitingAgentId ?? task.RecipientId;
         var sender = recipient == task.RecipientId ? task.RequesterId : task.RecipientId;
         var extension = CliExtension(recipient);
-        if (extension is null) return false;
+        if (extension is null || extension.Block is not null) return false;
         var binding = TaskSession(task.TaskId, recipient);
-        if (binding?.SessionId is not null && extension.Recipe.Resume is null) return false;
+        if (binding?.SessionId is not null && CliRecipes.ResumeCommand(extension.Recipe) is null) return false;
         if (binding?.Binding == "ephemeral" || task.ManualTurn > 0 && binding is null) return false;
         return
             ConnectionPermissions().Any(p => p.From == sender && p.To == recipient && p.Decision == "allow");
@@ -32,6 +32,20 @@ public sealed partial class RelayService
         var extension = CliExtension(recipient)!;
         if (extension.Block is not null) return false;
         return TaskSession(task.TaskId, recipient)?.SessionId is not null ? extension.CanResume : extension.CanCreate;
+    }
+
+    public string? FileDeliveryMessage(TaskRecord task)
+    {
+        var recipient = task.AwaitingAgentId ?? task.RecipientId;
+        var extension = CliExtension(recipient);
+        if (extension?.Block is {} block) return block.Message;
+        if (task.CliFileTurn == task.ManualTurn && task.CliFileStatus is "unknown" or "failed") return task.CliFileError;
+        if (!task.AutoDeliver || extension is null || !CanSendFileHandoff(task)) return null;
+        var resume = TaskSession(task.TaskId, recipient)?.SessionId is not null;
+        if (resume ? extension.CanResume : extension.CanCreate) return null;
+        return resume
+            ? "自动续接尚未验证：请在桥接测试确认同一会话的续接探针，或手动发送本轮并等待真实回执。自动投递目前不会启动。"
+            : "自动新建会话尚未验证：请完成新建探针并确认可见，或手动发送本轮并等待真实回执。自动投递目前不会启动。";
     }
 
     public IReadOnlyList<string> AutoDeliveryCandidates() => Tasks()
@@ -64,6 +78,8 @@ public sealed partial class RelayService
     {
         if (string.IsNullOrWhiteSpace(prompt)) throw new RelayException("file_prompt_required", "文件交接提示不能为空。");
         var task = Status(taskId).Task;
+        if (CliExtension(task.AwaitingAgentId ?? task.RecipientId)?.Block is {} blocked)
+            throw new RelayException("cli_blocked", blocked.Message);
         if (!CanSendFileHandoff(task)) throw new RelayException("file_cli_unavailable", "当前方向未启用 CLI、本轮已发送，或没有可续接的明确会话。请检查连接图和会话选择，必要时手动传递。");
         var recipient = task.AwaitingAgentId ?? task.RecipientId;
         var extension = CliExtension(recipient)!;
@@ -80,7 +96,7 @@ public sealed partial class RelayService
                     "无法确认绑定会话仍然存在。请重新选择已有会话；不支持会话发现时仍可手动复制提示词。");
             validated = check.Session;
         }
-        var command = resume ? extension.Recipe.Resume! : extension.Recipe.Create;
+        var command = resume ? CliRecipes.ResumeCommand(extension.Recipe)! : extension.Recipe.Create;
         if(!resume&&task.CliNewSessionCwd is {} newCwd)command=command with {WorkingDirectory=newCwd};
         if (resume) command = command with { WorkingDirectory = validated?.Cwd ?? binding!.Cwd ?? command.WorkingDirectory };
         if (resume)
@@ -103,6 +119,8 @@ public sealed partial class RelayService
                 ReadTaskSession(s,current,recipient) != binding)
                 throw new RelayException("file_cli_changed", "任务已经变化，本次未重复发送。");
             RequirePermission(s,recipient==current.RecipientId?current.RequesterId:current.RecipientId,recipient);
+            if (ReadCliExtension(s,recipient)?.Block is {} currentBlock)
+                throw new RelayException("cli_blocked",currentBlock.Message);
             current.CliFileTurn = current.ManualTurn; current.CliFileStatus = "submitting";
             current.CliFileError = null; current.CliFileSessionId = null; current.Mode = "cli"; current.AdapterId = "cli:" + recipient;
             current.CliFileOperation = resume ? "resume" : "create"; current.CliFileRevision = extension.Revision;

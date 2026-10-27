@@ -1,5 +1,7 @@
 using System.Security.Cryptography;
 using System.Text;
+using System.Net;
+using System.Text.Json.Nodes;
 using AgentRelay.Core;
 
 namespace AgentRelay.Core.Tests;
@@ -78,5 +80,65 @@ public sealed class DshDesktopTests
         Assert.AreEqual("fail", service.CliHealth("dsh").Single(c => c.Id == "host.desktop.auth").Status);
         Assert.ThrowsExactly<RelayException>(() => service.ImportCliRecipe("dsh",
             RelayJson.Write(recipe with { Create = command with { Arguments = ["{prompt}"] } })));
+    }
+
+    [TestMethod]
+    public async Task DiscoverySkipsRejectedAndWrongListenersAndKeepsOnlyTheAuthenticatedDesktop()
+    {
+        var path = Credentials(Base64Url(RandomNumberGenerator.GetBytes(32)));
+        var rejected = new DesktopHandler(HttpStatusCode.Unauthorized, "dsh web authentication required");
+        var wrong = new DesktopHandler(HttpStatusCode.OK, "{\"result\":{\"ok\":true,\"value\":{\"unrelated\":true}}}");
+        var desktop = new DesktopHandler(HttpStatusCode.OK, "{\"result\":{\"ok\":true,\"value\":{\"items\":[]}}}");
+        var handlers = new Dictionary<int, DesktopHandler> { [5001] = rejected, [5002] = wrong, [5003] = desktop };
+        var listeners = handlers.Keys.Select(port => new DshDesktopClient.DesktopListener(port, port + 10, DateTimeOffset.UtcNow)).ToArray();
+        var selected = await DshDesktopClient.FindHost(listeners, DshDesktopClient.BrowserSessionSecret(path), path,
+            listener => handlers[listener.Port], CancellationToken.None);
+        Assert.IsNotNull(selected.Host);
+        Assert.AreEqual(5003, selected.Host.Port);
+        Assert.HasCount(2, selected.Failures);
+        StringAssert.Contains(selected.Failures[0], "401");
+        StringAssert.Contains(selected.Failures[0], "pid=5011");
+        StringAssert.Contains(selected.Failures[0], "port=5001");
+        StringAssert.Contains(selected.Failures[0], "credentials_modified=");
+        Assert.IsTrue(rejected.Disposed); Assert.IsTrue(wrong.Disposed); Assert.IsFalse(desktop.Disposed);
+        foreach (var handler in handlers.Values)
+        {
+            CollectionAssert.AreEqual(new[] { "/api/session/list" }, handler.Paths);
+            Assert.IsTrue(handler.Authenticated);
+            Assert.IsTrue(handler.EmptyListRequest);
+        }
+        selected.Host.Dispose(); Assert.IsTrue(desktop.Disposed);
+    }
+
+    [TestMethod]
+    public async Task DiscoveryRejectsEveryUnauthorizedListenerWithoutSubmittingWork()
+    {
+        var path = Credentials(Base64Url(RandomNumberGenerator.GetBytes(32)));
+        var handler = new DesktopHandler(HttpStatusCode.Unauthorized, "unauthorized");
+        var selected = await DshDesktopClient.FindHost([new(5004, 5014, DateTimeOffset.UtcNow)],
+            DshDesktopClient.BrowserSessionSecret(path), path, _ => handler, CancellationToken.None);
+        Assert.IsNull(selected.Host); Assert.HasCount(1, selected.Failures); Assert.IsTrue(handler.Disposed);
+        CollectionAssert.AreEqual(new[] { "/api/session/list" }, handler.Paths);
+        Assert.IsFalse(selected.Failures[0].Contains("Cookie", StringComparison.OrdinalIgnoreCase));
+    }
+
+    private sealed class DesktopHandler(HttpStatusCode status, string response) : HttpMessageHandler
+    {
+        internal bool Disposed { get; private set; }
+        internal bool Authenticated { get; private set; }
+        internal bool EmptyListRequest { get; private set; }
+        internal List<string> Paths { get; } = [];
+
+        protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken token)
+        {
+            Paths.Add(request.RequestUri!.AbsolutePath);
+            Authenticated = request.Headers.Contains("Cookie");
+            var document = JsonNode.Parse(await request.Content!.ReadAsStringAsync(token))!;
+            EmptyListRequest = document["method"]!.GetValue<string>() == "session/list" &&
+                document["payload"]!["args"]!["_request"] is JsonObject args && args.Count == 0;
+            return new HttpResponseMessage(status) { Content = new StringContent(response, Encoding.UTF8, "application/json") };
+        }
+
+        protected override void Dispose(bool disposing) { Disposed = true; base.Dispose(disposing); }
     }
 }

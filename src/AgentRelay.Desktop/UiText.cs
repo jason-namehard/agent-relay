@@ -377,12 +377,15 @@ public static class UiText
         SimplifiedText.AddTo(entries);
         ManualUiText.AddTo(entries);
         TaskControlUiText.AddTo(entries);
+        BatchTaskUiText.AddTo(entries);
         WorkflowUiText.AddTo(entries);
         SessionUiText.AddTo(entries);
         NotificationUiText.AddTo(entries);
         CliTaskUiText.AddTo(entries);
         CollaborationUiText.AddTo(entries);
+        DeliveryUiText.AddTo(entries);
         AgentEntryUiText.AddTo(entries);
+        ProbeVisibilityUiText.AddTo(entries);
         return entries;
     }
 }

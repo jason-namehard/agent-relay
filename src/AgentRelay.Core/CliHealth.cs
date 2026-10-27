@@ -17,7 +17,7 @@ public sealed partial class RelayService
         var recipe = extension.Recipe;
         var format = CliRecipes.OutputFormatFor(recipe);
         var checks = new List<CliHealthCheck>();
-        foreach (var (name, command) in new[] { ("create", recipe.Create), ("resume", recipe.Resume) })
+        foreach (var (name, command) in new[] { ("create", recipe.Create), ("resume", CliRecipes.ResumeCommand(recipe)) })
         {
             if (command is null) continue;
             checks.Add(ResolveExecutable(command.Executable) is { } found
@@ -28,7 +28,7 @@ public sealed partial class RelayService
             if (command.WorkingDirectory is { } cwd && !Directory.Exists(cwd))
                 checks.Add(new($"{name}.cwd", "fail", "工作目录不存在：" + cwd));
         }
-        checks.Add(recipe.Resume is null
+        checks.Add(CliRecipes.ResumeCommand(recipe) is null
             ? new("resume", "warn", "方案没有续接命令：每轮都会新建会话，回稿不能回到同一对话。")
             : new("resume", "pass", "已配置续接命令。"));
         checks.AddRange(HostChecks(recipe, format));
@@ -36,7 +36,7 @@ public sealed partial class RelayService
         if (extension.Block is { } block) checks.Add(new("block", "fail", block.Message));
         checks.Add(new("verified.create", extension.CanCreate ? "pass" : "warn", extension.CanCreate
             ? "新建会话已验证。" : "新建会话尚未验证：探针通过并确认可见，或一次新建会话的真实交接写回回执后才会自动投递。"));
-        if (recipe.Resume is not null)
+        if (CliRecipes.ResumeCommand(recipe) is not null)
             checks.Add(new("verified.resume", extension.CanResume ? "pass" : "warn", extension.CanResume
                 ? "续接已验证。" : "续接尚未验证：续接探针通过并确认，或一次续接的真实交接写回回执后才会自动投递。"));
         return checks;
@@ -68,7 +68,7 @@ public sealed partial class RelayService
         }
         if (format is "zcode-json" or "zcode-jsonl")
         {
-            foreach (var (name, command) in new[] { ("create", recipe.Create), ("resume", recipe.Resume) })
+            foreach (var (name, command) in new[] { ("create", recipe.Create), ("resume", CliRecipes.ResumeCommand(recipe)) })
             {
                 if (command is null) continue;
                 var index = Array.IndexOf(command.Arguments, "--toolsearch-mode");
@@ -95,7 +95,7 @@ public sealed partial class RelayService
     {
         const string Reimport = "请重新导入调用方案，Relay 会按桌面设置补齐。";
         var desktopWorkflow = CliRecipes.ZcodeDesktopSetting(ZcodeUserDirectory, "dynamicWorkflowMode");
-        foreach (var (name, command) in new[] { ("create", recipe.Create), ("resume", recipe.Resume) })
+        foreach (var (name, command) in new[] { ("create", recipe.Create), ("resume", CliRecipes.ResumeCommand(recipe)) })
         {
             if (command is null) continue;
             if (desktopWorkflow is not null && CliRecipes.ZcodeArgument(command, "--workflow-mode") != desktopWorkflow)

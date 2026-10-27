@@ -23,11 +23,11 @@ public sealed partial class RelayService
         ValidateFileHandoffOptions(options,request.From,request.To);
         // A recipient without a bridge still gets the task; its turns are copied manually.
         var target=CliExtension(request.To);
-        if(request.TargetSessionId is not null&&target is not null&&target.Recipe.Resume is null)
+        if(request.TargetSessionId is not null&&target is not null&&CliRecipes.ResumeCommand(target.Recipe) is null)
             throw new RelayException("session_resume_unsupported","接收 Agent 的调用方案不支持续接已有会话，请选择新建会话或补充续接命令。");
         // Collaboration turns that return to the sender use CLI only when its exact conversation is bound; otherwise they are copied manually.
         var senderByCli=request.Collaboration is not null&&request.OriginSessionId is not null;
-        if(senderByCli&&CliExtension(request.From)?.Recipe.Resume is null)
+        if(senderByCli&&(CliExtension(request.From) is not {} senderExtension||CliRecipes.ResumeCommand(senderExtension.Recipe) is null))
             throw new RelayException("session_resume_unsupported","发送方需要配置准确会话续接命令，才能通过 CLI 把回稿送回原会话；也可以不选来源会话，改为手动传回。");
         foreach(var cwd in new[]{request.OriginCwd,request.TargetCwd})
             if(cwd is not null&&!Path.IsPathFullyQualified(cwd))throw new RelayException("session_cwd_invalid","会话项目目录需要完整路径。");

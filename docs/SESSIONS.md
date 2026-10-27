@@ -136,7 +136,13 @@ $env:ZCODE_BUILTIN_PROVIDER_CONFIG_FILE = "D:\Zcode\resources\config\provider\zc
 
 Agent 管理的“新会话默认模型”和 `relay agent models --agent <ID>` / `relay agent set-model --agent <ID> --provider <供应商> --model <模型> [--reasoning <档位>]` 列出并设置 Relay 新建会话时用的模型。Zcode 写入调用方案 `ZCODE_PERSONAL_PROVIDER_CONFIG_FILE` 指向的供应商配置（修改前留 `.bak-relay-model`）；DSH 写入调用方案中位于 `中转站\bridges\` 的补丁层，并通过 `--dump-config` 读取可选模型（不调用模型）。思考强度只能选该模型支持的档位，界面默认取中档：有 `medium` 用 `medium`，否则取中间那档。续接已有会话不传任何模型参数：Zcode 续接时忽略默认值，DSH 只给没有会话级选择的 Agent 用默认值，所以续接沿用会话自己的模型与思考强度。其他宿主暂在宿主自己的设置里选择。
 
-宿主会立即保存 Relay 新建的会话，但 Zcode、DSH 的窗口在启动时读取会话列表，需要重新打开窗口才会显示；它们公开的 `zcode://`、`dsh://open` 链接不能刷新列表。
+Zcode 的 CLI 新会话和续接内容可能已保存，但桌面视图仍未刷新。先刷新会话列表或重新打开该会话；仍看不到时保存工作后重启 Zcode。桥接测试在调用前和结果处都会说明，不要把未显示直接当成调用失败，也不要为刷新列表重复运行付费探针。本机 Zcode 3.16.3 的深链入口没有会话刷新操作，[官方反馈 #617](https://github.com/zai-org/feedback/issues/617) 也记录了类似问题，目前未找到可靠的免重启刷新接口。
+
+DSH 的 `dsh-desktop` 在运行中的桌面执行，新建和续接通常实时显示；请核对准确会话，不要在执行过程中重启。旧 headless 方式与桌面桥接不同，不能混为一谈。
+
+自动投递需分别验证新建与续接。探针机器成功且写文件通过后，实际看见相同会话标记再保存可见性确认；可确认已有成功探针，无需为了勾选重新调用模型。任务启用了自动投递但续接未验证时，看板会明确显示待验证。桥接受阻时不提供无效的发送按钮，改为进入 Agent 管理处理；超时保留投递错误，不改写成 Agent 仍在处理。
+
+ACP 与 DSH 桌面协议通过请求携带准确 session ID，可共用一个启动入口，不需要重复填写相同的 resume 命令。ACP 服务仍须实际支持 session/load 或 session/resume；入口相同不代表能力已经验证。
 
 ## CLI
 

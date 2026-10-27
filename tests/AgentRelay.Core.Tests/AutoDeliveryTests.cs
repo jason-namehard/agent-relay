@@ -124,6 +124,7 @@ public sealed class AutoDeliveryTests
         var task = Loop();
         Assert.IsTrue(service.CanSendFileHandoff(task)); Assert.IsFalse(service.CanAutoDeliver(task));
         Assert.AreEqual("cli_ready", service.FileHandoffProgress(task).Delivery);
+        StringAssert.Contains(service.FileHandoffProgress(task).DeliveryMessage!, "自动新建会话尚未验证");
         Assert.IsEmpty((await service.SyncFileHandoffsAsync(true)).SentTaskIds);
         Assert.IsEmpty(Calls("agent-b"));
         await service.SendFileHandoffAsync(task.TaskId, service.FileHandoffPrompt(task));
@@ -158,13 +159,27 @@ public sealed class AutoDeliveryTests
         Assert.AreEqual("unknown", task.CliFileStatus);
         StringAssert.Contains(task.CliFileError, "单独登录");
         Assert.AreEqual("auth_required", service.CliExtension("agent-b")!.Block!.Kind);
-        Assert.AreEqual("cli_unconfirmed", service.FileHandoffProgress(task).Delivery);
+        Assert.AreEqual("cli_blocked", service.FileHandoffProgress(task).Delivery);
+        Assert.AreEqual("user", service.FileHandoffProgress(task).WaitingOn);
+        Assert.IsNotNull(service.FileHandoffProgress(task).DeliveryMessage);
         service.AllowFileHandoffResend(task.TaskId, "目标会话没有收到", true);
         task = service.Status(task.TaskId).Task;
-        Assert.IsTrue(service.CanSendFileHandoff(task)); Assert.IsFalse(service.CanAutoDeliver(task));
+        Assert.IsFalse(service.CanSendFileHandoff(task)); Assert.IsFalse(service.CanAutoDeliver(task));
+        var blocked=await Assert.ThrowsExactlyAsync<RelayException>(()=>service.SendFileHandoffAsync(task.TaskId,service.FileHandoffPrompt(task)));
+        Assert.AreEqual("cli_blocked",blocked.Code);
         Assert.IsEmpty((await service.SyncFileHandoffsAsync(true)).SentTaskIds);
         Assert.HasCount(1, Calls("agent-b"));
+        new RelayStore(service.Home).Write(s=>
+        {
+            var current=s.Task(task.TaskId);current.DeadlineAt=DateTimeOffset.UtcNow.AddMinutes(-1);s.Save(current);return true;
+        });
+        service.ImportManualReceipts();
+        var paused=service.Status(task.TaskId).Task;
+        Assert.AreEqual(TaskState.Paused,paused.State);
+        Assert.AreEqual("delivery_failed",paused.PauseReason);
+        StringAssert.Contains(paused.PauseMessage!,"单独登录");
         Mode("agent-b", "ok"); service.ClearCliBlock("agent-b");
+        service.ContinueFileHandoff(task.TaskId);
         Assert.HasCount(1, (await service.SyncFileHandoffsAsync(true)).SentTaskIds);
         await service.SyncFileHandoffsAsync(false);
         Assert.AreEqual("review", service.Status(task.TaskId).Task.Collaboration!.Phase);

@@ -22,13 +22,16 @@ public sealed record CliExtensionRecord(string AgentId, string Revision, CliReci
 {
     [JsonIgnore] private bool CreateProbed => CreateProbe is { MachinePassed: true, UserConfirmed: true, FileWritten: true };
     [JsonIgnore] public bool CanCreate => CreateProbed || CreateEvidence is not null;
-    [JsonIgnore] public bool CanResume => Recipe.Resume is not null && (ResumeEvidence is not null || CreateProbed &&
+    [JsonIgnore] public bool CanResume => CliRecipes.ResumeCommand(Recipe) is not null && (ResumeEvidence is not null || CreateProbed &&
         ResumeProbe is { MachinePassed: true, UserConfirmed: true, FileWritten: true } &&
         !string.IsNullOrWhiteSpace(CreateProbe!.SessionId) && ResumeProbe.SessionId == CreateProbe.SessionId);
 }
 
 public static class CliRecipes
 {
+    // Protocol transports receive the session ID in their request, so creation and continuation share an entry point.
+    public static CliCommand? ResumeCommand(CliRecipe recipe) => recipe.Resume ??
+        (OutputFormatFor(recipe) is "acp" or "dsh-desktop" ? recipe.Create : null);
     public static readonly string[] OutputFormats = ["relay-json", "dsh-jsonl", "zcode-json", "zcode-jsonl", "hermes-jsonl", "claude-json", "text", "acp", "dsh-desktop"];
 
     public static bool IsZcode(CliRecipe recipe) => recipe.Create.Arguments.Prepend(recipe.Create.Executable)
@@ -277,11 +280,11 @@ public sealed partial class RelayService
     {
         if (operation is not ("create" or "resume")) throw new RelayException("cli_probe_operation", "探针类型应为 create 或 resume。");
         var record = CliExtension(agentId) ?? throw new RelayException("cli_recipe_missing", "请先导入 CLI 调用方案。");
-        if (operation == "resume" && (record.CreateProbe is not { MachinePassed: true, UserConfirmed: true } || record.Recipe.Resume is null || string.IsNullOrWhiteSpace(record.CreateProbe.SessionId)))
+        if (operation == "resume" && (record.CreateProbe is not { MachinePassed: true, UserConfirmed: true } || CliRecipes.ResumeCommand(record.Recipe) is null || string.IsNullOrWhiteSpace(record.CreateProbe.SessionId)))
             throw new RelayException("cli_probe_not_ready", "请先完成新会话探针并确认可见；续接还需要真实会话 ID 和续接命令。");
         var marker = "RELAY-" + Guid.NewGuid().ToString("N")[..10].ToUpperInvariant();
         var sessionId = operation == "resume" ? record.CreateProbe!.SessionId : null;
-        var command = operation == "create" ? record.Recipe.Create : record.Recipe.Resume!;
+        var command = operation == "create" ? record.Recipe.Create : CliRecipes.ResumeCommand(record.Recipe)!;
         // Handoffs are completed by a receipt file, so a probe must show the unattended Agent can write one.
         var probes = Path.Combine(Home, ".cli-probes"); Directory.CreateDirectory(probes);
         var probeFile = Path.Combine(probes, marker + ".txt");

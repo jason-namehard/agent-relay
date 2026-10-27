@@ -26,7 +26,7 @@ public sealed class CollaborationRecord
 /// <summary>What the board shows: who holds the task, how the turn travels and whether the user is needed.</summary>
 public sealed record HandoffProgress(string? CurrentAgentId, string? Phase, string WaitingOn, string Delivery,
     int Turn, int? MaxTurns, int? ReviewRound, int? MaxReviewRounds, string? NextIfPassed, string? NextIfChanged,
-    string? PauseReason, string? PauseMessage, bool Finished, string? Completion);
+    string? PauseReason, string? PauseMessage, bool Finished, string? Completion, string? DeliveryMessage = null);
 
 public sealed partial class RelayService
 {
@@ -128,13 +128,15 @@ public sealed partial class RelayService
             _ => null
         };
         var cliTurn = task.CliFileTurn == task.ManualTurn;
+        var blocked = current is not null && CliExtension(current)?.Block is not null;
         var delivery = finished || task.State == TaskState.Paused ? "none"
             : cliTurn && task.CliFileStatus is "submitting" ? "cli_in_flight"
+            : blocked && task.State is TaskState.AwaitingManual or TaskState.AwaitingReply ? "cli_blocked"
             : cliTurn && task.CliFileStatus is "unknown" or "failed" ? "cli_unconfirmed"
             : cliTurn && task.CliFileStatus == "submitted" || task.State is TaskState.Dispatched or TaskState.Acknowledged or TaskState.Running ? "agent_working"
             : CanSendFileHandoff(task) ? task.AutoDeliver && CanAutoDeliver(task) ? "cli_auto" : "cli_ready"
             : "copy_prompt";
-        var waiting = finished ? "none" : task.State == TaskState.Paused || delivery is "cli_unconfirmed" or "cli_ready" or "copy_prompt" ? "user" : "agent";
+        var waiting = finished ? "none" : task.State == TaskState.Paused || delivery is "cli_blocked" or "cli_unconfirmed" or "cli_ready" or "copy_prompt" ? "user" : "agent";
         string? passed = null, changed = null;
         if (collaboration is not null && !finished)
             (passed, changed) = collaboration.Phase switch
@@ -146,7 +148,7 @@ public sealed partial class RelayService
         return new(current, collaboration?.Phase, waiting, delivery, task.ManualTurn,
             collaboration is null ? task.MaxTurns ?? MaxManualTurns : null,
             collaboration?.ReviewRound, collaboration?.MaxReviewRounds, passed, changed,
-            task.PauseReason, task.PauseMessage, finished, completion);
+            task.PauseReason, task.PauseMessage, finished, completion, finished ? null : FileDeliveryMessage(task));
     }
 
     private TimeSpan TurnTimeout(StoreSession s, TaskRecord task) => TimeSpan.FromMinutes(
@@ -162,6 +164,14 @@ public sealed partial class RelayService
 
     private void PauseForTimeout(StoreSession s, TaskRecord task)
     {
+        var recipient = task.AwaitingAgentId ?? task.RecipientId;
+        var blocked = ReadCliExtension(s, recipient)?.Block;
+        var deliveryError = blocked?.Message ?? (task.CliFileTurn == task.ManualTurn ? task.CliFileError : null);
+        if (deliveryError is not null)
+        {
+            PauseFileHandoff(s, task, "delivery_failed", deliveryError, task.State);
+            return;
+        }
         var minutes = (int)TurnTimeout(s, task).TotalMinutes;
         PauseFileHandoff(s, task, "turn_timeout",
             $"本轮已超过设定时限（{minutes} 分钟），已暂停等待你的决定。Agent 可能仍在处理，晚到的回执仍会被接收；也可以继续等待、取消或人工标记完成。",

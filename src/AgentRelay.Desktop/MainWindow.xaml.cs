@@ -268,7 +268,6 @@ public partial class MainWindow : Window
         return page;
     }
 
-    private sealed record TaskRow(string TaskId,string Route,string Mode,string State,DateTimeOffset Created,string StateCode);
     private void TaskPane(StackPanel page,IEnumerable<TaskView> views)
     {
         var rows=views.OrderByDescending(v=>v.Task.CreatedAt).Select(v=>new TaskRow(v.Task.TaskId,AgentName(v.Task.RequesterId)+" → "+AgentName(v.Task.RecipientId),T(v.Task.Mode=="manual"?"Manual handoff":"Agent bridge"),v.Task.IsFileHandoff||v.Task.Mode=="manual"?FileState(v.Task):v.Task.State.ToString(),v.Task.CreatedAt.ToLocalTime(),v.Task.State.ToString())).ToArray();
@@ -281,6 +280,7 @@ public partial class MainWindow : Window
             stateStyle.Triggers.Add(trigger);
         }
         ((DataGridTextColumn)table.Columns[2]).ElementStyle=stateStyle;
+        AddTaskBatchControls(page,table,rows);
         table.ItemsSource=rows;page.Children.Add(table);
         var pane=Page();page.Children.Add(pane);
         table.SelectionChanged+=(_,_)=>

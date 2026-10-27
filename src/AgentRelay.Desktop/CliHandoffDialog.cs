@@ -59,6 +59,7 @@ public sealed class CliHandoffDialog : Window
         var options=new CollaborationOptionsPanel(ui,ui.Body,"CliTask",service.Settings().TaskTimeoutMinutes,true);
         var permission=new CheckBox{Name="CliTaskEnableDirections",Content=ui.T("Allow enabling the connection directions required by this task"),Margin=new(0,4,0,10)};
         ui.Body.Children.Add(permission);
+        ui.Body.Children.Add(ui.Note("This enables required routes that are paused or not yet authorized. It does not add a bridge or sign in to an Agent."));
         ui.Body.Children.Add(ui.Note("Chosen conversations stay bound to this task. Without a source conversation, turns for the sender are copied manually."));
         ui.Button(ui.Actions,"Create task","SendCliTask",()=>
         {
