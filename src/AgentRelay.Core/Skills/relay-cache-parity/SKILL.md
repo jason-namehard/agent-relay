@@ -34,7 +34,7 @@ Measured on Zcode before alignment: the first turn after each switch read 0% fro
    - **Rebuild per launch (type B).** The command line starts its own process and builds tools and prompt itself. Every launch difference must be aligned (steps 4–6).
    - **Cannot continue desktop sessions (type C).** The command line refuses or rebuilds desktop-created sessions. Tell the user plainly, record it in the recipe's `limitations`, and keep manual handoff for those sessions.
 2. **Find the per-request usage record:** input tokens and cache-read tokens per model request, in a database table, a log, or the `--json` usage events.
-   - Relay reads it for known hosts: `relay agent cache-check --agent <agent id> --session <session id>` (Zcode, Hermes).
+   - Relay reads it for known hosts: `relay agent cache-check --agent <agent id> --session <session id>` (Zcode, Hermes, and DSH through its running desktop).
    - For other hosts, find the source and report it to the user and to the Relay maintainers.
 3. **Find the full outgoing request,** so you can compare the two sides exactly:
    - The host may save model requests per session.
@@ -42,7 +42,7 @@ Measured on Zcode before alignment: the first turn after each switch read 0% fro
    - The session log may record the tools and system prompt it sent.
    - Otherwise, log at the local provider gateway or proxy if the user runs one.
 4. **Run the comparison** (with consent): a desktop turn, a Relay turn within a few minutes, another desktop turn, another Relay turn. Run `cache-check` after each.
-   - A high hit on consecutive turns of one side, but a sharp drop right after a switch, means the prefixes differ.
+   - A high hit on consecutive turns of one side, but a sharp drop right after a switch, suggests the prefixes may differ. Compare the actual prefixes before concluding; model changes and provider cache eviction can also lower the hit rate.
    - A drop after a long gap may only be cache expiry. Repeat with turns a few minutes apart before concluding.
 5. **Compare the two requests field by field:** the tool list (names and definitions), each system message, and any notes, skill lists or environment blocks inserted into the history. The first difference is the next thing to align. Common causes:
    - tool loading mode (all tools at once vs on demand);

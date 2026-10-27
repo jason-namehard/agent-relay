@@ -40,20 +40,26 @@ public sealed partial class RelayService
         _ => throw new ArgumentOutOfRangeException(nameof(phase), phase, "Unknown collaboration phase.")
     };
 
+    internal static void ValidateFileHandoffOptions(FileHandoffOptions options, string requesterId, string recipientId)
+    {
+        if (options.TurnTimeoutMinutes is < 1 or > 43200)
+            throw new RelayException("handoff_turn_timeout", "单轮时限为 1–43200 分钟。");
+        if (options.Collaboration is not { } collaboration) return;
+        if (collaboration.AuthorId != requesterId && collaboration.AuthorId != recipientId)
+            throw new RelayException("collaboration_author", "作者必须是本任务的发送方或接收方。");
+        if (collaboration.MaxReviewRounds is < 1 or > MaxReviewRounds)
+            throw new RelayException("collaboration_rounds", $"验收轮数为 1–{MaxReviewRounds}。");
+    }
+
     public TaskView ConfigureFileHandoff(string taskId, FileHandoffOptions options) => store.Write(s =>
     {
         var task = s.Task(taskId);
         if (!task.IsFileHandoff || task.State != TaskState.AwaitingManual || task.ManualTurn != 0 ||
             task.ManualReceiptJson is not null || task.CliFileTurn is not null || task.HandoffPlan is not null)
             throw new RelayException("handoff_options_started", "协作方式只能在首次投递和回执之前设置。");
-        if (options.TurnTimeoutMinutes is < 1 or > 43200)
-            throw new RelayException("handoff_turn_timeout", "单轮时限为 1–43200 分钟。");
+        ValidateFileHandoffOptions(options, task.RequesterId, task.RecipientId);
         if (options.Collaboration is { } collaboration)
         {
-            if (collaboration.AuthorId != task.RequesterId && collaboration.AuthorId != task.RecipientId)
-                throw new RelayException("collaboration_author", "作者必须是本任务的发送方或接收方。");
-            if (collaboration.MaxReviewRounds is < 1 or > MaxReviewRounds)
-                throw new RelayException("collaboration_rounds", $"验收轮数为 1–{MaxReviewRounds}。");
             var reviewer = collaboration.AuthorId == task.RequesterId ? task.RecipientId : task.RequesterId;
             var reviewFirst = task.RecipientId == reviewer;
             task.Collaboration = new CollaborationRecord
@@ -66,6 +72,7 @@ public sealed partial class RelayService
                 SubmissionPath = reviewFirst ? task.RequestPath : null
             };
         }
+        else task.Collaboration = null;
         task.AutoDeliver = options.AutoDeliver;
         task.TurnTimeoutMinutes = options.TurnTimeoutMinutes;
         task.DeadlineAt = Now + TurnTimeout(s, task);

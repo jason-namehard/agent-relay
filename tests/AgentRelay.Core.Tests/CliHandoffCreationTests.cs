@@ -61,6 +61,20 @@ public sealed class CliHandoffCreationTests
         new("agent-a","agent-b","检查这份要求，并执行必要修改。","source-a",target,true,root,root,
             review?new CollaborationOptions("agent-b","要求中的每一项都已落实"):null);
 
+    [TestMethod]
+    public void InvalidCollaborationCannotLeaveTasksFilesOrPermissionsBehind()
+    {
+        foreach(var request in new[]{Request() with {TurnTimeoutMinutes=0},
+            Request() with {Collaboration=new("unregistered")},
+            Request() with {Collaboration=new("agent-b",MaxReviewRounds:0)}})
+        {
+            Assert.ThrowsExactly<RelayException>(()=>service.CreateCliHandoff(request));
+            Assert.IsEmpty(service.Tasks());
+            Assert.IsEmpty(service.ConnectionPermissions());
+            Assert.IsFalse(Directory.Exists(Path.Combine(service.Home,".cli-drafts")));
+        }
+    }
+
     private async Task<(int Code,JsonElement Json)> Invoke(params string[] arguments)
     {
         var original=Console.Out;using var output=new StringWriter();Console.SetOut(output);

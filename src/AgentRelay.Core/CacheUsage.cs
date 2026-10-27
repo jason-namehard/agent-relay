@@ -20,7 +20,7 @@ public sealed record CacheReport(string AgentId, string SessionId, string Source
 /// </summary>
 public sealed partial class RelayService
 {
-    // Providers keep a prompt cache for at least about five minutes; a longer gap may simply have expired it.
+    // A short gap helps compare launches; provider retention and eviction policies still vary.
     private static readonly TimeSpan CacheLifetime = TimeSpan.FromMinutes(5);
 
     public CacheReport CacheUsage(string agentId, string sessionId, int limit = 30)
@@ -59,7 +59,7 @@ public sealed partial class RelayService
             var gap = current.StartedAt - previous.StartedAt;
             var at = current.StartedAt.ToLocalTime().ToString("MM-dd HH:mm:ss", CultureInfo.InvariantCulture);
             findings.Add(gap <= CacheLifetime
-                ? $"{at} 的请求距上一次只有 {gap.TotalMinutes:0.#} 分钟，却只命中 {current.HitRate:P0}：两次请求的前缀不同。常见原因是这一轮换了启动方式（桌面与命令行之间切换），而两边的工具集或系统提示不一致。"
+                ? $"{at} 的请求距上一次只有 {gap.TotalMinutes:0.#} 分钟，却只命中 {current.HitRate:P0}：可能是两次请求的前缀不同，也可能是模型、供应商或缓存策略变化。请先对照启动方式、工具集与系统提示，不能只凭命中率确定原因。"
                 : $"{at} 的请求距上一次 {gap.TotalMinutes:0} 分钟，只命中 {current.HitRate:P0}：可能是缓存过期，也可能是前缀不同（有的供应商缓存能保留数小时）。要下结论，请在两种启动方式之间相隔几分钟内各发一轮再检查。");
         }
         return findings;

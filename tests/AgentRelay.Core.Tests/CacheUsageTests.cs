@@ -43,8 +43,8 @@ public sealed class CacheUsageTests
         service.ConfigureSessionDiscovery("agent-z", "zcode", zcode);
         var report = service.CacheUsage("agent-z", "s1");
         CollectionAssert.AreEqual(new long[] { 19800, 0 }, report.Requests.Select(r => r.CacheReadTokens).ToArray());
-        // One minute after a 99% request, a 0% hit cannot be expiry: the two launches sent different prefixes.
-        StringAssert.Contains(report.Findings.Single(), "前缀不同");
+        StringAssert.Contains(report.Findings.Single(), "可能是两次请求的前缀不同");
+        StringAssert.Contains(report.Findings.Single(), "不能只凭命中率确定原因");
     }
 
     [TestMethod]

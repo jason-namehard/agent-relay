@@ -7,6 +7,8 @@
 
 A local handoff desk for people working with several AI agents. Pass a file from A to B, see who needs to act next, and finish without unnecessary back-and-forth.
 
+The current source is the `0.1.0-preview.16` release candidate; it has not been published. The download below is the published `preview.15`. The bridge and review-loop features described here require the candidate or a source build.
+
 ## Quick start — Windows x64
 
 Public preview: `0.1.0-preview.15`. In Windows PowerShell 5.1 or PowerShell 7, download and extract the whole package into a new folder:

@@ -238,6 +238,33 @@ public sealed class CollaborationTests
     }
 
     [TestMethod]
+    public void ReconfiguringAnUnstartedLoopAsSingleHandoffRemovesItsReviewStages()
+    {
+        Loop();
+        task = service.ConfigureFileHandoff(task.TaskId, new FileHandoffOptions()).Task;
+        Assert.IsNull(task.Collaboration);
+        Accepted(Send(null!, needsReply: false));
+        Assert.AreEqual(TaskState.Succeeded, task.State);
+        Assert.AreEqual("completed", service.FileHandoffProgress(task).Completion);
+    }
+
+    [TestMethod]
+    public void ReformattedWorkingReceiptWithOpenItemsArrayDoesNotRepeatItsEvents()
+    {
+        Loop(author: "agent-a");
+        Accepted(Send(null!, items: [], status: "working"));
+        var events = service.Audit(task.TaskId).Count;
+        var notifications = service.Inbox().Count;
+        File.AppendAllText(service.ManualReceiptPath(task), "\n");
+        var repeated = service.ImportManualReceipts();
+        Assert.IsEmpty(repeated.UpdatedTaskIds);
+        Assert.IsEmpty(repeated.Errors);
+        Assert.HasCount(events, service.Audit(task.TaskId));
+        Assert.HasCount(notifications, service.Inbox());
+        Assert.AreEqual(TaskState.Running, service.Status(task.TaskId).Task.State);
+    }
+
+    [TestMethod]
     public void SingleHandoffIgnoresReviewLoopFieldsAnAgentAddsToItsReceipt()
     {
         Accepted(Send("completed", ["none"], "已完成", "E:/project/out.md", needsReply: false));

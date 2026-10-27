@@ -19,10 +19,15 @@ public static class CliFailureDiagnostics
         if (output.Contains("Select a model before", StringComparison.OrdinalIgnoreCase))
             return new("model_not_selected", "目标 CLI 尚未选择可用模型。请先在宿主选择默认模型，或在任务中选择已有且已配置模型的会话继续。Relay 不会猜测模型；原始错误见 CLI 诊断详情。", true);
         // Some hosts print the refusal and still exit 0, so the exit code cannot rule this out.
-        if (AuthenticationSignals.Any(signal => output.Contains(signal, StringComparison.OrdinalIgnoreCase)))
+        if (AuthenticationSignals.Any(signal => output.Contains(signal, StringComparison.OrdinalIgnoreCase)) ||
+            output.Contains("DSH 桌面拒绝了 Relay 的登录（401）", StringComparison.Ordinal))
+        {
+            if (recipe is not null && CliRecipes.OutputFormatFor(recipe) == "dsh-desktop")
+                return new("auth_required", "DSH 桌面本机接口认证被拒绝。请在 Agent 管理中检查调用配置，确认 DSH 版本与桌面桥接方案匹配，处理后再解除阻塞。此方案使用运行中的 DSH 桌面，不需要另行登录 headless CLI；原始错误见 CLI 诊断详情。", true);
             return new("auth_required", "目标 CLI 没有可用的登录。桌面应用的登录不一定能被命令行使用，需要为该 CLI 单独登录" +
                 (string.IsNullOrWhiteSpace(recipe?.Login) ? "。" : "：在终端运行 " + recipe.Login + " 并按提示完成。") +
                 "完成后在 Agent 管理中点“我已处理，重新检测”。原始错误见 CLI 诊断详情。", true);
+        }
         if (QuotaSignals.Any(signal => output.Contains(signal, StringComparison.OrdinalIgnoreCase)))
             return new("quota_exhausted", "目标 CLI 所用的账号套餐余额不足或没有可用资源包，模型拒绝了请求。请在宿主里确认命令行使用的套餐（可能与桌面端不同）或充值后，在 Agent 管理中点“我已处理，重新检测”。原始错误见 CLI 诊断详情。", true);
         if (process.TimedOut)

@@ -19,6 +19,8 @@ public sealed partial class RelayService
         var agents=Agents();
         _=agents.SingleOrDefault(a=>a.AgentId==request.From)??throw new RelayException("agent_not_found","未找到发送 Agent。");
         _=agents.SingleOrDefault(a=>a.AgentId==request.To)??throw new RelayException("agent_not_found","未找到接收 Agent。");
+        var options=new FileHandoffOptions(request.Collaboration,request.AutoDeliver,request.TurnTimeoutMinutes);
+        ValidateFileHandoffOptions(options,request.From,request.To);
         // A recipient without a bridge still gets the task; its turns are copied manually.
         var target=CliExtension(request.To);
         if(request.TargetSessionId is not null&&target is not null&&target.Recipe.Resume is null)
@@ -46,7 +48,7 @@ public sealed partial class RelayService
         if(request.OriginSessionId is not null)BindManualTaskSession(taskId,request.From,request.OriginSessionId,request.OriginCwd);
         if(request.TargetSessionId is not null)BindManualTaskSession(taskId,request.To,request.TargetSessionId,request.TargetCwd);
         else UseNewTaskSession(taskId,request.To);
-        ConfigureFileHandoff(taskId,new(request.Collaboration,request.AutoDeliver,request.TurnTimeoutMinutes));
+        ConfigureFileHandoff(taskId,options);
         foreach(var (from,to) in directions)
             if(request.EnableDirection)SetPermission(from,to,"allow");
         store.Write(s=>

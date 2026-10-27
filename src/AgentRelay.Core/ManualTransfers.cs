@@ -156,7 +156,7 @@ public sealed partial class RelayService
     {
         var task = s.Task(id);
         if (Terminal(task.State) || task.ManualReceiptJson == json) return false;
-        if (task.ManualReceiptJson is { } prior && RelayJson.Read<ManualReceipt>(prior) == receipt) return false;
+        if (task.ManualReceiptJson is { } prior && RelayJson.Write(RelayJson.Read<ManualReceipt>(prior)) == RelayJson.Write(receipt)) return false;
         if (receipt.TaskId != task.TaskId || receipt.AttemptId != task.AttemptId)
             throw new RelayException("manual_receipt_identity", "回执的任务或尝试标识不匹配。");
         if (receipt.Turn < task.ManualTurn) return false;
