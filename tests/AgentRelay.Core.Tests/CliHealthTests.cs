@@ -61,6 +61,16 @@ public sealed class CliHealthTests
     }
 
     [TestMethod]
+    public void WorkBuddyExplainsWhyItCannotHaveABridge()
+    {
+        service.RegisterManual("workbuddy", "WorkBuddy", "WorkBuddy");
+        var bridge = service.Bridge("workbuddy");
+        Assert.AreEqual("none", bridge.Kind);
+        StringAssert.Contains(bridge.HostNote, "设计限制");
+        Assert.IsNull(service.Bridge("agent-b").HostNote);
+    }
+
+    [TestMethod]
     public void SetupPromptAsksBeforeInstallingBridgesAndPrefersAcp()
     {
         var prompt = service.AgentSetupPrompt();

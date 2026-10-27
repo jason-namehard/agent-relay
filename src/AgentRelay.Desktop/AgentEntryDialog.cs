@@ -7,7 +7,8 @@ namespace AgentRelay.Desktop;
 
 public sealed record AgentEntryDraft(string Name, string Host, string ConfigPath, string? CliPath,
     string? HostVersion, string[] InstructionPaths);
-public sealed record AgentCliDraft(string Executable, string[] Arguments, string? Input, string OutputFormat, string? WorkingDirectory);
+public sealed record AgentCliDraft(string Executable, string[] Arguments, string? Input, string OutputFormat, string? WorkingDirectory,
+    Dictionary<string, string>? Environment = null);
 
 public sealed class AgentEntryDialog : Window
 {
@@ -44,6 +45,9 @@ public sealed class AgentEntryDialog : Window
         cliPanel.Children.Add(new Label { Content = ui.T("CLI output format"), Target = outputFormat, Padding = new(0, 0, 0, 2) });
         cliPanel.Children.Add(outputFormat);
         var working = ui.Field(cliPanel, "CLI working directory", "AgentEntryWorkingDirectory", priorRecipe?.Create.WorkingDirectory ?? "");
+        cliPanel.Children.Add(ui.Note("Some desktop Agents keep their models, providers and API keys apart from their command line. Point the command line at the desktop's own configuration here (for example a provider file or data folder) so it uses the same models; only if the command line truly stores keys separately does it need the key once more."));
+        var environment = ui.Field(cliPanel, "Environment variables (NAME=value, one per line)", "AgentEntryEnvironment",
+            priorRecipe?.Create.Environment is { } prior ? string.Join(Environment.NewLine, prior.Select(p => p.Key + "=" + p.Value)) : "", true);
         advanced.IsExpanded = existing is not null && new[] { config.Text, version.Text, instructions.Text }
             .Any(value => !string.IsNullOrWhiteSpace(value));
         cliSection.IsExpanded = existing is not null && !string.IsNullOrWhiteSpace(cli.Text);
@@ -64,8 +68,15 @@ public sealed class AgentEntryDialog : Window
                 if (cliPath.Length == 0) throw new RelayException("cli_executable_required", ui.T("Enter a CLI program before its arguments."));
                 if (!commandArguments.Any(argument => argument.Contains("{prompt}", StringComparison.Ordinal)) && !input.Text.Contains("{prompt}", StringComparison.Ordinal))
                     throw new RelayException("cli_prompt_required", ui.T("CLI arguments must include {prompt}."));
+                var variables = new Dictionary<string, string>();
+                foreach (var line in environment.Text.Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+                {
+                    var split = line.IndexOf('=');
+                    if (split <= 0) throw new RelayException("cli_environment_invalid", ui.T("Write each environment variable as NAME=value."));
+                    variables[line[..split].Trim()] = line[(split + 1)..].Trim();
+                }
                 CliResult = new(cliPath, commandArguments, string.IsNullOrWhiteSpace(input.Text) ? null : input.Text, (string)outputFormat.SelectedItem,
-                    string.IsNullOrWhiteSpace(working.Text) ? null : working.Text.Trim());
+                    string.IsNullOrWhiteSpace(working.Text) ? null : working.Text.Trim(), variables.Count == 0 ? null : variables);
             }
             Result = new(name.Text.Trim(), existing?.Host ?? "manual", configPath,
                 cliPath.Length > 0 && Path.IsPathFullyQualified(cliPath) ? cliPath : null,

@@ -72,6 +72,7 @@ internal static class BridgePresentation
         string Format(string text) => string.Format(CultureInfo.CurrentUICulture, t(text), agentName, bridge.Kind.ToUpperInvariant());
         (title.Text, body.Text) = bridge switch
         {
+            { Kind: "none", HostNote: { } note } => (Format("{0} has no Agent bridge"), note),
             { Kind: "none" } => (Format("{0} has no Agent bridge"),
                 t("Relay cannot start or continue its conversations. After you create the task, copy the prompt and paste it into the conversation yourself; Relay follows the receipt it writes back.")),
             { State: "blocked" } => (Format("{0}'s bridge needs attention"), bridge.BlockMessage + " " + t("Until then, copy the prompt manually.")),

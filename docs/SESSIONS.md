@@ -82,7 +82,7 @@ WorkBuddy 桌面版目前没有对外可用的调用接口，只能复制提示�
 DSH 用自带的 headless profile 接入：`DeepSeek Harness.exe`（环境变量 `ELECTRON_RUN_AS_NODE=1`、`DSH_HOME` 指向 dsh-home）运行 `...\dsh-desktop-host\lib\cli.js --profile headless --json {prompt}`，续接加 `--session-id {session_id}`，`output_format` 为 `dsh-jsonl`，会话发现提供器为 `dsh`、目录为 dsh-home。
 
 - headless profile 默认权限是 workspace-write，写不了工作区外的 Relay 回执。用 `--patch` 叠加一个只含 `permission.defaultPreset: danger-full-access` 的补丁（与桌面 profile 的默认相同）。
-- headless 使用它自己的模型与凭据。直接叠加桌面 profile 的补丁会改用桌面的供应商，但凭据按 profile 存放，会报 `MISSING_CREDENTIAL`。
+- 要用桌面配置的供应商（如本地网关上的 OpenCode Go）：先叠加桌面 profile 的 `cordis.patch.yml`，再叠加一个补丁把 headless 默认关闭的 `credentials`（`@deepseek-ai/dsh-credentials-local`）重新启用，它读取 DSH_HOME 下与桌面共用的 `.credentials.yaml`，不必另填 key；同一补丁可覆盖 `agent-default-model` 的供应商、模型与思考强度（整段替换，需写全）。
 
 ## Zcode CLI
 
@@ -93,7 +93,7 @@ $env:ZCODE_BUILTIN_PROVIDER_CONFIG_FILE = "D:\Zcode\resources\config\provider\zc
 & <Zcode 自带 node.exe> "D:\Zcode\resources\glm\zcode.cjs" login zai --no-browser
 ```
 
-不设该变量时，登录会因找不到内置供应商配置而失败。Windows 自动打开浏览器时会在第一个 `&` 处截断授权地址，页面报缺少 `response_type`、`redirect_uri`、`state`；加 `--no-browser` 后复制终端打印的完整地址到浏览器打开。`relay cli-recipe doctor` 会检查命令行是否已登记套餐。命令行的供应商只来自它自己登记的账号套餐和 `~/.zcode/cli/config.json` 中的自定义供应商（`provider` 与 `model` 字段，仅在 `~/.zcode/v2/provider_config.json` 不存在时导入一次）；桌面里配置的自定义供应商（如 OpenCode Go）由桌面经内部协议交给自己的进程，命令行看不到，因此 `defaultModelSelection` 只能指向命令行已登记的供应商。续接已选过模型的会话不受影响。
+不设该变量时，登录会因找不到内置供应商配置而失败。Windows 自动打开浏览器时会在第一个 `&` 处截断授权地址，页面报缺少 `response_type`、`redirect_uri`、`state`；加 `--no-browser` 后复制终端打印的完整地址到浏览器打开。`relay cli-recipe doctor` 会检查命令行是否已登记套餐。Zcode 桌面的供应商配置在工作区数据目录（如 `E:\Zspace\.zcode\v2\provider_config.json`，含 OpenCode Go 等自定义供应商及其模型规则）。调用方案把 `ZCODE_PERSONAL_PROVIDER_CONFIG_FILE` 指向这份文件，命令行就使用与桌面相同的供应商，不必另填 key；默认模型写在其中的 `defaultModelSelection`，思考强度须是该模型支持的档位。否则，命令行的供应商只来自它自己登记的账号套餐和 `~/.zcode/cli/config.json` 中的自定义供应商（`provider` 与 `model` 字段，仅在 `~/.zcode/v2/provider_config.json` 不存在时导入一次）；桌面里配置的自定义供应商（如 OpenCode Go）由桌面经内部协议交给自己的进程，命令行看不到，因此 `defaultModelSelection` 只能指向命令行已登记的供应商。续接已选过模型的会话不受影响。
 
 ## CLI
 

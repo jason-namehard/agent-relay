@@ -38,11 +38,11 @@ public partial class MainWindow
             if (dialog.CliResult is { } cli)
             {
                 var command = priorRecipe is null
-                    ? new CliCommand(cli.Executable, cli.Arguments, cli.Input, cli.WorkingDirectory)
-                    : priorRecipe.Create with { Executable = cli.Executable, Arguments = cli.Arguments, Input = cli.Input, WorkingDirectory = cli.WorkingDirectory };
+                    ? new CliCommand(cli.Executable, cli.Arguments, cli.Input, cli.WorkingDirectory, cli.Environment)
+                    : priorRecipe.Create with { Executable = cli.Executable, Arguments = cli.Arguments, Input = cli.Input, WorkingDirectory = cli.WorkingDirectory, Environment = cli.Environment };
                 var recipe = priorRecipe is null
                     ? new CliRecipe(1, draft.Name + " CLI", draft.Host, command, null, [], "", "manual", "", "", cli.OutputFormat)
-                    : priorRecipe with { Create = command, OutputFormat = cli.OutputFormat };
+                    : priorRecipe with { Create = command, Resume = priorRecipe.Resume is { } resume ? resume with { Environment = cli.Environment } : null, OutputFormat = cli.OutputFormat };
                 if (priorRecipe is null || RelayJson.Write(recipe) != RelayJson.Write(priorRecipe))
                     service.ImportCliRecipe(id, RelayJson.Write(recipe));
             }
@@ -110,6 +110,7 @@ public partial class MainWindow
                     Add(Row(details),"I have resolved this · Allow automatic sends",()=>{service.ClearCliBlock(row.Source.AgentId);return Task.CompletedTask;});
                 }
             }
+            if(service.Bridge(row.Source.AgentId).HostNote is {} hostNote)details.Children.Add(Note(hostNote));
             var health=new StackPanel();
             Add(Row(details),"Check bridge setup (no model call)",()=>
             {
