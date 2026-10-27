@@ -40,10 +40,12 @@ public sealed class CliFailureDiagnosticsTests
         var command = new CliCommand("DeepSeek Harness.exe", [], null, null);
         var recipe = new CliRecipe(1, "DSH desktop", "DSH", command, command, [], "", "", "", "", "dsh-desktop");
         var failure = CliFailureDiagnostics.Classify(new(1, "",
-            "DSH 桌面拒绝了 Relay 的登录（401）。DSH 可能更新了本机界面的登录方式。", false), recipe);
+            "DSH 桌面拒绝了 Relay 的登录（401）。操作=session/prompt。pid=123;port=2881", false), recipe);
         Assert.AreEqual("auth_required", failure.Kind);
         Assert.IsTrue(failure.Blocking);
         StringAssert.Contains(failure.Message, "桌面桥接方案");
+        StringAssert.Contains(failure.Message, "操作=session/prompt");
+        StringAssert.Contains(failure.Message, "port=2881");
         Assert.DoesNotContain("需要为该 CLI 单独登录", failure.Message, StringComparison.Ordinal);
     }
 

@@ -66,7 +66,9 @@ internal static class Program
         Check(Find<DataGrid>(window,"TasksTable").Items.Count==2,"Board combines all handoffs");
         SelectTask(window,task.TaskId);
         await Click(window,"Copy prompt for 自选节点甲");
-        Check(Clipboard.GetText().Contains(task.TaskId)&&Clipboard.GetText().Contains(service.Status(task.TaskId).Task.ResultPath)&&Clipboard.GetText().Contains(service.Home),"Copied completed handoff includes identity, reply path and relay location");
+        var copiedHandoff=Clipboard.GetText();
+        Check(copiedHandoff.Contains(task.TaskId)&&copiedHandoff.Contains(service.Status(task.TaskId).Task.ResultPath)&&copiedHandoff.Contains(service.Home),
+            $"Copied completed handoff includes identity, reply path and relay location (identity={copiedHandoff.Contains(task.TaskId)}, path={copiedHandoff.Contains(service.Status(task.TaskId).Task.ResultPath)}, home={copiedHandoff.Contains(service.Home)}, length={copiedHandoff.Length}, status={((TextBlock)window.FindName("StatusText")).Text}, error={((TextBox)window.FindName("ErrorText")).Text})");
         Check(Clipboard.GetText().Contains("自选节点甲")&&Clipboard.GetText().Contains("自选节点乙"),"Completed handoff prompt identifies both user-selected Agent names");
         SelectTask(window,waiting.TaskId);
         await Click(window,"Copy prompt for 自选节点乙");
@@ -237,11 +239,14 @@ internal static class Program
         foreach(var format in new[]{"zcode-json","dsh-desktop"})
         {
             SaveExtension(service,visibilityExtension with {Recipe=visibilityExtension.Recipe with {OutputFormat=format}});
-            await Show(new CliProbeDialog(window,service,"agent-c","en"),dialog=>
+            await Show(new CliProbeDialog(window,service,"agent-c","en"),async dialog=>
             {
                 var hint=Find<TextBlock>(dialog,"ProbeVisibilityHint").Text;
                 Check(format=="zcode-json"?hint.Contains("restart Zcode"):hint.Contains("without restarting"),"Probe advice distinguishes Zcode display delays from the live DSH desktop bridge");
-                Press(dialog,"CloseCliProbe");return Task.CompletedTask;
+                Press(dialog,"CopyBridgeDiagnostic");
+                await Wait(()=>Find<Button>(dialog,"CopyBridgeDiagnostic").IsEnabled);
+                Check(Clipboard.GetText().Contains("agent-c")&&Clipboard.GetText().Contains("cli-recipe doctor"),"The bridge test copies a targeted repair prompt without starting a probe");
+                Press(dialog,"CloseCliProbe");
             });
         }
         SaveExtension(service,visibilityExtension);
@@ -606,6 +611,8 @@ internal static class Program
         Check(((string)row.GetType().GetProperty("State")!.GetValue(row)!).Contains("Bridge blocked"),"Blocked bridge is visible in the task row instead of waiting for the Agent");
         Check(!FindAll<Button>(window).Any(b=>Equals(b.Tag,"Send via bridge"))&&FindAll<Button>(window).Any(b=>Equals(b.Tag,"Check Agent bridge")),"Blocked tasks offer bridge diagnostics instead of an ineffective Send button");
         Check(FindAll<TextBlock>(window).Any(t=>t.Text.Contains("rejected authentication")),"The task card preserves the actual bridge failure");
+        await Click(window,"Copy bridge diagnostic prompt");
+        Check(Clipboard.GetText().Contains(service.Home)&&Clipboard.GetText().Contains("auth_required")&&Clipboard.GetText().Contains("\"agent_id\": \"target\""),"A blocked task copies diagnostics for its receiving Agent without resending");
         await SaveImage(window,Path.Combine(root,"Blocked-task.png"));
         new RelayStore(service.Home).Write(s=>
         {
@@ -615,6 +622,10 @@ internal static class Program
         Check(service.Status(task.TaskId).Task.PauseReason=="delivery_failed"&&FindAll<Button>(window).Any(b=>Equals(b.Tag,"Check Agent bridge")),"A paused delivery preserves its bridge failure and diagnostic action");
         await Click(window,"Check Agent bridge");
         Check(FindAll<DataGrid>(window).Any(g=>g.Name=="AgentsTable"),"Task diagnostics open Agent management");
+        Check(FindAll<TextBlock>(window).Any(t=>t.Text.Contains("Saved failure at")),"Agent management labels the blocker as a saved failure rather than a new connection result");
+        await Click(window,"Check bridge setup (no model call)");
+        await Click(window,"Copy bridge diagnostic prompt");
+        Check(Clipboard.GetText().Contains("\"agent_id\": \"target\"")&&service.Status(task.TaskId).Task.State==TaskState.Paused&&service.CliExtension("target")!.Block is not null,"Agent diagnostics and copying leave tasks, verification and blockers unchanged");
         window.RequestExit();
     }
 
@@ -656,6 +667,11 @@ internal static class Program
         await Click(window,"Clear selection");
         Check(!ClearShown()&&Choice(first.TaskId).IsChecked==false&&Choice(second.TaskId).IsChecked==false,
             "Clear selection unchecks every task");
+        Check(Find<Button>(window,"SelectAllTasks").IsEnabled,"Select all is available when no task is checked");
+        await Click(window,"Select all tasks");
+        Check(new[]{first,second,unselected}.All(task=>SelectedInModel(task.TaskId))&&ClearShown()&&!Find<Button>(window,"SelectAllTasks").IsEnabled,
+            "Select all checks every listed task and reveals Clear selection");
+        await Click(window,"Clear selection");
         ToggleChoice(first.TaskId);ToggleChoice(second.TaskId);
         await ConfirmAction(window,"Mark selected complete",false);
         Check(service.Tasks().All(view=>view.Task.State==TaskState.AwaitingManual),"Cancelling bulk completion changes no selected or unselected task");

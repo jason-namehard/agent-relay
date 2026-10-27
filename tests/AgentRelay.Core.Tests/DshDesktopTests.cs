@@ -42,6 +42,16 @@ public sealed class DshDesktopTests
     }
 
     [TestMethod]
+    public async Task ConnectionCheckReportsAStoppedDesktopWithoutStartingItOrPrompting()
+    {
+        var check = await DshDesktopClient.CheckConnectionAsync("relay-test-" + Guid.NewGuid().ToString("N") + ".exe", root);
+        Assert.AreEqual("host.desktop.connection", check.Id);
+        Assert.AreEqual("fail", check.Status);
+        StringAssert.Contains(check.Message, "桌面没有运行");
+        Assert.IsFalse(Directory.Exists(root));
+    }
+
+    [TestMethod]
     public void OnlyTheBrowserSessionSecretIsReadFromTheCredentialFile()
     {
         var secret = RandomNumberGenerator.GetBytes(32);

@@ -7,6 +7,19 @@ public sealed record CliHealthCheck(string Id, string Status, string Message);
 
 public sealed partial class RelayService
 {
+    /// <summary>Checks local prerequisites and, for DSH desktop, authenticates a read-only API request. Does not clear blockers.</summary>
+    public async Task<IReadOnlyList<CliHealthCheck>> CliHealthAsync(string agentId, CancellationToken cancellationToken = default)
+    {
+        var checks = CliHealth(agentId).ToList();
+        var recipe = CliExtension(agentId)?.Recipe;
+        if (recipe is null || CliRecipes.OutputFormatFor(recipe) != "dsh-desktop") return checks;
+        var home = recipe.Create.Environment?.GetValueOrDefault("DSH_HOME");
+        checks.Add(home is null
+            ? new("host.desktop.connection", "fail", "调用方案缺少 DSH_HOME，尚不能进行桌面接口认证自检。")
+            : await DshDesktopClient.CheckConnectionAsync(recipe.Create.Executable, home, cancellationToken));
+        return checks;
+    }
+
     /// <summary>Checks a recipe's local prerequisites without starting a model turn.</summary>
     public IReadOnlyList<CliHealthCheck> CliHealth(string agentId)
     {
@@ -61,7 +74,7 @@ public sealed partial class RelayService
                 ? new("host.desktop.auth", "fail", "调用方案缺少 DSH_HOME 环境变量，Relay 找不到 DSH 的数据目录。")
                 : DshDesktopClient.SecretProblem(dshHome) is { } problem
                 ? new("host.desktop.auth", "fail", problem)
-                : new("host.desktop.auth", "pass", "可以用 DSH 桌面自己的签名密钥登录它的本机接口。密钥只在发送时读入内存，不保存、不显示。");
+                : new("host.desktop.auth", "pass", "DSH 桌面的本机签名材料可读取；这不代表接口认证已经通过，认证结果见连接自检。密钥只在内存中使用，不保存、不显示。");
             yield return DshDesktopClient.DesktopRunning(recipe.Create.Executable)
                 ? new("host.desktop.running", "pass", "DSH 桌面正在运行。")
                 : new("host.desktop.running", "warn", "DSH 桌面没有运行。Relay 通过运行中的桌面执行回合，发送时需要它开着。");

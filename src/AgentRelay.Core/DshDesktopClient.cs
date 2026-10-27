@@ -20,6 +20,28 @@ public static partial class DshDesktopClient
 {
     private static readonly TimeSpan Poll = TimeSpan.FromSeconds(1.5);
 
+    /// <summary>Authenticates a read-only session-list request, without creating a session or starting an Agent turn.</summary>
+    public static async Task<CliHealthCheck> CheckConnectionAsync(string executable, string dshHome,
+        CancellationToken cancellationToken = default)
+    {
+        using var deadline = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        deadline.CancelAfter(TimeSpan.FromSeconds(12));
+        try
+        {
+            using var host = await Connect(executable, dshHome, deadline.Token);
+            return new("host.desktop.connection", "pass",
+                "当前 DSH 桌面本机接口认证及只读会话列表检查通过；没有创建会话、发送消息或调用模型。既有阻塞仍保留，需用户决定是否解除。" + host.Diagnostic);
+        }
+        catch (OperationCanceledException) when (deadline.IsCancellationRequested && !cancellationToken.IsCancellationRequested)
+        {
+            return new("host.desktop.connection", "fail", "DSH 桌面连接自检在 12 秒内未完成。没有发送工作请求，请确认桌面已就绪后再检查。");
+        }
+        catch (Exception error) when (error is DshDesktopException or HttpRequestException or JsonException or IOException or UnauthorizedAccessException)
+        {
+            return new("host.desktop.connection", "fail", "当前 DSH 桌面只读连接检查未通过：" + error.Message);
+        }
+    }
+
     /// <summary>Returns the turn as relay-json on stdout, like the ACP client.</summary>
     internal static async Task<ProcessResult> RunAsync(CliCommand command, string prompt, string? sessionId, string cwd,
         TimeSpan timeout, CancellationToken cancellationToken)
@@ -223,7 +245,7 @@ public static partial class DshDesktopClient
             call.Headers.Add("Cookie", Cookie(port, secret, DateTimeOffset.UtcNow));
             using var response = await http.SendAsync(call, token);
             if (response.StatusCode == HttpStatusCode.Unauthorized)
-                throw new DshDesktopException("DSH 桌面拒绝了 Relay 的登录（401）。请检查 DSH_HOME、桌面启动状态与桥接版本。" + Diagnostic);
+                throw new DshDesktopException($"DSH 桌面拒绝了 Relay 的登录（401）。操作={method}。请检查 DSH_HOME、桌面启动状态与桥接版本。" + Diagnostic);
             response.EnsureSuccessStatusCode();
             var envelope = JsonNode.Parse(await response.Content.ReadAsStringAsync(token)) as JsonObject;
             if (envelope?["result"] is not JsonObject result)

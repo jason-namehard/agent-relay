@@ -6,6 +6,9 @@ internal static class DeliveryUiText
     {
         void Add(string en,string cn,string tw,string ja,string ko,string es)=>entries[en]=[en,cn,tw,ja,ko,es];
         Add("Check Agent bridge","检查 Agent 桥接","檢查 Agent 橋接","Agent 接続を確認","Agent 브리지 확인","Revisar puente del Agent");
+        Add("Copy bridge diagnostic prompt","复制桥接诊断提示词","複製橋接診斷提示詞","接続診断プロンプトをコピー","브리지 진단 프롬프트 복사","Copiar diagnóstico del puente");
+        Add("Diagnostic prompt copied. Paste it into an Agent for local checks; do not start new probes or tasks.","诊断提示词已复制。粘贴给 Agent 做本机检查；不要额外发起探针或任务。","診斷提示詞已複製。貼給 Agent 做本機檢查；不要額外發起探針或任務。","診断プロンプトをコピーしました。実モデルを呼ばずに接続を調査するよう Agent に渡してください。","진단 프롬프트를 복사했습니다. 실제 모델 호출 없이 브리지를 조사하도록 Agent에게 전달하세요.","Diagnóstico copiado. Pégalo en un Agent para revisar el puente sin nuevas llamadas al modelo.");
+        Add("Saved failure at {0}. Automatic sends remain paused until you resolve it; use the connection check to see the current status.","这是 {0} 保存的失败记录，自动发送已暂停。请运行连接检查了解当前状态，处理后再解除阻塞。","這是 {0} 儲存的失敗記錄，自動傳送已暫停。請檢查目前連線，處理後再解除阻塞。","{0} に保存された失敗です。自動送信は停止中です。現在の接続を確認してください。","{0}에 저장된 실패입니다. 자동 전송은 중지되어 있습니다. 현재 연결 상태를 확인하세요.","Fallo guardado el {0}; envío automático pausado. Revisa la conexión actual antes de desbloquear.");
         Add("Sending to {0}…","正在发送给 {0}…","正在傳送給 {0}…","{0} に送信中…","{0}에 전송 중…","Enviando a {0}…");
         Add("Bridge blocked · {0}","桥接受阻 · {0}","橋接受阻 · {0}","接続がブロック · {0}","브리지 차단 · {0}","Puente bloqueado · {0}");
         Add("Delivery unconfirmed · {0}","投递未确认 · {0}","投遞未確認 · {0}","送信未確認 · {0}","전송 미확인 · {0}","Entrega sin confirmar · {0}");

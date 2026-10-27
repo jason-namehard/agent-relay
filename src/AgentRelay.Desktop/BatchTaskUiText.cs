@@ -6,6 +6,7 @@ internal static class BatchTaskUiText
     {
         void Add(string en,string cn,string tw,string ja,string ko,string es)=>entries[en]=[en,cn,tw,ja,ko,es];
         Add("Select","选择","選擇","選択","선택","Elegir");
+        Add("Select all tasks","全选","全選","すべて選択","모두 선택","Seleccionar todas");
         Add("Selected: {0}","已选择：{0} 项","已選擇：{0} 項","選択中：{0} 件","선택: {0}개","Seleccionadas: {0}");
         Add("Mark selected complete","标记所选为完成","標記所選為完成","選択を完了にする","선택 항목 완료","Completar seleccionadas");
         Add("Delete selected tasks","删除所选任务","刪除所選任務","選択タスクを削除","선택 작업 삭제","Eliminar seleccionadas");

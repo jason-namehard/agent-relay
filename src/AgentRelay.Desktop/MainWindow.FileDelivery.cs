@@ -26,7 +26,10 @@ public partial class MainWindow
     private void AddFileDeliveryAction(Panel actions, TaskRecord task, HandoffProgress progress)
     {
         if (progress.Delivery == "cli_blocked" || task.State == TaskState.Paused && progress.DeliveryMessage is not null)
+        {
             Add(actions,"Check Agent bridge",()=>{agentId=task.AwaitingAgentId??task.RecipientId;Go("Agents");return Task.CompletedTask;});
+            Add(actions,"Copy bridge diagnostic prompt",()=>CopyBridgeDiagnostic(task.AwaitingAgentId??task.RecipientId),false);
+        }
         if (!demo && service.CanSendFileHandoff(task) && !sendingTasks.Contains(task.TaskId))
             Add(actions,"Send via bridge",()=>{StartCliSend(task.TaskId);return Task.CompletedTask;});
         if (progress.Delivery == "cli_unconfirmed" || task.CliFileTurn == task.ManualTurn && task.CliFileStatus is "unknown" or "failed")

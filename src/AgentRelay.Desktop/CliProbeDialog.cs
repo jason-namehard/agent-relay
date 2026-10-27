@@ -70,6 +70,11 @@ public sealed class CliProbeDialog : Window
             visibility.Name="ProbeVisibilityHint";
             System.Windows.Automation.AutomationProperties.SetAutomationId(visibility,visibility.Name);
             layout.Body.Children.Add(visibility);
+            Action(layout.Body,"Copy bridge diagnostic prompt","CopyBridgeDiagnostic",()=>
+            {
+                Clipboard.SetText(service.BridgeDiagnosticPrompt(agentId,AgentEntryDialog.ResolveRelayCommand()));
+                return Task.FromResult("Diagnostic prompt copied. Paste it into an Agent for local checks; do not start new probes or tasks.");
+            });
             var plan=EntryDialogLayout.Input("ProbeRecipe",RelayJson.Write(extension.Recipe),true);plan.IsReadOnly=true;plan.Height=170;
             layout.Body.Children.Add(new Expander{Header=T("Calling recipe"),Content=plan});
             if(demo)layout.Body.Children.Add(Note("Demo mode does not run external CLI calls. Use a normal workspace to test a real Agent."));

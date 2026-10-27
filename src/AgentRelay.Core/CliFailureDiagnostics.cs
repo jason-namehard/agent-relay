@@ -23,7 +23,12 @@ public static class CliFailureDiagnostics
             output.Contains("DSH 桌面拒绝了 Relay 的登录（401）", StringComparison.Ordinal))
         {
             if (recipe is not null && CliRecipes.OutputFormatFor(recipe) == "dsh-desktop")
-                return new("auth_required", "DSH 桌面本机接口认证被拒绝。请在 Agent 管理中检查调用配置，确认 DSH 版本与桌面桥接方案匹配，处理后再解除阻塞。此方案使用运行中的 DSH 桌面，不需要另行登录 headless CLI；原始错误见 CLI 诊断详情。", true);
+            {
+                // Our desktop client emits this controlled 401 message with listener metadata, never cookie or response content.
+                var diagnostic=process.Error.Contains("DSH 桌面拒绝了 Relay 的登录（401）",StringComparison.Ordinal)
+                    ? "\n"+(process.Error.Length>8192?process.Error[..8192]:process.Error):"";
+                return new("auth_required", "DSH 桌面曾拒绝本机接口认证，自动发送已暂停。请先检查当前连接和桌面桥接方案，确认处理后再解除阻塞。此方案不需要另行登录 headless CLI。"+diagnostic, true);
+            }
             return new("auth_required", "目标 CLI 没有可用的登录。桌面应用的登录不一定能被命令行使用，需要为该 CLI 单独登录" +
                 (string.IsNullOrWhiteSpace(recipe?.Login) ? "。" : "：在终端运行 " + recipe.Login + " 并按提示完成。") +
                 "完成后在 Agent 管理中点“我已处理，重新检测”。原始错误见 CLI 诊断详情。", true);

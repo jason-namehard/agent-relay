@@ -24,6 +24,29 @@ public sealed class CliHealthTests
         RelayJson.Write(new CliRecipe(1, "fixture", "fixture", create, resume, [], "", "", "", "", format)));
 
     [TestMethod]
+    public async Task ReadOnlyDesktopConnectionCheckKeepsSavedBlockersAndDoesNotStartTheHost()
+    {
+        Import(new("relay-test-" + Guid.NewGuid().ToString("N") + ".exe", [], null, null,
+            new() { ["DSH_HOME"] = Path.Combine(root, "missing-dsh-home") }), "dsh-desktop");
+        var blocked = service.CliExtension("agent-b")! with { Block = new("auth_required", "Saved authentication failure", DateTimeOffset.UtcNow) };
+        new RelayStore(service.Home).Write(s => s.Execute("UPDATE cli_extensions SET json=$json WHERE agent_id=$id",
+            ("$json", RelayJson.Write(blocked)), ("$id", "agent-b")));
+        var checks = await service.CliHealthAsync("agent-b");
+        Assert.AreEqual("fail", checks.Single(c => c.Id == "host.desktop.connection").Status);
+        Assert.AreEqual("fail", checks.Single(c => c.Id == "block").Status);
+        Assert.AreEqual(blocked.Block, service.CliExtension("agent-b")!.Block);
+        Assert.IsFalse(Directory.Exists(Path.Combine(root, "missing-dsh-home")));
+    }
+
+    [TestMethod]
+    public async Task LocalChecksForAnUnconfiguredAgentDoNotAttemptADesktopConnection()
+    {
+        var checks = await service.CliHealthAsync("agent-b");
+        Assert.HasCount(1, checks);
+        Assert.AreEqual("recipe", checks.Single().Id);
+    }
+
+    [TestMethod]
     public void MissingRecipeProgramAndFolderAreReportedWithoutRunningAnything()
     {
         Assert.AreEqual("fail", service.CliHealth("agent-b").Single().Status);

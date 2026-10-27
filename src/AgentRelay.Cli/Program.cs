@@ -164,8 +164,8 @@ public static class RelayCli
             (s, v) => { s.RemoveCliExtension(v.Get("agent")); return new { status = "removed" }; });
         Sync(cliRecipe, "confirm", "记录用户已在宿主中看到探针会话（--visible 表示可见，省略表示撤销）", ["agent!", "probe!", "visible?"],
             (s, v) => s.ConfirmCliProbe(v.Get("agent"), v.Get("probe"), v.Flag("visible")));
-        Sync(cliRecipe, "doctor", "检查调用方案的本机前提（程序、目录、权限参数、宿主登录与默认模型），不调用模型", ["agent!"],
-            (s, v) => s.CliHealth(v.Get("agent")));
+        Add(cliRecipe, "doctor", "检查本机配置与 DSH 只读接口连接，不调用模型、不解除阻塞", ["agent!"],
+            async (s, v) => await s.CliHealthAsync(v.Get("agent"),v.CancellationToken));
         Sync(cliRecipe, "unblock", "用户已处理登录、模型或权限问题后，解除自动投递阻塞", ["agent!"],
             (s, v) => s.ClearCliBlock(v.Get("agent")));
         Add(cliRecipe, "probe", "发起一次极短真实 CLI 探针（含写文件检查），可能产生模型费用", ["agent!", "operation!", "approve?"], async (s, v) =>

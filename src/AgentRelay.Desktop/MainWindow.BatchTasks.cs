@@ -42,6 +42,12 @@ public partial class MainWindow
 
         var actions=Row(page);actions.Name="TaskBatchActions";
         AutomationProperties.SetAutomationId(actions,actions.Name);
+        var all=Add(actions,"Select all tasks",()=>
+        {
+            foreach(var row in rows)row.BatchSelected=true;
+            return Task.CompletedTask;
+        },false);
+        all.Name="SelectAllTasks";AutomationProperties.SetAutomationId(all,all.Name);
         var count=new TextBlock{Name="TaskBatchCount",VerticalAlignment=VerticalAlignment.Center,Margin=new(0,0,12,0)};
         actions.Children.Add(count);
         var complete=Add(actions,"Mark selected complete",()=>ApplyTaskBatch(rows,false));
@@ -57,7 +63,9 @@ public partial class MainWindow
 
         void UpdateActions()
         {
-            actions.Visibility=selectedTaskIds.Count==0?Visibility.Collapsed:Visibility.Visible;
+            actions.Visibility=rows.Length==0?Visibility.Collapsed:Visibility.Visible;
+            all.IsEnabled=selectedTaskIds.Count<rows.Length;
+            count.Visibility=complete.Visibility=delete.Visibility=selectedTaskIds.Count==0?Visibility.Collapsed:Visibility.Visible;
             count.Text=string.Format(CultureInfo.CurrentUICulture,T("Selected: {0}"),selectedTaskIds.Count);
             complete.IsEnabled=rows.Any(row=>row.BatchSelected&&row.StateCode!="Succeeded");
             clear.Visibility=selectedTaskIds.Count>=2?Visibility.Visible:Visibility.Collapsed;
