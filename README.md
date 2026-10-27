@@ -92,6 +92,19 @@ Relay adapts supported native JSON, JSONL and final text outputs; the host does 
 
 Source identity is automatic only when the calling adapter supplies exact session context. Relay does not ask models to discover IDs or make hidden conversations visible. Native create commands may still require a model configured in the host. Resume normally inherits that conversation's model and settings; Relay does not invent a common model or reasoning override.
 
+A bridge is one of three kinds:
+- ACP;
+- the running desktop app's own interface (DSH: `dsh-desktop`);
+- the host's CLI.
+
+When Relay continues a conversation, its request must begin with the same tools and system prompt the desktop sends. Otherwise the provider's prompt cache misses, and the whole history is billed again at every switch. Relay handles this as follows:
+- It aligns the known hosts: Zcode by its launch flags, Hermes through its shared gateway, and DSH through its running desktop. Measured cache hits after a switch are 93–99%.
+- `cli-recipe doctor` reports launch settings that differ from the desktop's.
+- `agent cache-check` shows each request's cache hit for a session.
+- For other hosts, one-click setup hands the configuring Agent the built-in `relay-cache-parity` skill.
+
+The DSH desktop bridge signs in with the desktop's own local signing secret, which it uses only with your consent and never stores. DSH must be running when a turn is sent.
+
 The one-line rule consumes a little persistent context. Detailed instructions are read on demand; triggering depends on host compliance. Choose the actual host instruction file, not an assumed filename. Stable instruction links are refreshed after relocation.
 
 Before deleting the portable software, use Settings → **Remove all handoff rules**, or run from the extracted package with .NET 10:
