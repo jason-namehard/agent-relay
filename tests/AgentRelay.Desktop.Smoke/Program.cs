@@ -58,6 +58,7 @@ internal static class Program
         await CheckSessionDialogs(window,root);
         await CheckCliTaskEntry(window,root);
         await CheckReviewLoopPane(window,root);
+        await CheckModelDefaults(window,root);
         await CheckNotificationDelivery(window,root);
         Check(navigation.Items.Cast<ListBoxItem>().Select(i=>(string)i.Tag).SequenceEqual(new[]{"Home","Agents","Connections","Settings"}),"Exactly four main pages");
         Check(Find<DataGrid>(window,"TasksTable").Items.Count==2,"Board combines all handoffs");
@@ -438,6 +439,34 @@ internal static class Program
         Check(File.Exists(calls)&&task.Mode=="cli"&&task.State==TaskState.Dispatched,"Creating a CLI task invokes the configured CLI through the visible UI path");
         Check(File.ReadAllText(task.RequestPath).Contains("UI fixture: perform this direct work request.",StringComparison.Ordinal),"CLI task persists the user's work request as the actual request document");
         Check(station.TaskSession(task.TaskId,"ui-source")?.SessionId=="exact-source-ui-session"&&station.TaskSession(task.TaskId,"ui-target")?.SessionId=="created-ui-session","CLI UI binds the explicit source and records the returned new target session ID");
+        window.RequestExit();
+    }
+
+    private static async Task CheckModelDefaults(MainWindow owner,string root)
+    {
+        var station=new RelayService(Path.Combine(root,"model-ui"));station.Initialize();
+        station.RegisterManual("zcode-ui","ZCode Desktop","Zcode UI");
+        var config=Path.Combine(root,"model-ui-provider_config.json");
+        File.WriteAllText(config,"{\"schemaVersion\":1,\"config\":{\"providerConfigRules\":{\"providerRules\":[{\"providerId\":\"oc\",\"providerName\":\"OpenCode Go\",\"enabled\":true,\"config\":{\"modelOrder\":[\"ds\"]}}]},\"modelConfigRules\":{\"providerModelRules\":[{\"providerId\":\"oc\",\"modelId\":\"ds\",\"config\":{\"enabled\":true,\"optionSpecs\":{\"reasoningLevel\":{\"values\":[\"low\",\"high\",\"max\"]}}}}],\"manualProviderModelRules\":[]}}}");
+        var command=new CliCommand(Path.Combine(root,"never-run.exe"),["-p","{prompt}","--json"],null,null,new(){["ZCODE_PERSONAL_PROVIDER_CONFIG_FILE"]=config});
+        station.ImportCliRecipe("zcode-ui",RelayJson.Write(new CliRecipe(1,"Zcode fixture","ZCode Desktop",command,null,[],"","","","","zcode-json")));
+        Appearance.Save(station.Home,new DesktopPreferences("en",NotificationSound:"none"));
+        var window=new MainWindow(station){Owner=owner};window.Show();
+        await Wait(()=>((TextBlock)window.FindName("StatusText")).Text!="Working…");
+        var navigation=(ListBox)window.FindName("Navigation");
+        navigation.SelectedItem=navigation.Items.Cast<ListBoxItem>().Single(i=>(string)i.Tag=="Agents");
+        await Wait(()=>FindAll<Button>(window).Any(b=>Equals(b.Tag,"Default model for new conversations")));
+        foreach(var expander in FindAll<Expander>(window))expander.IsExpanded=true;
+        await Click(window,"Default model for new conversations");
+        await Wait(()=>FindAll<ComboBox>(window).Any(c=>c.Name=="AgentDefaultReasoning"));
+        var level=Find<ComboBox>(window,"AgentDefaultReasoning");
+        Check((string?)level.SelectedItem=="high","Without a saved default the reasoning level starts at the middle of the model's scale");
+        await Click(window,"Save default model");
+        await Wait(()=>System.Text.Json.Nodes.JsonNode.Parse(File.ReadAllText(config))!["config"]!["defaultModelSelection"] is not null);
+        var saved=System.Text.Json.Nodes.JsonNode.Parse(File.ReadAllText(config))!["config"]!["defaultModelSelection"]!;
+        Check(saved["modelId"]!.GetValue<string>()=="ds"&&saved["options"]!["reasoningLevel"]!.GetValue<string>()=="high","Saving writes the host's default model and reasoning level");
+        Check(FindAll<TextBlock>(window).Any(t=>t.Text.Contains("Continued conversations keep their own model",StringComparison.Ordinal)),"The panel says continued conversations keep their own model");
+        await SaveImage(window,Path.Combine(root,"Agent-default-model.png"));
         window.RequestExit();
     }
 

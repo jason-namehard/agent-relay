@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Agent 管理新增“新会话默认模型”（`relay agent models/set-model`）：Zcode 写入桌面同一份供应商配置的 `defaultModelSelection`，DSH 写入 Relay 的补丁层；思考强度只能选模型支持的档位，默认取中档。续接会话沿用其自身的模型与思考强度。
+- 读取 Zcode 0.17 的 JSON 输出；持续修改与验收的回执忽略与结论矛盾的 `needs_reply`；Relay 新建的会话提示宿主可能要重开窗口才显示。
+- WorkBuddy 在新建任务和 Agent 详情中说明为何无法桥接；手动配置调用方式可填环境变量；一键配置先让命令行使用桌面自己的配置，确需另填 key 时由用户决定。
+
 - 新增 `acp` 调用方案：Relay 内置 Agent Client Protocol 客户端，支持 ACP 的宿主（如 Hermes）用一条启动命令完成新建与续接，不依赖各家命令行参数与输出格式。
 - 新增不调用模型的配置检查（Agent 管理“检查 CLI 配置”、`relay cli-recipe doctor`），覆盖程序路径、工作目录、权限参数、WorkBuddy 自带 CLI、Zcode 命令行账号套餐与默认模型；新增 `relay cli-recipe confirm`。
 - 一键配置优先查证 ACP；需要另装桥接工具时先向用户说明来源、许可证、用途与不装的后果，同意后才安装。

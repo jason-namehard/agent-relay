@@ -79,7 +79,8 @@ internal static class BridgePresentation
             { State: "unverified" } => (Format("{0} · {1} bridge, not yet verified"),
                 t("Creating the task sends the first turn through this bridge. Once the Agent writes its receipt, the bridge counts as verified and later turns can go automatically.")),
             _ => (Format("{0} · {1} bridge"),
-                t("Relay delivers each turn into the chosen conversation, new or existing, and waits for the Agent's receipt."))
+                t("Relay delivers each turn into the chosen conversation, new or existing, and waits for the Agent's receipt.") + " " +
+                t("Conversations Relay creates are saved by the host right away, but its window may list them only after you reopen it."))
         };
     }
 }

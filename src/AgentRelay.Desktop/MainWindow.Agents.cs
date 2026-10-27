@@ -120,6 +120,7 @@ public partial class MainWindow
                 return Task.CompletedTask;
             },false);
             details.Children.Add(health);
+            AddModelDefaults(details,row.Source.AgentId);
             details.Children.Add(Note("Session discovery reads this Agent's local conversation store. It never selects the latest conversation."));
             var current=service.DiscoverySource(row.Source.AgentId);
             var provider=new ComboBox{Name="SessionDiscoveryProvider",ItemsSource=new[]{"zcode","dsh","hermes","workbuddy"},SelectedItem=current?.Provider,MinHeight=38};

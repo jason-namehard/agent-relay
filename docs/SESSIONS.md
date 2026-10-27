@@ -95,6 +95,12 @@ $env:ZCODE_BUILTIN_PROVIDER_CONFIG_FILE = "D:\Zcode\resources\config\provider\zc
 
 不设该变量时，登录会因找不到内置供应商配置而失败。Windows 自动打开浏览器时会在第一个 `&` 处截断授权地址，页面报缺少 `response_type`、`redirect_uri`、`state`；加 `--no-browser` 后复制终端打印的完整地址到浏览器打开。`relay cli-recipe doctor` 会检查命令行是否已登记套餐。Zcode 桌面的供应商配置在工作区数据目录（如 `E:\Zspace\.zcode\v2\provider_config.json`，含 OpenCode Go 等自定义供应商及其模型规则）。调用方案把 `ZCODE_PERSONAL_PROVIDER_CONFIG_FILE` 指向这份文件，命令行就使用与桌面相同的供应商，不必另填 key；默认模型写在其中的 `defaultModelSelection`，思考强度须是该模型支持的档位。否则，命令行的供应商只来自它自己登记的账号套餐和 `~/.zcode/cli/config.json` 中的自定义供应商（`provider` 与 `model` 字段，仅在 `~/.zcode/v2/provider_config.json` 不存在时导入一次）；桌面里配置的自定义供应商（如 OpenCode Go）由桌面经内部协议交给自己的进程，命令行看不到，因此 `defaultModelSelection` 只能指向命令行已登记的供应商。续接已选过模型的会话不受影响。
 
+## 新会话默认模型
+
+Agent 管理的“新会话默认模型”和 `relay agent models --agent <ID>` / `relay agent set-model --agent <ID> --provider <供应商> --model <模型> [--reasoning <档位>]` 列出并设置 Relay 新建会话时用的模型。Zcode 写入调用方案 `ZCODE_PERSONAL_PROVIDER_CONFIG_FILE` 指向的供应商配置（修改前留 `.bak-relay-model`）；DSH 写入调用方案中位于 `中转站\bridges\` 的补丁层，并通过 `--dump-config` 读取可选模型（不调用模型）。思考强度只能选该模型支持的档位，界面默认取中档：有 `medium` 用 `medium`，否则取中间那档。续接已有会话不传任何模型参数：Zcode 续接时忽略默认值，DSH 只给没有会话级选择的 Agent 用默认值，所以续接沿用会话自己的模型与思考强度。其他宿主暂在宿主自己的设置里选择。
+
+宿主会立即保存 Relay 新建的会话，但 Zcode、DSH 的窗口在启动时读取会话列表，需要重新打开窗口才会显示；它们公开的 `zcode://`、`dsh://open` 链接不能刷新列表。
+
 ## CLI
 
 在发布包目录使用 .NET 10，替换示例中的节点、任务和目录：

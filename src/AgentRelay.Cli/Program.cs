@@ -87,6 +87,10 @@ public static class RelayCli
         var agent = Group("agent", "Agent 注册与只读发现");
         Sync(agent, "discover", "列出候选路径；不登记、不修改配置", [], (s, _) => s.Discover());
         Sync(agent, "list", "列出已登记 Agent", [], (s, _) => s.Agents());
+        Add(agent, "models", "列出 Relay 新建会话时可用的模型与思考强度，以及当前默认；续接的会话沿用自己的模型", ["agent!"],
+            async (s, v) => await s.AgentModelsAsync(v.Get("agent"), v.CancellationToken));
+        Add(agent, "set-model", "设置 Relay 新建会话时的默认模型与思考强度（写入宿主自己的配置）", ["agent!", "provider!", "model!", "reasoning"],
+            async (s, v) => await s.SetAgentModelAsync(v.Get("agent"), new(v.Get("provider"), v.Get("model"), v.Optional("reasoning")), v.CancellationToken));
         Sync(agent, "register", "登记或手工修正路径（需要重新 validate）",
             ["id!", "host", "config-path!", "cli-path", "host-version", "instruction-path"],
             (s, v) => s.Register(v.Get("id"), v.Optional("host") ?? "manual", v.Get("config-path"),
