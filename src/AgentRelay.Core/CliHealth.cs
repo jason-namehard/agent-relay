@@ -64,7 +64,10 @@ public sealed partial class RelayService
             var config = recipe.Create.Environment?.GetValueOrDefault("ZCODE_PERSONAL_PROVIDER_CONFIG_FILE")
                 ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".zcode", "v2", "provider_config.json");
             // The desktop app registers account plans itself; a standalone CLI needs the identity record that `zcode login` writes.
-            yield return HasZcodeAccountProvider(Path.Combine(Path.GetDirectoryName(config)!, "credentials.json"))
+            // A default model on a provider with its own API key needs no account plan.
+            yield return ZcodeDefaultProviderName(config) is { } own
+                ? new("host.account", "pass", "默认模型使用自带 key 的供应商（" + own + "），不需要账号套餐。")
+                : HasZcodeAccountProvider(Path.Combine(Path.GetDirectoryName(config)!, "credentials.json"))
                 ? new("host.account", "pass", "命令行已登记 Z.AI 账号套餐。")
                 : new("host.account", "fail", "Zcode 命令行没有登记账号套餐，可选模型为空，新建会话会报“Select a model”。桌面已登录不等于命令行可用：请在终端运行一次 zcode login zai（并设置 ZCODE_BUILTIN_PROVIDER_CONFIG_FILE 指向安装目录下 resources/config/provider/zcode-builtin.json），或续接已选过模型的会话。");
             yield return HasZcodeDefaultModel(config)
@@ -130,6 +133,32 @@ public sealed partial class RelayService
                 .Any(p => p.Name.StartsWith("account-provider:", StringComparison.Ordinal) && p.Name.EndsWith(":identity", StringComparison.Ordinal));
         }
         catch (JsonException) { return false; }
+    }
+
+    /// <summary>The name of the default model's provider when that provider carries its own API key; key values are not read.</summary>
+    private static string? ZcodeDefaultProviderName(string path)
+    {
+        if (!File.Exists(path)) return null;
+        try
+        {
+            using var document = JsonDocument.Parse(File.ReadAllText(path));
+            if (!document.RootElement.TryGetProperty("config", out var config) ||
+                !config.TryGetProperty("defaultModelSelection", out var selection) || selection.ValueKind != JsonValueKind.Object ||
+                !selection.TryGetProperty("providerId", out var id) ||
+                !config.TryGetProperty("providerConfigRules", out var rules) || rules.ValueKind != JsonValueKind.Object ||
+                !rules.TryGetProperty("providerRules", out var providers) || providers.ValueKind != JsonValueKind.Array) return null;
+            foreach (var provider in providers.EnumerateArray())
+            {
+                if (!provider.TryGetProperty("providerId", out var candidate) || candidate.GetString() != id.GetString()) continue;
+                if (provider.TryGetProperty("enabled", out var enabled) && enabled.ValueKind == JsonValueKind.False) return null;
+                return provider.TryGetProperty("config", out var settings) && settings.TryGetProperty("access", out var access) &&
+                    access.ValueKind == JsonValueKind.Object && access.TryGetProperty("apiKey", out _)
+                    ? provider.TryGetProperty("providerName", out var name) && name.GetString() is { Length: > 0 } text ? text : id.GetString()
+                    : null;
+            }
+            return null;
+        }
+        catch (Exception exception) when (exception is JsonException or InvalidOperationException) { return null; }
     }
 
     private static bool HasZcodeDefaultModel(string path)

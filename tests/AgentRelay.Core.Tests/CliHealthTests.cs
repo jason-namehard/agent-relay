@@ -58,6 +58,13 @@ public sealed class CliHealthTests
         File.WriteAllText(config, """{"schemaVersion":1,"config":{"defaultModelSelection":{"providerId":"p","modelId":"m"}}}""");
         Assert.AreEqual("pass", Status("host.account"));
         Assert.AreEqual("pass", Status("host.model"));
+
+        // A default model on a provider with its own key needs no account plan.
+        File.WriteAllText(Path.Combine(root, "zcode", "credentials.json"), "{}");
+        File.WriteAllText(config, """{"config":{"defaultModelSelection":{"providerId":"custom","modelId":"m"},"providerConfigRules":{"providerRules":[{"providerId":"custom","providerName":"OpenCode Go","enabled":true,"config":{"access":{"type":"x","apiKey":"secret"}}}]}}}""");
+        Assert.AreEqual("pass", Status("host.account"));
+        File.WriteAllText(config, """{"config":{"defaultModelSelection":{"providerId":"custom","modelId":"m"},"providerConfigRules":{"providerRules":[{"providerId":"custom","enabled":false,"config":{"access":{"apiKey":"secret"}}}]}}}""");
+        Assert.AreEqual("fail", Status("host.account"));
     }
 
     [TestMethod]
