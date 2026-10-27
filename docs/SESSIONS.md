@@ -86,6 +86,8 @@ DSH 用自带的 headless profile 接入：`DeepSeek Harness.exe`（环境变量
 
 ## Zcode CLI
 
+Zcode 桌面按需加载 MCP 与 skill 的工具定义（工具搜索模式 `local`），命令行默认 `off`，会把全部工具定义随每次请求发送：本机仅 REA 一个 MCP 就有 207 个工具，每次请求约 26 万 token。Relay 导入 Zcode 调用方案时自动给 create 与 resume 追加 `--toolsearch-mode local`，`cli-recipe doctor` 在缺少时报错。用 `local` 而不是 `auto`：`auto` 取决于供应商是否声明原生工具搜索，换供应商时行为会变。实测最小提示的单次输入从约 26.3 万 token 降到 16,399，与桌面会话首轮（16,693）同量级，模型仍可经工具搜索找到并调用 REA 的工具。
+
 从桌面应用外启动 `zcode.cjs` 时，命令行只认自己登记过的账号套餐；桌面已登录、或在桌面里切换模型，都不会为它登记，于是新建会话报 “Select a model before sending a message”。在终端登录一次即可登记套餐并写入默认模型：
 
 ```powershell

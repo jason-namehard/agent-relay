@@ -31,6 +31,22 @@ public static class CliRecipes
 {
     public static readonly string[] OutputFormats = ["relay-json", "dsh-jsonl", "zcode-json", "zcode-jsonl", "hermes-jsonl", "claude-json", "text", "acp"];
 
+    /// <summary>
+    /// The Zcode desktop loads MCP and skill tool schemas on demand (tool search mode local); its command line defaults to off
+    /// and sends every schema with every request, about 260k input tokens per request on a machine with a large MCP server.
+    /// A Zcode command-line launch therefore always declares --toolsearch-mode local. local, not auto: auto depends on whether
+    /// the provider advertises native tool search, so it would change with the provider.
+    /// </summary>
+    public static CliRecipe WithZcodeToolSearch(CliRecipe recipe)
+    {
+        var programs = recipe.Create.Arguments.Prepend(recipe.Create.Executable).Select(value => value.Replace('\\', '/').Split('/').Last());
+        if (!programs.Any(p => p.Equals("zcode.cjs", StringComparison.OrdinalIgnoreCase) || p.Equals("zcode", StringComparison.OrdinalIgnoreCase) ||
+            p.Equals("zcode.exe", StringComparison.OrdinalIgnoreCase) || p.Equals("zcode.cmd", StringComparison.OrdinalIgnoreCase))) return recipe;
+        static CliCommand Ensure(CliCommand command) => command.Arguments.Contains("--toolsearch-mode")
+            ? command : command with { Arguments = [.. command.Arguments, "--toolsearch-mode", "local"] };
+        return recipe with { Create = Ensure(recipe.Create), Resume = recipe.Resume is null ? null : Ensure(recipe.Resume) };
+    }
+
     public static string OutputFormatFor(CliRecipe recipe)
     {
         if (recipe.OutputFormat != "relay-json") return recipe.OutputFormat;
@@ -111,7 +127,7 @@ public static class CliRecipes
         input 为标准输入模板或 null；working_directory 为绝对路径或 null。
         调用必须将请求交给真实 Agent 会话。Relay 已支持这些 output_format：
         relay-json：独立桥接器返回 {"session_id":"真实标识","reply":"真实回复","accepted":true}；
-        dsh-jsonl：DSH --profile headless --json；zcode-json：Zcode -p {prompt} --json；
+        dsh-jsonl：DSH --profile headless --json；zcode-json：Zcode -p {prompt} --json --toolsearch-mode local（命令行默认不按需加载工具，必须声明）；
         hermes-jsonl：Hermes chat -q {prompt} --format stream-json；claude-json：CodeBuddy/WorkBuddy -p --output-format json；
         text：只输出最终回复的普通文本命令，可测试回复，但无会话 ID 时不能测试同会话续接。
         acp：宿主支持 Agent Client Protocol（如 hermes acp、codebuddy --acp）时优先使用；命令只启动 ACP 服务，不含 {prompt}/{session_id}，input 为 null，resume 填与 create 相同的命令；Relay 通过协议新建或续接会话。
@@ -155,7 +171,7 @@ public sealed partial class RelayService
 
     public CliExtensionRecord ImportCliRecipe(string agentId, string json)
     {
-        var recipe = CliRecipes.Parse(json);
+        var recipe = CliRecipes.WithZcodeToolSearch(CliRecipes.Parse(json));
         return store.Write(s =>
         {
             var agent = Agent(s, agentId);

@@ -53,6 +53,13 @@ public sealed partial class RelayService
         }
         if (format is "zcode-json" or "zcode-jsonl")
         {
+            foreach (var (name, command) in new[] { ("create", recipe.Create), ("resume", recipe.Resume) })
+            {
+                if (command is null) continue;
+                var index = Array.IndexOf(command.Arguments, "--toolsearch-mode");
+                if (index < 0 || index + 1 >= command.Arguments.Length || command.Arguments[index + 1] != "local")
+                    yield return new($"host.toolsearch.{name}", "fail", "Zcode 命令行没有声明 --toolsearch-mode local：桌面按需加载工具，命令行默认把全部工具定义随每次请求发送，大型 MCP 会让每次请求多出约 26 万 token。请重新导入调用方案（Relay 会自动补上）。");
+            }
             var config = recipe.Create.Environment?.GetValueOrDefault("ZCODE_PERSONAL_PROVIDER_CONFIG_FILE")
                 ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".zcode", "v2", "provider_config.json");
             // The desktop app registers account plans itself; a standalone CLI needs the identity record that `zcode login` writes.

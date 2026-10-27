@@ -61,6 +61,20 @@ public sealed class CliHealthTests
     }
 
     [TestMethod]
+    public void ZcodeRecipesAlwaysLoadToolsOnDemand()
+    {
+        service.RegisterManual("zcode", "ZCode Desktop", "Zcode");
+        var command = new CliCommand("node", ["zcode.cjs", "-p", "{prompt}", "--json"], null, null);
+        var imported = service.ImportCliRecipe("zcode", RelayJson.Write(new CliRecipe(1, "z", "ZCode Desktop", command,
+            command with { Arguments = ["zcode.cjs", "--resume", "{session_id}", "-p", "{prompt}", "--json"] }, [], "", "", "", "", "zcode-json")));
+        CollectionAssert.AreEqual(new[] { "--toolsearch-mode", "local" }, imported.Recipe.Create.Arguments[^2..]);
+        CollectionAssert.AreEqual(new[] { "--toolsearch-mode", "local" }, imported.Recipe.Resume!.Arguments[^2..]);
+        Assert.IsFalse(service.CliHealth("zcode").Any(c => c.Id.StartsWith("host.toolsearch", StringComparison.Ordinal)));
+        var other = service.ImportCliRecipe("agent-b", RelayJson.Write(new CliRecipe(1, "f", "fixture", new("pwsh", ["{prompt}"], null, null), null, [], "", "", "", "", "text")));
+        Assert.DoesNotContain("--toolsearch-mode", other.Recipe.Create.Arguments);
+    }
+
+    [TestMethod]
     public void WorkBuddyExplainsWhyItCannotHaveABridge()
     {
         service.RegisterManual("workbuddy", "WorkBuddy", "WorkBuddy");
