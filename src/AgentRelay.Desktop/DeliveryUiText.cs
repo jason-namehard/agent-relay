@@ -5,6 +5,9 @@ internal static class DeliveryUiText
     public static void AddTo(Dictionary<string,string[]> entries)
     {
         void Add(string en,string cn,string tw,string ja,string ko,string es)=>entries[en]=[en,cn,tw,ja,ko,es];
+        Add("New automatic transfer task","新建自动传递任务","新增自動傳遞任務","自動転送タスクを作成","자동 전달 작업 만들기","Nueva tarea automática");
+        Add("New manual transfer task","新建手动传递任务","新增手動傳遞任務","手動転送タスクを作成","수동 전달 작업 만들기","Nueva tarea manual");
+        Add("Transfer turn {0}","第 {0} 轮传递","第 {0} 輪傳遞","転送 {0} 回目","전달 {0}회차","Turno de transferencia {0}");
         Add("Check Agent bridge","检查 Agent 桥接","檢查 Agent 橋接","Agent 接続を確認","Agent 브리지 확인","Revisar puente del Agent");
         Add("Recheck and restore bridge","重新检测并恢复桥接","重新檢測並恢復橋接","再確認して接続を復元","재검사 후 브리지 복구","Revisar y restaurar el puente");
         Add("Bridge recovery result","桥接恢复结果","橋接恢復結果","接続復元の結果","브리지 복구 결과","Resultado de recuperación");

@@ -4,6 +4,7 @@ using System.Runtime.InteropServices;
 using System.Text;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Data;
 using System.Windows.Automation;
 using System.Windows.Input;
 using System.Windows.Media;
@@ -65,6 +66,7 @@ internal static class Program
         await CheckFileCancellation(window,root);
         Check(navigation.Items.Cast<ListBoxItem>().Select(i=>(string)i.Tag).SequenceEqual(new[]{"Home","Agents","Connections","Settings"}),"Exactly four main pages");
         Check(Find<DataGrid>(window,"TasksTable").Items.Count==2,"Board combines all handoffs");
+        Check(((Binding)((DataGridTextColumn)Find<DataGrid>(window,"TasksTable").Columns.Last()).Binding).StringFormat=="yyyy-MM-dd HH:mm:ss","Task timestamps use local 24-hour time without an offset");
         SelectTask(window,task.TaskId);
         await Click(window,"Copy prompt for 自选节点甲");
         var copiedHandoff=Clipboard.GetText();
@@ -119,12 +121,14 @@ internal static class Program
         ((ComboBox)window.FindName("QuickLanguage")).SelectedValue="en";await Task.Delay(30);
         var taskCount=service.Tasks().Count;
         var source=Path.Combine(root,"handoff.zip");File.WriteAllBytes(source,[1,2,3,4]);
-        await Modal<FileHandoffDialog>(window,"New handoff",async dialog=>
+        await Modal<FileHandoffDialog>(window,"New manual transfer task",async dialog=>
         {
             Check(((TextBlock)window.FindName("StatusText")).Text!=UiText.Translate("Working…","en"),"Handoff form reports a waiting state instead of processing during modal input");
             Expand(dialog);
+            Find<TextBox>(dialog,"ManualWorkRequest").Text="Write a proposal, exchange three useful rounds, then deliver the agreed result.";
             Press(dialog,"CopyFileHandoffFormat");
-            Check(Clipboard.GetText().Contains("file")&&Clipboard.GetText().Contains("任意节点甲"),"File handoff instructions explain the compact JSON and registered node names");
+            Check(Clipboard.GetText().Contains("Write a proposal")&&Clipboard.GetText().Contains("JSON")&&Clipboard.GetText().Contains("agent-a"),"Manual prompt includes the work request, exact nodes and output rules");
+            Check(!FindAll<RadioButton>(dialog).Any()&&!FindAll<TextBox>(dialog).Any(b=>b.Name.EndsWith("Rounds")),"Manual creation has no automatic collaboration or round-budget controls");
             Find<TextBox>(dialog,"FileHandoffReply").Text="{bad";Press(dialog,"ParseFileHandoff");
             Check(dialog.Result is null&&service.Tasks().Count==taskCount,"Malformed handoff JSON cannot create a task");
             Check(FindAll<TextBlock>(dialog).Any(t=>t.Text.Contains("complete JSON",StringComparison.Ordinal))&&!FindAll<TextBlock>(dialog).Any(t=>t.Text.Contains("BytePositionInLine",StringComparison.Ordinal)),"Malformed JSON explains how to recover without displaying a runtime exception transcript");
@@ -162,21 +166,21 @@ internal static class Program
         await Click(window,"Copy prompt for 任意节点甲");
         Check(Clipboard.GetText().Length<500,"Followup prompt remains short and changes its target Agent");
         Check(Directory.GetFiles(Path.GetDirectoryName(created.RequestPath)!).Length==2,"Reply adds one file without creating duplicate result snapshots");
-        File.WriteAllText(service.ManualReceiptPath(created),RelayJson.Write(new ManualReceipt(created.TaskId,created.AttemptId,manual.AgentId,1,"done",false)));
+        File.WriteAllText(service.ManualReceiptPath(created),RelayJson.Write(new ManualReceipt(created.TaskId,created.AttemptId,manual.AgentId,1,"done",false,TaskComplete:true)));
         await Wait(()=>service.Status(created.TaskId).Task.State==TaskState.Succeeded);
         Check(service.Status(created.TaskId).Task.State==TaskState.Succeeded,"Requester final receipt automatically completes the existing task without another paste or import");
         await SaveImage(window,Path.Combine(root,"Manual-completed.png"));
 
         var directSource=Path.Combine(root,"direct.md");File.WriteAllText(directSource,"No followup is needed after review.");
         var beforeDirect=service.Tasks().Count;
-        await Modal<FileHandoffDialog>(window,"New handoff",dialog=>
+        await Modal<FileHandoffDialog>(window,"New manual transfer task",dialog=>
         {
             Find<TextBox>(dialog,"FileHandoffReply").Text=RelayJson.Write(new{from=manual.AgentId,to="agent-c",file=directSource});
             Press(dialog,"ParseFileHandoff");return Task.CompletedTask;
         });
         await Wait(()=>service.Tasks().Count==beforeDirect+1);
         var direct=service.Tasks().Single(v=>v.Task.ManualSourceFile==directSource).Task;
-        File.WriteAllText(service.ManualReceiptPath(direct),RelayJson.Write(new ManualReceipt(direct.TaskId,direct.AttemptId,"agent-c",0,"done",false)));
+        File.WriteAllText(service.ManualReceiptPath(direct),RelayJson.Write(new ManualReceipt(direct.TaskId,direct.AttemptId,"agent-c",0,"done",false,TaskComplete:true)));
         await Wait(()=>service.Status(direct.TaskId).Task.State==TaskState.Succeeded);
         Check(service.Status(direct.TaskId).Task.ManualTurn==0,"Receipt that needs no reply ends the handoff immediately without returning to its sender");
         await CheckTaskOperatorActions(window,service,manual.AgentId,root);
@@ -304,7 +308,7 @@ internal static class Program
         Appearance.Save(emptyService.Home,new DesktopPreferences("en"));
         var empty=new MainWindow(emptyService);empty.Show();await Task.Delay(100);
         Check(FindAll<TextBlock>(empty).Any(t=>t.Text.Contains("No handoffs yet")),"Empty board explains how to start");
-        await Click(empty,"New handoff");
+        await Click(empty,"New manual transfer task");
         Check(((Border)empty.FindName("ErrorBanner")).Visibility==Visibility.Visible&&emptyService.Tasks().Count==0,"New handoff explains missing Agents without creating work");
         empty.Close();
     }
@@ -434,7 +438,7 @@ internal static class Program
         Appearance.Save(station.Home,new DesktopPreferences("en",NotificationSound:"none"));
         var window=new MainWindow(station){Owner=owner};window.Show();
         await Wait(()=>((TextBlock)window.FindName("StatusText")).Text!="Working…");
-        await Modal<CliHandoffDialog>(window,"New task",async dialog=>
+        await Modal<CliHandoffDialog>(window,"New automatic transfer task",async dialog=>
         {
             Check(Find<RadioButton>(dialog,"CliTaskNewSession").IsChecked==true,"Explicit CLI task entry offers a new target conversation by default");
             Check(!FindAll<TextBox>(dialog).Any(t=>t.Name=="FileHandoffReply"),"CLI work entry accepts instructions directly without a file or pasted Agent JSON");

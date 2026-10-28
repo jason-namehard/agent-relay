@@ -6,7 +6,7 @@ namespace AgentRelay.Core;
 public sealed record ManualTransferDraft(string From, string To, string File, string Message = "");
 public sealed record ManualReceipt(string TaskId, string AttemptId, string Sender, int Turn, string Status,
     bool? NeedsReply = null, string? ResultFile = null, string? NextAction = null, string? Outcome = null,
-    string[]? OpenItems = null, string? Deliverable = null);
+    string[]? OpenItems = null, string? Deliverable = null,bool? TaskComplete = null);
 public sealed record ManualReceiptError(string TaskId, string Path, string Message);
 public sealed record ManualReceiptImportResult(string[] UpdatedTaskIds, ManualReceiptError[] Errors);
 
@@ -212,6 +212,13 @@ public sealed partial class RelayService
         if (receipt.Status == "done" && !needsReply && !plannedNext && !string.IsNullOrWhiteSpace(receipt.NextAction))
             throw new RelayException("manual_receipt_contradiction", "回执声明无需继续，却同时给出了下一步工作。请明确是否需要继续；有待办时应设置 needs_reply=true 并提供回稿文件。");
         var continues = needsReply || plannedNext;
+        if(task.ManualContinuous&&receipt.Status=="done")
+        {
+            if(continues&&receipt.TaskComplete==true)
+                throw new RelayException("manual_receipt_contradiction","仍需继续传递时，task_complete不能为true。");
+            if(!continues&&receipt.TaskComplete!=true)
+                throw new RelayException("manual_completion_required","本轮完成不等于整项任务结束。仍有工作请needs_reply=true并提供回稿与下一步；整项工作已结束请明确task_complete=true。");
+        }
         if (continues && (string.IsNullOrWhiteSpace(receipt.ResultFile) || string.IsNullOrWhiteSpace(receipt.NextAction)))
             throw new RelayException("manual_receipt_reply", plannedNext
                 ? "本轮处理完成，但交接计划仍有后续步骤，不能结束任务。请提供真实回稿 result_file 和具体 next_action，再按当前上下文重写回执。"
@@ -228,7 +235,7 @@ public sealed partial class RelayService
             : receipt.Sender == task.RequesterId ? task.RecipientId : task.RequesterId;
         var limit = task.MaxTurns ?? MaxManualTurns;
         AdvanceFileHandoff(s, task, next, receipt.NextAction);
-        if (task.ManualTurn >= limit)
+        if (!task.ManualContinuous && task.ManualTurn >= limit)
             PauseFileHandoff(s, task, "round_limit", $"交接已往返 {limit} 轮，已暂停继续传递，避免重复往返。请决定追加轮数继续、取消或人工标记完成。", TaskState.AwaitingReply);
     }
 

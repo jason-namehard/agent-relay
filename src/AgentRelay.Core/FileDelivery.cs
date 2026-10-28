@@ -11,7 +11,7 @@ public sealed partial class RelayService
 
     public bool CanSendFileHandoff(TaskRecord task)
     {
-        if (!task.IsFileHandoff || Terminal(task.State) || task.CliFileTurn == task.ManualTurn ||
+        if (!task.IsFileHandoff || task.ManualContinuous || Terminal(task.State) || task.CliFileTurn == task.ManualTurn ||
             task.State is not (TaskState.AwaitingManual or TaskState.AwaitingReply)) return false;
         var recipient = task.AwaitingAgentId ?? task.RecipientId;
         var sender = recipient == task.RecipientId ? task.RequesterId : task.RecipientId;

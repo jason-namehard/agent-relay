@@ -109,6 +109,8 @@ public partial class MainWindow : Window
         {
             await action();
             var receipts=service.ImportManualReceipts();
+            receiptImportErrors.Clear();
+            foreach(var error in receipts.Errors)receiptImportErrors[error.TaskId]=error.Message;
             StartAutoDeliveries();
             var notificationHint=await DeliverPendingDesktopNotificationsAsync();
             if (refresh && !reviewCancelled) { RenderPage(); LedgerHint.Text = ""; }
@@ -207,8 +209,8 @@ public partial class MainWindow : Window
         Add(cards,T("Registered Agents")+": "+summary.RegisteredAgents,()=>{Go("Agents");return Task.CompletedTask;});
         cards.Children.Add(Note(T("Pending Tasks")+": "+summary.PendingTasks+"  ·  "+T("Retention")+": "+summary.RetentionDays+" "+T("days")));
         var actions=Row(page);
-        Add(actions,"New task",NewCliHandoff);
-        Add(actions,"New handoff",async()=>
+        Add(actions,"New automatic transfer task",NewCliHandoff);
+        Add(actions,"New manual transfer task",async()=>
         {
             var agents=service.Agents().Select(a=>new HandoffAgentOption(a.AgentId,a.DisplayName??a.AgentId)).ToArray();
             if(agents.Length<2)throw new RelayException("agents_required",T("Add at least two Agents first."));
@@ -219,22 +221,10 @@ public partial class MainWindow : Window
             var existing=service.Tasks().FirstOrDefault(v=>v.Task.IsFileHandoff&&v.Task.RequesterId==draft.From&&v.Task.RecipientId==draft.To&&v.Task.ManualSourceFile==draft.File&&
                 v.Task.State is not(TaskState.Succeeded or TaskState.Failed or TaskState.Cancelled or TaskState.TimedOut));
             if(existing is not null){taskId=existing.Task.TaskId;return;}
-            HandoffSessionDialog? routing=null;
-            if(service.CliExtension(draft.From) is not null||service.CliExtension(draft.To) is not null)
-            {
-                routing=new HandoffSessionDialog(this,service,draft,preferences.Language);
-                if(routing.ShowDialog()!=true){reviewCancelled=true;return;}
-            }
             var result=await Task.Run(()=>service.CreateFileHandoff(draft));
             taskId=result.Task.TaskId;
             service.ConfigureFileHandoff(taskId,dialog.Options(draft));
-            if(routing is not null)
-            {
-                if(routing.Origin is not null)service.BindTaskSession(taskId,draft.From,routing.Origin,routing.OriginBinding);
-                if(routing.TargetIsNew)service.UseNewTaskSession(taskId,draft.To);
-                else service.BindTaskSession(taskId,draft.To,routing.Target!,routing.TargetBinding);
-            }
-            StartAutoDeliveries();
+
         });
         Add(actions,"Open relay folder",()=>{Process.Start(new ProcessStartInfo(service.Home){UseShellExecute=true});return Task.CompletedTask;},false);
         TaskPane(page,service.Tasks());return page;
@@ -280,6 +270,7 @@ public partial class MainWindow : Window
             stateStyle.Triggers.Add(trigger);
         }
         ((DataGridTextColumn)table.Columns[2]).ElementStyle=stateStyle;
+        ((DataGridTextColumn)table.Columns[3]).Binding=new Binding("Created"){StringFormat="yyyy-MM-dd HH:mm:ss",ConverterCulture=CultureInfo.InvariantCulture};
         AddTaskBatchControls(page,table,rows);
         table.ItemsSource=rows;page.Children.Add(table);
         var pane=Page();page.Children.Add(pane);

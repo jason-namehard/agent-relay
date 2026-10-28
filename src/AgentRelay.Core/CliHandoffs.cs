@@ -112,18 +112,18 @@ public sealed partial class RelayService
         else
         {
             var requiredNext=task.HandoffPlan is {} plan&&task.ManualTurn+1<plan.Length;
-            var remaining=Math.Max(0,(task.MaxTurns??MaxManualTurns)-task.ManualTurn-1);
+            int? remaining=task.ManualContinuous?null:Math.Max(0,(task.MaxTurns??MaxManualTurns)-task.ManualTurn-1);
             document=new
             {
                 common.sender_name,common.recipient_name,common.current_file,common.original_request_file,common.request,
                 common.reply_file,common.receipt_file,
-                receipt_template=new ManualReceipt(task.TaskId,task.AttemptId,current,task.ManualTurn,"done",requiredNext),
+                receipt_template=new ManualReceipt(task.TaskId,task.AttemptId,current,task.ManualTurn,"done",requiredNext,TaskComplete:task.ManualContinuous?false:null),
                 handoff_plan=task.HandoffPlan,required_next_agent=requiredNext?task.HandoffPlan![task.ManualTurn+1]:null,
                 remaining_handoffs=remaining,
                 instructions="Read current_file and perform the request. "+
                     (requiredNext?"handoff_plan still requires required_next_agent: this task is not finished; save a real result_file, set needs_reply=true and provide concrete next_action for that Agent. ":"")+
                     "Set needs_reply=true only when the other Agent must do concrete further work; then provide result_file and next_action. Set needs_reply=false when no required work remains, and never ask for further work in next_action at the same time. "+
-                    $"At most {remaining} more handoffs are allowed before Relay pauses for the user. "+ReceiptRules
+                    (task.ManualContinuous?"This is a manual continuous transfer with no preset round limit. A done receipt completes only this turn. Set task_complete=true and needs_reply=false only after the whole original task has no work left for either Agent. Intermediate turns use needs_reply=true, task_complete=false, result_file and concrete next_action. ":$"At most {remaining} more handoffs are allowed before Relay pauses for the user. ")+ReceiptRules
             };
         }
         File.WriteAllText(context,RelayJson.Write(document));

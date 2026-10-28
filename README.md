@@ -7,7 +7,7 @@
 
 A local handoff desk for people working with several AI agents. Pass a file from A to B, see who needs to act next, and finish without unnecessary back-and-forth.
 
-The current source is the `0.1.0-preview.19` release candidate; it has not been published. The download below is the published `preview.15`. The bridge and review-loop features described here require the candidate or a source build.
+The current source is the `0.1.0-preview.20` release candidate; it has not been published. The download below is the published `preview.15`. The bridge and review-loop features described here require the candidate or a source build.
 
 ## Quick start — Windows x64
 

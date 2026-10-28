@@ -2,7 +2,7 @@ namespace AgentRelay.Core;
 
 public sealed record CollaborationOptions(string AuthorId, string? Criteria = null, int MaxReviewRounds = 5);
 public sealed record FileHandoffOptions(CollaborationOptions? Collaboration = null, bool AutoDeliver = false,
-    int? TurnTimeoutMinutes = null);
+    int? TurnTimeoutMinutes = null,bool ManualContinuous = false);
 
 public sealed record CollaborationStep(int Turn, string AgentId, string Phase, string Outcome, DateTimeOffset At,
     string? ResultPath = null, string[]? OpenItems = null, string? Note = null);
@@ -44,6 +44,8 @@ public sealed partial class RelayService
     {
         if (options.TurnTimeoutMinutes is < 1 or > 43200)
             throw new RelayException("handoff_turn_timeout", "单轮时限为 1–43200 分钟。");
+        if(options.ManualContinuous&&(options.Collaboration is not null||options.AutoDeliver))
+            throw new RelayException("manual_options_invalid","手动连续传递不配置自动投递或预设验收角色。");
         if (options.Collaboration is not { } collaboration) return;
         if (collaboration.AuthorId != requesterId && collaboration.AuthorId != recipientId)
             throw new RelayException("collaboration_author", "作者必须是本任务的发送方或接收方。");
@@ -74,6 +76,7 @@ public sealed partial class RelayService
         }
         else task.Collaboration = null;
         task.AutoDeliver = options.AutoDeliver;
+        task.ManualContinuous = options.ManualContinuous;
         task.TurnTimeoutMinutes = options.TurnTimeoutMinutes;
         task.DeadlineAt = Now + TurnTimeout(s, task);
         s.Save(task);
@@ -146,7 +149,7 @@ public sealed partial class RelayService
                 _ => (collaboration.ReviewerId, collaboration.ReviewerId)
             };
         return new(current, collaboration?.Phase, waiting, delivery, task.ManualTurn,
-            collaboration is null ? task.MaxTurns ?? MaxManualTurns : null,
+            collaboration is null && !task.ManualContinuous ? task.MaxTurns ?? MaxManualTurns : null,
             collaboration?.ReviewRound, collaboration?.MaxReviewRounds, passed, changed,
             task.PauseReason, task.PauseMessage, finished, completion, finished ? null : FileDeliveryMessage(task));
     }
@@ -203,9 +206,9 @@ public sealed partial class RelayService
         if (receipt.Outcome is null || !allowed.Contains(receipt.Outcome))
             throw new RelayException("collaboration_outcome", "当前阶段的 outcome 只能是：" + string.Join(" / ", allowed) + "。");
         // The outcome decides who works next; Agents often copy needs_reply from the single-handoff template, so it is ignored here.
-        if (items.Length > 0 && receipt.Outcome != "changes_requested")
+        if (items.Length > 0 && receipt.Outcome is not ("changes_requested" or "submitted"))
             throw new RelayException("collaboration_open_items", receipt.Outcome == "approved"
-                ? "仍有未解决问题时不能通过验收，请改为 changes_requested。" : "只有要求修改时填写 open_items。");
+                ? "仍有未解决问题时不能通过验收，请改为 changes_requested。" : "最终接受前不能保留未解决问题；提交和要求修改时可以填写 open_items。");
         var author = c.AuthorId;
         switch (receipt.Outcome)
         {
@@ -217,7 +220,7 @@ public sealed partial class RelayService
                 var artifact = KeepReceiptResult(s, task, receipt.ResultFile)!;
                 Record("submitted", artifact.Path);
                 var unchanged = previous is not null && File.Exists(previous) && SameContent(previous, artifact.Path);
-                c.SubmissionPath = artifact.Path; c.ApprovedSubmissionPath = null; c.OpenItems = [];
+                c.SubmissionPath = artifact.Path; c.ApprovedSubmissionPath = null; c.OpenItems = items;
                 c.ReviewRound++; c.Phase = "review";
                 AdvanceFileHandoff(s, task, c.ReviewerId, receipt.NextAction ?? "请按验收标准检查作者的最新提交。");
                 if (c.ReviewRound > c.MaxReviewRounds)

@@ -376,6 +376,7 @@ public static class UiText
         entries.Add("default_deny", entries["Default deny"]);
         SimplifiedText.AddTo(entries);
         ManualUiText.AddTo(entries);
+        ManualCreationUiText.AddTo(entries);
         TaskControlUiText.AddTo(entries);
         BatchTaskUiText.AddTo(entries);
         WorkflowUiText.AddTo(entries);

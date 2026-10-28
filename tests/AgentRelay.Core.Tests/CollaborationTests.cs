@@ -123,6 +123,25 @@ public sealed class CollaborationTests
     }
 
     [TestMethod]
+    public void SubmissionWithRemainingItemsAdvancesToReviewAndPreservesTheItems()
+    {
+        Loop();
+        Accepted(Send("submitted", ["Inspect the next handoff", "Confirm the final revision"], content: "First deliverable", needsReply: true));
+        Assert.AreEqual(TaskState.AwaitingReply, task.State);
+        Assert.AreEqual("agent-a", task.AwaitingAgentId);
+        Assert.AreEqual(1, task.ManualTurn);
+        Assert.AreEqual("review", task.Collaboration!.Phase);
+        CollectionAssert.AreEqual(new[] { "Inspect the next handoff", "Confirm the final revision" }, task.Collaboration.OpenItems);
+        CollectionAssert.AreEqual(task.Collaboration.OpenItems, task.Collaboration.History.Single().OpenItems!);
+        service.FileHandoffPrompt(task);
+        using var context = JsonDocument.Parse(File.ReadAllText(Path.Combine(Path.GetDirectoryName(service.ManualReceiptPath(task))!, "context.json")));
+        Assert.AreEqual("Inspect the next handoff", context.RootElement.GetProperty("collaboration").GetProperty("open_items")[0].GetString());
+        Accepted(Send("approved"));
+        Rejected(Send("accepted", ["Still pending"], deliverable: "docs/result.md"), "未解决");
+        Assert.AreEqual(TaskState.AwaitingReply, task.State);
+    }
+
+    [TestMethod]
     public void ProgressReceiptsAndGreetingsDoNotAdvanceTheLoop()
     {
         Loop();

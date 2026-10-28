@@ -73,6 +73,7 @@ public sealed class TaskRecord
     public bool IsFileHandoff { get; set; }
     public string? AwaitingAgentId { get; set; }
     public int ManualTurn { get; set; }
+    public bool ManualContinuous { get; set; }
     public string? ManualCurrentFile { get; set; }
     public string? ManualNextAction { get; set; }
     public string? ManualReceiptJson { get; set; }

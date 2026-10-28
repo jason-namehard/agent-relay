@@ -11,6 +11,7 @@ namespace AgentRelay.Desktop;
 public partial class MainWindow
 {
     private FileSystemWatcher? receiptWatcher;
+    private readonly Dictionary<string,string> receiptImportErrors=[];
     private bool receiptRefreshQueued;
     private string? migrationSummary;
 
@@ -52,6 +53,7 @@ public partial class MainWindow
     private string FileState(TaskRecord task)
     {
         var agent=AgentName(task.AwaitingAgentId??task.RecipientId);
+        if(receiptImportErrors.ContainsKey(task.TaskId))return T("Receipt needs attention");
         var progress=task.IsFileHandoff?service.FileHandoffProgress(task):null;
         if(sendingTasks.Contains(task.TaskId) || progress?.Delivery=="cli_in_flight")
             return string.Format(CultureInfo.CurrentUICulture,T("Sending to {0}…"),agent);
@@ -86,6 +88,7 @@ public partial class MainWindow
     {
         var task=view.Task;var progress=view.Progress!;
         Heading(pane,AgentName(task.RequesterId)+" → "+AgentName(task.RecipientId),FileState(task));
+        if(receiptImportErrors.TryGetValue(task.TaskId,out var receiptError))pane.Children.Add(Note(T("Receipt needs attention")+": "+receiptError));
         if(task.ResumeStatus=="operator_completed")pane.Children.Add(Note(T("Marked complete by the user. Agent completion was not verified.")));
         if(task.ErrorMessage is not null)pane.Children.Add(Note(task.ErrorMessage));
         if(task.HandoffPlan is {} plan)pane.Children.Add(Note(T("Planned steps")+": "+string.Join(" → ",plan.Select(AgentName))+" · "+T("Current step")+" "+(task.ManualTurn+1)+"/"+plan.Length));
@@ -95,7 +98,7 @@ public partial class MainWindow
                 Math.Max(1,Math.Min(c.ReviewRound,c.MaxReviewRounds)),c.MaxReviewRounds));
             round.Name="HandoffRoundSummary";pane.Children.Add(round);
         }
-        else if(!progress.Finished)pane.Children.Add(Note(string.Format(CultureInfo.CurrentUICulture,T("Turn {0} of at most {1}"),task.ManualTurn+1,progress.MaxTurns)));
+        else if(!progress.Finished)pane.Children.Add(Note(progress.MaxTurns is null?string.Format(CultureInfo.CurrentUICulture,T("Transfer turn {0}"),task.ManualTurn+1):string.Format(CultureInfo.CurrentUICulture,T("Turn {0} of at most {1}"),task.ManualTurn+1,progress.MaxTurns)));
         if(!progress.Finished)
         {
             var next=Note(string.Format(CultureInfo.CurrentUICulture,T("Next recipient: {0}"),AgentName(task.AwaitingAgentId??task.RecipientId)));
