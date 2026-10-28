@@ -1,5 +1,7 @@
 using System.Windows;
+using System.Windows.Automation;
 using System.Windows.Controls;
+using System.Windows.Controls.Primitives;
 using System.Windows.Data;
 using System.Windows.Media;
 using System.Windows.Shapes;
@@ -9,20 +11,24 @@ namespace AgentRelay.Desktop;
 
 public partial class MainWindow
 {
-    private sealed record AgentRow(AgentRecord Source, string Name, string Bridge, Brush BridgeBrush, string Activity);
+    private sealed record AgentRow(AgentRecord Source, string Name, string Bridge, Brush BridgeBrush, string Activity, string Host, string Initial, Brush AvatarBrush);
 
     private HashSet<string> ActiveAgentIds() => service.Tasks()
         .Where(view => view.Task.State is not (TaskState.Succeeded or TaskState.Failed or TaskState.TimedOut or TaskState.Cancelled))
         .SelectMany(view => new[] { view.Task.RequesterId, view.Task.RecipientId }).ToHashSet(StringComparer.Ordinal);
 
-    private StackPanel AgentsPage()
+    private FrameworkElement AgentsPage()
     {
+        avatarSlots = null;
         var page = Page();
-        Heading(page, "Your Agents", "Use one name per Agent. Configure it directly with a prompt, or enter the fields yourself.");
-        var actions = Row(page);
-        var table = Table("AgentsTable", ("Name", "Name"), ("Agent bridge", "Bridge"), ("Handoffs", "Activity"));
+        var scroll = new ScrollViewer { Content = page, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled, Padding = new(0, 0, 6, 0) };
+        var table = Table("AgentsTable", ("Agent", "Name"), ("Agent bridge", "Bridge"), ("Handoffs", "Activity"));
+        table.Columns[0] = AgentColumn();
         table.Columns[1] = BridgeColumn();
-        var details = new StackPanel { Margin = new(10) };
+        table.Columns[2].Width = new DataGridLength(0.7, DataGridLengthUnitType.Star);
+        table.Columns.Add(MoreColumn());
+        table.RowHeight = 58; table.Height = double.NaN; table.MaxHeight = 420;
+        var details = new StackPanel();
 
         Task Edit(AgentRecord? existing)
         {
@@ -53,9 +59,35 @@ public partial class MainWindow
         AgentRecord Selected() => table.SelectedItem is AgentRow row ? row.Source
             : throw new RelayException("selection_required", T("Select an Agent."));
 
-        Add(actions, "New Agent", () => Edit(null));
-        Add(actions, "Edit Agent", () => Edit(Selected()));
-        Add(actions, "Delete Agent", () =>
+        // The header offers one way to add an Agent; the menu next to it hands the job to the Agent itself.
+        var create = Styled(Add(PageActions, "New Agent", () => Edit(null)), "PrimaryButtonStyle", "Plus");
+        create.Margin = new(0); create.Padding = new(12, 0, 12, 0);
+        var more = IconButton("Down", "More ways to add an Agent", "NewAgentOptions");
+        Styled(more, "PrimaryButtonStyle"); more.Width = 30; more.Padding = new(0); more.Margin = new(1, 0, 0, 0); more.Content = Icons.Create("Down", size: 15);
+        create.Template = SplitHalf(true); more.Template = SplitHalf(false);
+        PageActions.Children.Add(more);
+        var options = Flyout(more, PageActions);
+        MenuItem(options, "One-click setup", "Bolt", () =>
+        {
+            Clipboard.SetText(service.AgentSetupPrompt(relayCommand: AgentEntryDialog.ResolveRelayCommand()));
+            MessageBox.Show(this, T("Setup prompt copied. Paste it into a new conversation with the Agent you want to register. It will inspect its calling method and fill Relay directly. This creates a new node and does not overwrite the selected Agent."),
+                T("One-click setup"), MessageBoxButton.OK, MessageBoxImage.Information);
+            return Task.CompletedTask;
+        }, "Copy a prompt; the Agent fills in its own details", refresh: false);
+        MenuItem(options, "Fill in by hand", "Edit", () => Edit(null), "Name, paths and calling method");
+
+        // One menu serves every row; the ⋯ button selects its row and opens it there.
+        var rowMenuHost = new StackPanel();
+        page.Children.Add(rowMenuHost);
+        var anchor = new Button { Visibility = Visibility.Collapsed };
+        rowMenuHost.Children.Add(anchor);
+        var rowMenu = Flyout(anchor, rowMenuHost);
+        var popup = (Popup)rowMenuHost.Children.OfType<Popup>().Single();
+        MenuItem(rowMenu, "Edit Agent", "Edit", () => Edit(Selected()));
+        MenuItem(rowMenu, "Test bridge", "Pulse", () => { agentId = Selected().AgentId; ShowCliProbe(agentId); return Task.CompletedTask; }, "Sends one short real call");
+        MenuItem(rowMenu, "Recheck and restore bridge", "Refresh", () => RecheckBridge(Selected().AgentId), "Read-only check, no model call");
+        MenuSeparator(rowMenu);
+        MenuItem(rowMenu, "Delete Agent", "Trash", () =>
         {
             var agent = Selected();
             if (ActiveAgentIds().Contains(agent.AgentId))
@@ -66,78 +98,145 @@ public partial class MainWindow
             { reviewCancelled = true; return Task.CompletedTask; }
             service.RemoveAgent(agent.AgentId); service.RemoveGuidance(agent.AgentId); agentId = null;
             return Task.CompletedTask;
-        });
-        Add(actions, "Test bridge", () =>
+        }, danger: true);
+        table.AddHandler(ButtonBase.ClickEvent, new RoutedEventHandler((_, args) =>
         {
-            agentId = Selected().AgentId; ShowCliProbe(agentId); return Task.CompletedTask;
-        });
-        Add(actions,"Recheck and restore bridge",()=>RecheckBridge(Selected().AgentId));
-        Add(actions, "One-click setup", () =>
-        {
-            Clipboard.SetText(service.AgentSetupPrompt(relayCommand: AgentEntryDialog.ResolveRelayCommand()));
-            MessageBox.Show(this, T("Setup prompt copied. Paste it into a new conversation with the Agent you want to register. It will inspect its calling method and fill Relay directly. This creates a new node and does not overwrite the selected Agent."),
-                T("One-click setup"), MessageBoxButton.OK, MessageBoxImage.Information);
-            return Task.CompletedTask;
-        }, false);
+            if (args.OriginalSource is not Button { Tag: "AgentMore" } button || button.DataContext is not AgentRow row) return;
+            table.SelectedItem = row;
+            popup.PlacementTarget = button; popup.IsOpen = true;
+            args.Handled = true;
+        }));
 
         var active = ActiveAgentIds();
         var rows = service.Agents().Select(agent =>
         {
             var bridge = service.Bridge(agent.AgentId);
-            return new AgentRow(agent, agent.DisplayName ?? agent.AgentId, BridgePresentation.Label(bridge, T), BridgePresentation.Accent(this, bridge),
-                T(active.Contains(agent.AgentId) ? "Unfinished handoffs" : "No unfinished handoffs"));
+            var name = agent.DisplayName ?? agent.AgentId;
+            return new AgentRow(agent, name, BridgePresentation.Label(bridge, T), BridgePresentation.Accent(this, bridge),
+                T(active.Contains(agent.AgentId) ? "Unfinished handoffs" : "No unfinished handoffs"),
+                agent.Host is "manual" or "" ? T("Added by hand") : agent.Host + (agent.HostVersion is { } version ? " " + version : ""),
+                Initial(name), Theme(AvatarKey(agent.AgentId)));
         }).ToArray();
         table.ItemsSource = rows; page.Children.Add(table);
-        page.Children.Add(Note("One-click setup is for a new node. To change an existing node, select it and use Edit Agent. An Agent bridge connects Relay to the Agent through ACP or its CLI; ACP is used when the host supports it. Without a bridge you copy prompts by hand."));
-        page.Children.Add(new Expander { Header = T("Handoff rules and node details"), Content = details, Margin = new(0, 10, 0, 0) });
+        if (rows.Length == 0) page.Children.Add(Muted("No Agents yet. Add one with New Agent, or let an Agent fill in its own details with One-click setup.", 13, new(2, 14, 0, 0)));
+        page.Children.Add(details);
         void ShowDetails()
         {
             details.Children.Clear();
             if (table.SelectedItem is not AgentRow row) return;
             agentId = row.Source.AgentId;
-            details.Children.Add(Note("Agent ID" + ": " + row.Source.AgentId));
-            details.Children.Add(Note("Install the rule in the instruction file your host actually loads. The one-line rule uses a little context; details are read on demand. Existing sessions may need to reread the file or restart."));
-            var ruleActions = Row(details);
-            Add(ruleActions, "Install handoff rule", () => { InstallRules(Selected().AgentId); return Task.CompletedTask; });
-            Add(ruleActions, "Remove handoff rule", () => { service.RemoveGuidance(Selected().AgentId); return Task.CompletedTask; });
-            if(service.CliExtension(row.Source.AgentId) is {} extension)
+            var id = row.Source.AgentId;
+            var header = new StackPanel { Orientation = Orientation.Horizontal, Margin = new(0, 22, 0, 0) };
+            header.Children.Add(Avatar(id, 30));
+            var names = new StackPanel { Margin = new(10, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center };
+            names.Children.Add(new TextBlock { Text = row.Name, FontSize = 15, FontWeight = FontWeights.SemiBold });
+            names.Children.Add(Brushed(new TextBlock { Text = T("Agent ID") + ": " + id, FontSize = 12, FontFamily = new("Cascadia Mono, Consolas") }, "FaintBrush"));
+            header.Children.Add(names);
+            details.Children.Add(header);
+
+            var bridge = Group(details, "Agent bridge");
+            var bridgeState = new StackPanel { Orientation = Orientation.Horizontal };
+            bridgeState.Children.Add(new Ellipse { Width = 8, Height = 8, Fill = row.BridgeBrush, Margin = new(0, 0, 8, 0), VerticalAlignment = VerticalAlignment.Center });
+            bridgeState.Children.Add(new TextBlock { Text = row.Bridge, VerticalAlignment = VerticalAlignment.Center });
+            var extension = service.CliExtension(id);
+            SettingRow(bridge, "Connection", extension is null ? "Without a bridge you copy prompts by hand." :
+                T(extension.CanCreate ? "New conversations verified" : "New conversations not verified") + " · " + T(extension.CanResume ? "Resume verified" : "Resume not verified") +
+                (extension.CreateEvidence is not null || extension.ResumeEvidence is not null ? " · " + T("Proven by a real handoff") : ""), bridgeState);
+            if (extension?.Block is { } block)
             {
-                details.Children.Add(Note(T("Agent bridge")+": "+BridgePresentation.Label(service.Bridge(row.Source.AgentId),T)+" · "+T(extension.CanCreate?"New conversations verified":"New conversations not verified")+" · "+
-                    T(extension.CanResume?"Resume verified":"Resume not verified")+
-                    (extension.CreateEvidence is not null||extension.ResumeEvidence is not null?" · "+T("Proven by a real handoff"):"")));
-                if(extension.Block is {} block)
-                {
-                    details.Children.Add(Note(string.Format(System.Globalization.CultureInfo.CurrentUICulture,T("Saved failure at {0}. Automatic sends remain paused until you resolve it; use the connection check to see the current status."),block.At.ToLocalTime().ToString("g"))));
-                    details.Children.Add(Note(block.Message));
-                    if(!CanRecheckDesktopBridge(row.Source.AgentId))
-                        Add(Row(details),"I have resolved this · Allow automatic sends",()=>{service.ClearCliBlock(row.Source.AgentId);return Task.CompletedTask;});
-                }
+                var failure = new StackPanel { Margin = new(18, 0, 18, 14) };
+                bridge.Children.Add(failure);
+                var (_, blockActions) = Alert(failure, "bad", string.Format(System.Globalization.CultureInfo.CurrentUICulture, T("Saved failure at {0}. Automatic sends remain paused until you resolve it; use the connection check to see the current status."), block.At.ToLocalTime().ToString("g")), block.Message);
+                if (!CanRecheckDesktopBridge(id))
+                    Add(blockActions, "I have resolved this · Allow automatic sends", () => { service.ClearCliBlock(id); return Task.CompletedTask; });
             }
-            if(service.Bridge(row.Source.AgentId).HostNote is {} hostNote)details.Children.Add(Note(hostNote));
-            var health=new StackPanel();
-            Add(Row(details),"Check bridge setup (no model call)",async()=>
+            if (service.Bridge(id).HostNote is { } hostNote) { var note = new StackPanel { Margin = new(18, 0, 18, 14) }; bridge.Children.Add(note); Alert(note, "info", null, hostNote); }
+            var health = new StackPanel { Margin = new(18, 0, 18, 6) };
+            var checkRow = SettingRow(bridge, "Check bridge setup", "Reads the local configuration. No model is called.");
+            var check = RowAction(checkRow, "Check bridge setup (no model call)", async () =>
             {
                 health.Children.Clear();
-                foreach(var check in await Task.Run(()=>service.CliHealthAsync(row.Source.AgentId)))
-                    health.Children.Add(Note((check.Status=="pass"?"✓ ":check.Status=="warn"?"! ":"✗ ")+check.Message));
-            },false);
-            Add(Row(details),"Copy bridge diagnostic prompt",()=>CopyBridgeDiagnostic(row.Source.AgentId),false);
-            details.Children.Add(health);
-            AddModelDefaults(details,row.Source.AgentId);
-            details.Children.Add(Note("Session discovery reads this Agent's local conversation store. It never selects the latest conversation."));
-            var current=service.DiscoverySource(row.Source.AgentId);
-            var provider=new ComboBox{Name="SessionDiscoveryProvider",ItemsSource=new[]{"zcode","dsh","hermes","workbuddy"},SelectedItem=current?.Provider,MinHeight=38};
-            details.Children.Add(provider);
-            var storage=EntryDialogLayout.Input("SessionStorageRoot",current?.StorageRoot??"");details.Children.Add(storage);
-            Add(Row(details),"Save session discovery",()=>
+                foreach (var result in await Task.Run(() => service.CliHealthAsync(id)))
+                {
+                    var line = new DockPanel { Margin = new(0, 0, 0, 6) };
+                    var mark = Icons.Create(result.Status == "pass" ? "Check" : "Alert", size: 15, brushKey: result.Status == "pass" ? "OkBrush" : result.Status == "warn" ? "WarnBrush" : "BadBrush");
+                    mark.Margin = new(0, 1, 8, 0); mark.VerticalAlignment = VerticalAlignment.Top; DockPanel.SetDock(mark, Dock.Left);
+                    line.Children.Add(mark); line.Children.Add(new TextBlock { Text = result.Message, TextWrapping = TextWrapping.Wrap, FontSize = 12.5 });
+                    health.Children.Add(line);
+                }
+            }, false);
+            check.Content = T("Check");
+            var copy = RowAction(checkRow, "Copy bridge diagnostic prompt", () => CopyBridgeDiagnostic(id), false);
+            Styled(copy, "GhostButtonStyle"); copy.Content = T("Copy diagnostic prompt");
+            bridge.Children.Add(health);
+            AddModelDefaults(details, id);
+
+            var rules = Group(details, "Handoff rule");
+            var ruleRow = SettingRow(rules, "Instruction file", "Install the rule in the instruction file your host actually loads. The one-line rule uses a little context; details are read on demand. Existing sessions may need to reread the file or restart.");
+            RowAction(ruleRow, "Install handoff rule", () => { InstallRules(Selected().AgentId); return Task.CompletedTask; });
+            Styled(RowAction(ruleRow, "Remove handoff rule", () => { service.RemoveGuidance(Selected().AgentId); return Task.CompletedTask; }), "GhostButtonStyle");
+
+            var discovery = Group(details, "Session discovery");
+            var current = service.DiscoverySource(id);
+            var provider = new ComboBox { Name = "SessionDiscoveryProvider", ItemsSource = new[] { "zcode", "dsh", "hermes", "workbuddy" }, SelectedItem = current?.Provider, Width = 160, Margin = new(0) };
+            SettingRow(discovery, "Conversation store", "Session discovery reads this Agent's local conversation store. It never selects the latest conversation.", provider);
+            var storage = EntryDialogLayout.Input("SessionStorageRoot", current?.StorageRoot ?? ""); storage.Margin = new(0); storage.Width = 300;
+            var storageRow = SettingRow(discovery, "Storage folder", null, storage);
+            RowAction(storageRow, "Save session discovery", () =>
             {
-                if(provider.SelectedItem is not string selected)throw new RelayException("session_provider_required",T("Select a session provider."));
-                service.ConfigureSessionDiscovery(row.Source.AgentId,selected,storage.Text.Trim());return Task.CompletedTask;
-            });
+                if (provider.SelectedItem is not string selected) throw new RelayException("session_provider_required", T("Select a session provider."));
+                service.ConfigureSessionDiscovery(id, selected, storage.Text.Trim()); return Task.CompletedTask;
+            }).Content = T("Save");
         }
         table.SelectionChanged += (_, _) => ShowDetails();
         table.SelectedItem = rows.SingleOrDefault(row => row.Source.AgentId == agentId) ?? rows.FirstOrDefault();
-        return page;
+        UpdateSidebar();
+        return scroll;
+    }
+
+    /// <summary>Left and right halves of a split button share one rounded outline.</summary>
+    private static ControlTemplate SplitHalf(bool left)
+    {
+        var frame = new FrameworkElementFactory(typeof(Border), "Frame");
+        frame.SetValue(Border.CornerRadiusProperty, left ? new CornerRadius(7, 0, 0, 7) : new CornerRadius(0, 7, 7, 0));
+        frame.SetBinding(Border.BackgroundProperty, new Binding(nameof(Control.Background)) { RelativeSource = RelativeSource.TemplatedParent });
+        frame.SetValue(Border.PaddingProperty, new TemplateBindingExtension(Control.PaddingProperty));
+        var content = new FrameworkElementFactory(typeof(ContentPresenter));
+        content.SetValue(HorizontalAlignmentProperty, HorizontalAlignment.Center); content.SetValue(VerticalAlignmentProperty, VerticalAlignment.Center);
+        frame.AppendChild(content);
+        var template = new ControlTemplate(typeof(Button)) { VisualTree = frame };
+        var hover = new Trigger { Property = IsMouseOverProperty, Value = true };
+        hover.Setters.Add(new Setter(OpacityProperty, 0.9, "Frame")); template.Triggers.Add(hover);
+        var disabled = new Trigger { Property = IsEnabledProperty, Value = false };
+        disabled.Setters.Add(new Setter(OpacityProperty, 0.45)); template.Triggers.Add(disabled);
+        return template;
+    }
+
+    private DataGridTemplateColumn AgentColumn()
+    {
+        var row = new FrameworkElementFactory(typeof(StackPanel));
+        row.SetValue(StackPanel.OrientationProperty, Orientation.Horizontal);
+        row.SetValue(VerticalAlignmentProperty, VerticalAlignment.Center);
+        var avatar = new FrameworkElementFactory(typeof(Border));
+        avatar.SetValue(WidthProperty, 32.0); avatar.SetValue(HeightProperty, 32.0); avatar.SetValue(Border.CornerRadiusProperty, new CornerRadius(9));
+        avatar.SetBinding(Border.BackgroundProperty, new Binding(nameof(AgentRow.AvatarBrush)));
+        var letter = new FrameworkElementFactory(typeof(TextBlock));
+        letter.SetBinding(TextBlock.TextProperty, new Binding(nameof(AgentRow.Initial)));
+        letter.SetValue(TextBlock.FontSizeProperty, 14.0); letter.SetValue(TextBlock.FontWeightProperty, FontWeights.Bold);
+        letter.SetValue(HorizontalAlignmentProperty, HorizontalAlignment.Center); letter.SetValue(VerticalAlignmentProperty, VerticalAlignment.Center);
+        letter.SetResourceReference(TextBlock.ForegroundProperty, "AvatarTextBrush");
+        avatar.AppendChild(letter);
+        var names = new FrameworkElementFactory(typeof(StackPanel));
+        names.SetValue(MarginProperty, new Thickness(11, 0, 0, 0)); names.SetValue(VerticalAlignmentProperty, VerticalAlignment.Center);
+        var name = new FrameworkElementFactory(typeof(TextBlock));
+        name.SetBinding(TextBlock.TextProperty, new Binding(nameof(AgentRow.Name)));
+        name.SetValue(TextBlock.FontWeightProperty, FontWeights.SemiBold);
+        var host = new FrameworkElementFactory(typeof(TextBlock));
+        host.SetBinding(TextBlock.TextProperty, new Binding(nameof(AgentRow.Host)));
+        host.SetValue(TextBlock.FontSizeProperty, 12.0); host.SetResourceReference(TextBlock.ForegroundProperty, "FaintBrush");
+        names.AppendChild(name); names.AppendChild(host);
+        row.AppendChild(avatar); row.AppendChild(names);
+        return new DataGridTemplateColumn { Header = T("Agent"), CellTemplate = new DataTemplate { VisualTree = row }, Width = new DataGridLength(1.2, DataGridLengthUnitType.Star) };
     }
 
     private DataGridTemplateColumn BridgeColumn()
@@ -147,7 +246,7 @@ public partial class MainWindow
         row.SetValue(VerticalAlignmentProperty, VerticalAlignment.Center);
         var dot = new FrameworkElementFactory(typeof(Ellipse));
         dot.SetValue(WidthProperty, 8.0); dot.SetValue(HeightProperty, 8.0);
-        dot.SetValue(MarginProperty, new Thickness(10, 0, 8, 0)); dot.SetValue(VerticalAlignmentProperty, VerticalAlignment.Center);
+        dot.SetValue(MarginProperty, new Thickness(0, 0, 8, 0)); dot.SetValue(VerticalAlignmentProperty, VerticalAlignment.Center);
         dot.SetBinding(Shape.FillProperty, new Binding(nameof(AgentRow.BridgeBrush)));
         var label = new FrameworkElementFactory(typeof(TextBlock));
         label.SetBinding(TextBlock.TextProperty, new Binding(nameof(AgentRow.Bridge)));
@@ -155,5 +254,22 @@ public partial class MainWindow
         row.AppendChild(dot); row.AppendChild(label);
         return new DataGridTemplateColumn { Header = T("Agent bridge"), CellTemplate = new DataTemplate { VisualTree = row },
             Width = new DataGridLength(1, DataGridLengthUnitType.Star) };
+    }
+
+    private DataGridTemplateColumn MoreColumn()
+    {
+        var button = new FrameworkElementFactory(typeof(Button));
+        button.SetValue(TagProperty, "AgentMore");
+        button.SetValue(AutomationProperties.AutomationIdProperty, "AgentMore");
+        button.SetResourceReference(StyleProperty, "IconButtonStyle");
+        button.SetValue(ToolTipProperty, T("More actions"));
+        button.SetValue(MarginProperty, new Thickness(0));
+        button.SetBinding(AutomationProperties.NameProperty, new Binding(nameof(AgentRow.Name)) { StringFormat = T("More actions") + ": {0}" });
+        var dots = new FrameworkElementFactory(typeof(Path));
+        dots.SetValue(Path.DataProperty, Geometry.Parse("M0,3 L0.01,3 M6,3 L6.01,3 M12,3 L12.01,3"));
+        dots.SetValue(Shape.StrokeThicknessProperty, 2.6); dots.SetValue(Shape.StrokeStartLineCapProperty, PenLineCap.Round); dots.SetValue(Shape.StrokeEndLineCapProperty, PenLineCap.Round);
+        dots.SetResourceReference(Shape.StrokeProperty, "MutedBrush");
+        button.AppendChild(dots);
+        return new DataGridTemplateColumn { Header = "", CellTemplate = new DataTemplate { VisualTree = button }, Width = new DataGridLength(56) };
     }
 }

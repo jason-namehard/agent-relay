@@ -22,7 +22,7 @@ internal sealed class ToastNotificationWindow : Window
 
         var card=new Border{Name="NotificationCard",Margin=new(10),Padding=new(16),CornerRadius=new(14),
             Background=Brush("SurfaceBrush"),BorderBrush=Brush("BorderBrush"),BorderThickness=new(1),
-            Effect=new DropShadowEffect{Color=Colors.Black,Opacity=.14,BlurRadius=18,ShadowDepth=4}};
+            Effect=new DropShadowEffect{Color=(Color)owner.FindResource("ShadowColor"),Opacity=(double)owner.FindResource("ShadowOpacity"),BlurRadius=20,ShadowDepth=4,Direction=270}};
         AutomationProperties.SetAutomationId(card,card.Name);Content=card;
         var body=new Grid();card.Child=body;
         body.RowDefinitions.Add(new(){Height=GridLength.Auto});
@@ -35,22 +35,19 @@ internal sealed class ToastNotificationWindow : Window
         header.ColumnDefinitions.Add(new(){Width=new(1,GridUnitType.Star)});
         header.ColumnDefinitions.Add(new(){Width=new(26)});
         var icon=new Border{Width=30,Height=30,CornerRadius=new(10),Background=Brush("AccentSoftBrush"),VerticalAlignment=VerticalAlignment.Top};
-        icon.Child=new Path{Data=Geometry.Parse("M6,17 L6,10 Q6,4 12,4 Q18,4 18,10 L18,17 M4,17 L20,17 M9,20 Q12,23 15,20 M11,2 L13,2"),
-            Width=18,Height=18,Stretch=Stretch.Uniform,Stroke=Brush("AccentBrush"),StrokeThickness=1.8,
-            StrokeStartLineCap=PenLineCap.Round,StrokeEndLineCap=PenLineCap.Round,StrokeLineJoin=PenLineJoin.Round};
+        icon.Child=Icons.Create("Bell",size:17,brushKey:"AccentInkBrush");
         header.Children.Add(icon);
         var titles=new StackPanel{Margin=new(8,0,8,0)};Grid.SetColumn(titles,1);header.Children.Add(titles);
-        titles.Children.Add(new TextBlock{Text="AGENT RELAY",FontSize=10,FontWeight=FontWeights.SemiBold,
-            Foreground=Brush("MutedBrush"),Margin=new(0,0,0,3)});
+        titles.Children.Add(new TextBlock{Text="Agent Relay",FontSize=11.5,Foreground=Brush("FaintBrush"),Margin=new(0,0,0,2)});
         const string brand="Agent Relay · ";
         var title=new TextBlock{Name="NotificationTitle",Text=content.Title.StartsWith(brand,StringComparison.Ordinal)?content.Title[brand.Length..]:content.Title,
             FontSize=14,FontWeight=FontWeights.SemiBold,Foreground=Brush("TextBrush"),TextWrapping=TextWrapping.Wrap};
         AutomationProperties.SetAutomationId(title,title.Name);titles.Children.Add(title);
-        var close=new Button{Name="CloseInAppNotification",Content="×",Width=26,Height=26,MinHeight=26,
-            Padding=new(0),Margin=new(0),FontSize=17,FontWeight=FontWeights.Normal,Foreground=Brush("MutedBrush"),
+        var close=new Button{Name="CloseInAppNotification",Content=Icons.Create("Close",size:13),Width=26,Height=26,MinHeight=26,
+            Padding=new(0),Margin=new(0),Foreground=Brush("MutedBrush"),
             Background=Brushes.Transparent,BorderThickness=new(0),VerticalAlignment=VerticalAlignment.Top,ToolTip=closeLabel};
         AutomationProperties.SetAutomationId(close,close.Name);AutomationProperties.SetName(close,closeLabel);
-        close.Template=CloseTemplate(Brush("SurfaceAltBrush"),Brush("AccentBrush"));
+        close.Template=CloseTemplate(Brush("SurfaceAltBrush"),Brush("FocusBrush"));
         close.Click+=(_,_)=>Close();Grid.SetColumn(close,2);header.Children.Add(close);
 
         var message=new TextBlock{Name="NotificationMessage",Text=content.Message,TextWrapping=TextWrapping.Wrap,

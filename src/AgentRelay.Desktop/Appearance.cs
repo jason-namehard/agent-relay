@@ -1,16 +1,19 @@
 using System.Globalization;
 using System.IO;
+using System.Runtime.InteropServices;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Windows;
+using System.Windows.Interop;
 using System.Windows.Media;
 using AgentRelay.Core;
+using Microsoft.Win32;
 
 namespace AgentRelay.Desktop;
 
 public sealed record DesktopPreferences(
     [property: JsonRequired] string Language = "zh-CN",
-    [property: JsonRequired] string Palette = "mist",
+    [property: JsonRequired] string Palette = "system",
     string? Accent = null,
     bool? CloseToTray = null,
     string NotificationSound = "default",
@@ -29,9 +32,43 @@ public static class Appearance
 
     public static IReadOnlyList<AppearanceOption> Palettes { get; } = Array.AsReadOnly(new[]
     {
-        new AppearanceOption("mist", "Mist"), new AppearanceOption("sage", "Sage"),
-        new AppearanceOption("clay", "Clay"), new AppearanceOption("rose", "Rose")
+        new AppearanceOption("minimal", "Minimal"), new AppearanceOption("warm", "Warm"),
+        new AppearanceOption("fresh", "Fresh"), new AppearanceOption("night", "Night"),
+        new AppearanceOption("system", "Follow system")
     });
+
+    /// <summary>Palettes from earlier releases, mapped to the closest current theme so saved preferences keep loading.</summary>
+    private static readonly Dictionary<string, string> LegacyPalettes = new(StringComparer.Ordinal)
+        { ["mist"] = "minimal", ["sage"] = "fresh", ["clay"] = "warm", ["rose"] = "warm" };
+
+    private static readonly string[] TokenKeys =
+    [
+        "PageBrush", "NavBrush", "NavTextBrush", "NavMutedBrush", "NavActiveBrush", "SurfaceBrush", "SurfaceAltBrush",
+        "BorderBrush", "BorderStrongBrush", "TextBrush", "MutedBrush", "FaintBrush", "AccentBrush", "OnAccentBrush", "AccentInkBrush",
+        "AccentSoftBrush", "OkBrush", "OkSoftBrush", "WarnBrush", "WarnSoftBrush", "BadBrush", "BadSoftBrush", "InfoBrush",
+        "InfoSoftBrush", "Avatar1Brush", "Avatar2Brush", "Avatar3Brush", "Avatar4Brush", "AvatarTextBrush"
+    ];
+
+    /// <summary>One color per entry of <see cref="TokenKeys"/>, in the same order.</summary>
+    private static readonly Dictionary<string, string[]> Tokens = new(StringComparer.Ordinal)
+    {
+        // Frosted steel: cool neutral greys with one steel-blue accent.
+        ["minimal"] = ["#F6F7F9", "#ECEEF1", "#1E2733", "#687482", "#FFFFFF", "#FFFFFF", "#F1F3F6", "#DDE1E7", "#C7CED8",
+            "#1C2530", "#5B6775", "#8C96A3", "#334E70", "#FFFFFF", "#334E70", "#E4EAF2", "#2F7A55", "#E2F1E8", "#94650E",
+            "#FBF0D9", "#B23A3A", "#F9E3E1", "#3B6EA8", "#E3ECF7", "#334E70", "#5C7896", "#4F7158", "#8A6446", "#FFFFFF"],
+        // Warm: cream surfaces, orange actions and teal text accents.
+        ["warm"] = ["#FFF9EF", "#FFF0D3", "#2A2118", "#7A6852", "#FFFCF6", "#FFFDF8", "#FFF4E2", "#F0E0C4", "#E2CBA4",
+            "#2A2118", "#6E5D49", "#A08D75", "#FF8C52", "#3A1A08", "#237A7B", "#FFE3D0", "#2B7A5C", "#DDF2EC", "#9E620A",
+            "#FFF0C5", "#C0443A", "#FBE0DA", "#237A7B", "#DDF3F1", "#FF8C52", "#359FA0", "#8AD6D1", "#E3B04B", "#2A2118"],
+        // Fresh: sprout-green page, pale green actions, butter and coral for attention.
+        ["fresh"] = ["#F5FBEF", "#E7F4DB", "#1E2B22", "#5F735E", "#FFFFFF", "#FFFFFF", "#F0F8E8", "#D6E8C8", "#BCD7A9",
+            "#1D2A21", "#536754", "#8DA08B", "#8FD4A8", "#123222", "#2A7752", "#DCF2E2", "#2A7752", "#DCF2E2", "#866500",
+            "#FDF1BF", "#BE4A4A", "#FDE2E2", "#2B7C83", "#DCF3EF", "#8FD4A8", "#95E1D3", "#FCE38A", "#F38181", "#1D2A21"],
+        // Night: deep grey, never pure black, with a light steel accent.
+        ["night"] = ["#16191E", "#111418", "#E6E9EE", "#8E98A6", "#232933", "#1D2128", "#242A32", "#2E3540", "#3D4653",
+            "#E6E9EE", "#A3ADBA", "#6F7A88", "#8FB0D9", "#0E1621", "#A9C3E6", "#233246", "#6CC59A", "#1D3329", "#E3B35C",
+            "#382D18", "#F08A80", "#3D2323", "#86B6E8", "#1F2F42", "#8FB0D9", "#6F8FA8", "#7FAE8E", "#C49A74", "#0E1621"]
+    };
 
     public static DesktopPreferences Load(string home)
     {
@@ -46,6 +83,7 @@ public static class Appearance
         {
             throw new RelayException("invalid_desktop_preferences", $"Invalid desktop preferences in {path}: {error.Message}");
         }
+        if (LegacyPalettes.TryGetValue(preferences.Palette, out var current)) preferences = preferences with { Palette = current };
         Validate(preferences);
         return preferences;
     }
@@ -64,40 +102,63 @@ public static class Appearance
         finally { File.Delete(temporary); }
     }
 
+    /// <summary>The theme actually drawn: "system" follows the Windows app mode.</summary>
+    public static string Resolve(string palette) => palette != "system" ? palette : SystemUsesDarkMode() ? "night" : "minimal";
+
+    /// <summary>Page, sidebar, border and accent colors, for the theme picker's previews.</summary>
+    public static (Color Page, Color Nav, Color Line, Color Accent) Preview(string palette)
+    {
+        var tokens = Tokens[palette];
+        return (ParseColor(tokens[0]), ParseColor(tokens[1]), ParseColor(tokens[8]), ParseColor(tokens[12]));
+    }
+
+    public static bool IsDark(Window window) => window.Resources["IsDarkTheme"] is true;
+
     public static void Apply(Window window, DesktopPreferences preferences)
     {
-        window.FontFamily=new FontFamily(preferences.Language is "zh-CN" or "zh-TW" ? "Microsoft YaHei UI, Segoe UI" : "Segoe UI");
+        window.FontFamily = new FontFamily(preferences.Language switch
+        {
+            "zh-CN" => "Segoe UI Variable Text, Segoe UI, Microsoft YaHei UI",
+            "zh-TW" => "Segoe UI Variable Text, Segoe UI, Microsoft JhengHei UI",
+            "ja" => "Segoe UI Variable Text, Segoe UI, Yu Gothic UI",
+            "ko" => "Segoe UI Variable Text, Segoe UI, Malgun Gothic",
+            _ => "Segoe UI Variable Text, Segoe UI"
+        });
         Validate(preferences);
-        var colors = preferences.Palette switch
+        var theme = Resolve(preferences.Palette);
+        var colors = Tokens[theme].Select(ParseColor).ToArray();
+        for (var i = 0; i < TokenKeys.Length; i++) Set(TokenKeys[i], colors[i]);
+        var dark = theme == "night";
+        if (preferences.Accent is not null)
         {
-            "sage" => new[] { "#E8EDEA", "#7C8F86", "#2E3A35" },
-            "clay" => new[] { "#F1E7DC", "#A9825F", "#3A2F27" },
-            "mist" => new[] { "#E6EBEF", "#6E8092", "#2C3742" },
-            "rose" => new[] { "#F2E7E9", "#A8858C", "#38292D" },
-            _ => throw new InvalidOperationException("Validated palette was not found.")
-        };
-        var accent = ParseColor(preferences.Accent ?? colors[1]);
-        var accentText = ReadableAccent(accent);
-        Set("PageBrush", ParseColor("#FAFAF9"));
-        Set("SurfaceBrush", Colors.White);
-        Set("SurfaceAltBrush", ParseColor("#F4F4F2"));
-        Set("TextBrush", ParseColor("#262626"));
-        Set("MutedBrush", ParseColor("#6B6B6B"));
-        Set("BorderBrush", ParseColor("#E6E3DE"));
-        Set("AccentBrush", accentText);
-        Set("AccentSoftBrush", preferences.Accent is null ? ParseColor(colors[0]) : Blend(accent, Colors.White, 0.16));
-        Set("NavBrush", ParseColor(colors[2]));
-        Set("NavTextBrush", ParseColor("#F6F6F4"));
-        Set("AllowedBrush", ParseColor("#4C7A5A"));
-        Set("DeniedBrush", ParseColor("#A6473F"));
-        Set("UnavailableBrush", ParseColor("#8A8A8A"));
-
-        void Set(string key, Color color)
-        {
-            var brush = new SolidColorBrush(color);
-            brush.Freeze();
-            window.Resources[key] = brush;
+            // A custom accent fills buttons; text uses a variant that stays readable on this theme's surface.
+            var accent = ParseColor(preferences.Accent);
+            var surface = colors[Array.IndexOf(TokenKeys, "SurfaceBrush")];
+            Set("AccentBrush", accent);
+            Set("OnAccentBrush", Luminance(accent) > 0.36 ? ParseColor("#16191E") : Colors.White);
+            Set("AccentInkBrush", ReadableOn(accent, surface, dark));
+            Set("AccentSoftBrush", Blend(accent, surface, dark ? 0.24 : 0.16));
         }
+        // Earlier names, still used by the connection graph, bridge badges and dialogs.
+        Alias("AllowedBrush", "OkBrush"); Alias("DeniedBrush", "BadBrush"); Alias("UnavailableBrush", "FaintBrush");
+        Alias("FocusBrush", "AccentInkBrush");
+        window.Resources["ScrimBrush"] = Frozen(Color.FromArgb(dark ? (byte)0x8C : (byte)0x52, 10, 14, 20));
+        window.Resources["ShadowColor"] = dark ? Colors.Black : ParseColor("#1C2530");
+        window.Resources["ShadowOpacity"] = dark ? 0.45 : 0.12;
+        window.Resources["IsDarkTheme"] = dark;
+        ApplyTitleBar(window);
+
+        void Set(string key, Color color) => window.Resources[key] = Frozen(color);
+        void Alias(string key, string source) => window.Resources[key] = window.Resources[source];
+    }
+
+    /// <summary>Dark themes also darken the native caption bar (Windows 10 2004 and later); older systems ignore the request.</summary>
+    public static void ApplyTitleBar(Window window)
+    {
+        var handle = new WindowInteropHelper(window).Handle;
+        if (handle == IntPtr.Zero) return;
+        var dark = IsDark(window) ? 1 : 0;
+        _ = DwmSetWindowAttribute(handle, 20, ref dark, sizeof(int));
     }
 
     public static Color ParseAccent(string accent)
@@ -114,7 +175,7 @@ public static class Appearance
         if (!Languages.Any(option => option.Id == preferences.Language))
             throw new RelayException("invalid_desktop_language", $"Unknown desktop language: {preferences.Language}. Supported: en, zh-CN, zh-TW, ja, ko, es.");
         if (!Palettes.Any(option => option.Id == preferences.Palette))
-            throw new RelayException("invalid_desktop_palette", $"Unknown desktop palette: {preferences.Palette}. Supported: sage, clay, mist, rose.");
+            throw new RelayException("invalid_desktop_palette", $"Unknown desktop palette: {preferences.Palette}. Supported: minimal, warm, fresh, night, system.");
         if (preferences.Accent is not null) ParseAccent(preferences.Accent);
         if (preferences.NotificationSound is not ("none" or "default" or "information" or "warning" or "error"))
             throw new RelayException("invalid_notification_sound","通知声音应为 none、default、information、warning 或 error。");
@@ -133,6 +194,22 @@ public static class Appearance
         return Languages.Any(option => option.Id == culture.TwoLetterISOLanguageName) ? culture.TwoLetterISOLanguageName : "en";
     }
 
+    private static bool SystemUsesDarkMode()
+    {
+        using var key = Registry.CurrentUser.OpenSubKey(@"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize");
+        return key?.GetValue("AppsUseLightTheme") is int light && light == 0;
+    }
+
+    [DllImport("dwmapi.dll")]
+    private static extern int DwmSetWindowAttribute(IntPtr window, int attribute, ref int value, int size);
+
+    private static SolidColorBrush Frozen(Color color)
+    {
+        var brush = new SolidColorBrush(color);
+        brush.Freeze();
+        return brush;
+    }
+
     private static Color ParseColor(string color) => Color.FromRgb(
         byte.Parse(color.AsSpan(1, 2), NumberStyles.HexNumber, CultureInfo.InvariantCulture),
         byte.Parse(color.AsSpan(3, 2), NumberStyles.HexNumber, CultureInfo.InvariantCulture),
@@ -143,12 +220,17 @@ public static class Appearance
         (byte)Math.Round(first.G * amount + second.G * (1 - amount)),
         (byte)Math.Round(first.B * amount + second.B * (1 - amount)));
 
-    private static Color ReadableAccent(Color color)
+    private static Color ReadableOn(Color color, Color surface, bool dark)
     {
-        // Accent is used for white button labels and links on a pale surface.
-        // Darken only when needed to preserve at least 4.5:1 contrast with white.
-        while (Luminance(color) > 0.1833) color = Blend(color, Colors.Black, 0.94);
+        // Text in the accent hue keeps at least 4.5:1 against the surface it sits on.
+        for (var i = 0; i < 40 && Contrast(color, surface) < 4.5; i++) color = Blend(color, dark ? Colors.White : Colors.Black, 0.92);
         return color;
+    }
+
+    private static double Contrast(Color first, Color second)
+    {
+        var (a, b) = (Luminance(first), Luminance(second));
+        return (Math.Max(a, b) + 0.05) / (Math.Min(a, b) + 0.05);
     }
 
     private static double Luminance(Color color)

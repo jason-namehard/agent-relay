@@ -15,14 +15,15 @@ public sealed class ReviewDialog : Window
         WindowStartupLocation = WindowStartupLocation.CenterOwner;
         FontFamily = owner.FontFamily; FontSize = 13; Resources = owner.Resources;
         Background=(Brush)owner.FindResource("PageBrush");Foreground=(Brush)owner.FindResource("TextBrush");
-        var panel = new DockPanel { Margin = new Thickness(20) };
+        SourceInitialized += (_, _) => Appearance.ApplyTitleBar(this);
+        var panel = new DockPanel { Margin = new Thickness(26, 22, 26, 20) };
         Content = panel;
         var bottom = new StackPanel(); DockPanel.SetDock(bottom, Dock.Bottom); panel.Children.Add(bottom);
         bottom.Children.Add(new TextBlock { Text = T("Approval reason"), Margin = new Thickness(0,12,0,0) });
         var reason = new TextBox { Name = "ApprovalReason" }; bottom.Children.Add(reason);
         var check = new CheckBox { Name = "ApprovalCheck", Content = T("我已审阅目标、具体变更和影响，批准本次操作。"), Margin = new Thickness(0,0,0,12) };
         bottom.Children.Add(check);
-        var buttons = new StackPanel { Orientation = Orientation.Horizontal }; bottom.Children.Add(buttons);
+        var buttons = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right }; bottom.Children.Add(buttons);
         var approve = new Button { Name = "ApproveButton", Content = T("Approve"), IsEnabled = false, IsDefault = true,Style=(Style)owner.FindResource("PrimaryButtonStyle") };
         var cancel = new Button { Content = T("Cancel"), IsCancel = true }; buttons.Children.Add(approve); buttons.Children.Add(cancel);
         reason.TextChanged += (_, _) => approve.IsEnabled = check.IsChecked == true && !string.IsNullOrWhiteSpace(reason.Text);

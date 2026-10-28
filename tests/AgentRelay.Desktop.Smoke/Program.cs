@@ -70,7 +70,7 @@ internal static class Program
         var cellName=(Binding)batchColumn.CellStyle.Setters.OfType<Setter>().Single(s=>s.Property==AutomationProperties.NameProperty).Value;
         Check(cellName.Path.Path=="Route"&&cellName.StringFormat!.Contains("{0}"),"Task checkbox cells have a meaningful accessible name");
         Check(Find<DataGrid>(window,"TasksTable").Items.Cast<object>().All(r=>(string)r.GetType().GetProperty("Mode")!.GetValue(r)! == "Manual transfer"),"Manual task mode matches the creation label");
-        Check(((Binding)((DataGridTextColumn)Find<DataGrid>(window,"TasksTable").Columns.Last()).Binding).StringFormat=="yyyy-MM-dd HH:mm:ss","Task timestamps use local 24-hour time without an offset");
+        Check(Find<DataGrid>(window,"TasksTable").Items.Cast<object>().All(r=>System.Text.RegularExpressions.Regex.IsMatch((string)r.GetType().GetProperty("When")!.GetValue(r)!,@"^(\d{2}:\d{2}|\d{2}-\d{2} \d{2}:\d{2}|\d{4}-\d{2}-\d{2})$")),"Task times use local 24-hour time without an offset");
         SelectTask(window,task.TaskId);
         await Click(window,"Copy prompt for 自选节点甲");
         var copiedHandoff=Clipboard.GetText();
@@ -82,7 +82,7 @@ internal static class Program
         Check(Clipboard.GetText().Contains("自选节点甲")&&Clipboard.GetText().Contains("自选节点乙")&&Clipboard.GetText().Contains("--sender agent-b"),"Receiver prompt uses friendly names while callback arguments retain exact node IDs");
         await SaveImage(window,Path.Combine(root,"Board.png"));
 
-        ((ComboBox)window.FindName("QuickLanguage")).SelectedValue="zh-CN";await Task.Delay(30);
+        await SetLanguage(window,"zh-CN");
         Navigate("Agents");
         var registry=Find<DataGrid>(window,"AgentsTable");
         registry.SelectedItem=registry.Items.Cast<object>().Single(r=>(string)r.GetType().GetProperty("Name")!.GetValue(r)! == "自选节点乙");
@@ -90,8 +90,11 @@ internal static class Program
         await Click(window,"Delete Agent");
         Check(service.Agents().Any(a=>a.AgentId=="agent-b") && ((Border)window.FindName("ErrorBanner")).Visibility==Visibility.Visible && ((TextBox)window.FindName("ErrorText")).Text.Contains("未完成交接"),"Removing an active Agent is blocked before any confirmation dialog");
         Check(!FindAll<TextBox>(window).Any(b=>b.Name.StartsWith("AgentEntry")||b.Name.EndsWith("SetupReply")),"Agent page has no competing setup form");
-        var agentToolbar=(Panel)FindAll<Button>(window).Single(b=>Equals(b.Tag,"New Agent")).Parent;
-        Check(agentToolbar.Children.OfType<Button>().Select(b=>(string)b.Tag).SequenceEqual(new[]{"New Agent","Edit Agent","Delete Agent","Test bridge","Recheck and restore bridge","One-click setup"}),"Agent toolbar exposes bridge recovery alongside the configuration actions");
+        Check(FindAll<Button>(window).Count(b=>Equals(b.Tag,"New Agent"))==1&&FindAll<Button>(window).Any(b=>Equals(b.Tag,"One-click setup")),"The Agent page has one New Agent action, with one-click setup in its menu");
+        var rowMenu=(Panel)FindAll<Button>(window).Single(b=>Equals(b.Tag,"Edit Agent")).Parent;
+        Check(rowMenu.Children.OfType<Button>().Select(b=>(string)b.Tag).SequenceEqual(new[]{"Edit Agent","Test bridge","Recheck and restore bridge","Delete Agent"}),"Each Agent's row menu holds editing, bridge testing, recovery and removal");
+        window.UpdateLayout();
+        Check(FindAll<Button>(window).Any(b=>Equals(b.Tag,"AgentMore"))&&Find<DataGrid>(window,"AgentsTable").Columns.Last() is DataGridTemplateColumn,"Agent rows carry their own more-actions button");
         Check(FindAll<Button>(window).Single(b=>Equals(b.Tag,"Test bridge")).IsEnabled,"CLI test remains available to explain missing calling methods instead of silently disabling itself");
         Check(FindAll<Button>(window).Any(b=>Equals(b.Tag,"Install handoff rule"))&&FindAll<Button>(window).Any(b=>Equals(b.Tag,"Remove handoff rule")),"Agent page exposes explicit installation and removal of handoff rules");
         var count=service.Agents().Count;
@@ -122,7 +125,7 @@ internal static class Program
         Check(manual.ConfigPath==""&&manual.Host=="manual","Name alone registers a manual Agent without configuration paths");
         await SaveImage(window,Path.Combine(root,"Agents.png"));
         Navigate("Home");
-        ((ComboBox)window.FindName("QuickLanguage")).SelectedValue="en";await Task.Delay(30);
+        await SetLanguage(window,"en");
         var taskCount=service.Tasks().Count;
         var source=Path.Combine(root,"handoff.zip");File.WriteAllBytes(source,[1,2,3,4]);
         await Modal<FileHandoffDialog>(window,"New manual transfer task",async dialog=>
@@ -278,27 +281,28 @@ internal static class Program
         await Wait(()=>service.DesktopExecutable() is null);
         Check(((TextBlock)window.FindName("StatusText")).Text=="Desktop notifications disabled" && notification.IsChecked==false,"UI Automation Toggle persists notification state and reports a saved result");
         Check(Find<TextBox>(window,"TtlDays").Text=="88" && service.Settings().ArtifactTtlDays==3,"Accessible notification toggle preserves unsaved drafts");
-        Find<TextBox>(window,"TtlDays").Text="5";await Click(window,"Save Settings");
+        await Commit(window,"TtlDays","5");
         Check(service.Settings().ArtifactTtlDays==5,"Retention settings persist");
-        Find<TextBox>(window,"TtlDays").Text="0";await Click(window,"Save Settings");
+        await Commit(window,"TtlDays","0");
         Check(service.Settings().ArtifactTtlDays==5&&((Border)window.FindName("ErrorBanner")).Visibility==Visibility.Visible,"Invalid retention does not overwrite valid settings");
-        Find<TextBox>(window,"CustomAccent").Text="#123456";await Click(window,"Save Accent");
-        Find<TextBox>(window,"CustomAccent").Text="invalid";await Click(window,"Save Accent");
+        await Commit(window,"CustomAccent","#123456");
+        await Commit(window,"CustomAccent","invalid");
         Check(Appearance.Load(service.Home).Accent=="#123456","Invalid accent does not replace saved color");
         foreach(var palette in Appearance.Palettes)
         {
-            Find<ComboBox>(window,"PaletteChoice").SelectedValue=palette.Id;
-            await Task.Delay(30);
+            Press(window,"Palette_"+palette.Id);
+            await Wait(()=>Appearance.Load(service.Home).Palette==palette.Id&&((FrameworkElement)window.FindName("PageContent")).IsEnabled);
             Check(Appearance.Load(service.Home).Palette==palette.Id,"Palette persists: "+palette.Id);
+            Check(Equals(window.Resources["IsDarkTheme"],Appearance.Resolve(palette.Id)=="night"),"Theme applies its own light or dark palette: "+palette.Id);
         }
         foreach(var language in Appearance.Languages)
         {
-            ((ComboBox)window.FindName("QuickLanguage")).SelectedValue=language.Id;await Task.Delay(30);
+            await SetLanguage(window,language.Id);
             Check(Appearance.Load(service.Home).Language==language.Id&&navigation.Items.Count==4,"Four-page language switch persists: "+language.Id);
         }
-        ((ComboBox)window.FindName("QuickLanguage")).SelectedValue="zh-CN";await Task.Delay(30);
+        await SetLanguage(window,"zh-CN");
         await SaveImage(window,Path.Combine(root,"Settings-zh.png"));
-        ((ComboBox)window.FindName("QuickLanguage")).SelectedValue="en";await Task.Delay(30);
+        await SetLanguage(window,"en");
         Find<TextBox>(window,"CustomAccent").Text="#345678";
         var before=((TextBlock)window.FindName("StatusText")).Text;
         await ExternalUpdate(service,cli);
@@ -737,6 +741,8 @@ internal static class Program
         }
         bool ClearShown()=>Find<Button>(window,"ClearTaskSelection").Visibility==Visibility.Visible;
         SelectTask(window,unselected.TaskId);window.UpdateLayout();
+        Check(!FindAll<CheckBox>(window).Any(c=>AutomationProperties.GetAutomationId(c).StartsWith("SelectTask_",StringComparison.Ordinal)),"Task checkboxes appear only after choosing Select");
+        await Click(window,"Select tasks");
         var table=Find<DataGrid>(window,"TasksTable");
         Check(table.Columns[0] is DataGridTemplateColumn,"Task board has a leading checkbox column for batch management");
         ToggleChoice(first.TaskId);
@@ -842,7 +848,9 @@ internal static class Program
             """);
         var command=new CliCommand("pwsh",["-NoLogo","-NoProfile","-NonInteractive","-File",script,started,release,fail],"{prompt}",null);
         service.ImportCliRecipe(id,RelayJson.Write(new CliRecipe(1,"Progress fixture","fixture",command,null,[],"fixture","local test","MIT","No model calls.")));
-        await Click(window,"One-click setup");
+        var pages=(ListBox)window.FindName("Navigation");
+        pages.SelectedItem=pages.Items.Cast<ListBoxItem>().Single(item=>(string)item.Tag=="Agents");
+        await Wait(()=>FindAll<DataGrid>(window).Any(g=>g.Name=="AgentsTable")&&((FrameworkElement)window.FindName("PageContent")).IsEnabled);
         var agents=Find<DataGrid>(window,"AgentsTable");
         agents.SelectedItem=agents.Items.Cast<object>().Single(row=>((AgentRecord)row.GetType().GetProperty("Source")!.GetValue(row)!).AgentId==id);
         await Modal<CliProbeDialog>(window,"Test bridge",async dialog=>
@@ -960,6 +968,28 @@ internal static class Program
         var done=new TaskCompletionSource();
         dialog.ContentRendered+=async(_,_)=>{try{await exercise(dialog);done.SetResult();}catch(Exception error){dialog.Close();done.SetException(error);}};
         dialog.ShowDialog();await done.Task;
+    }
+    /// <summary>Settings apply when a field loses focus, the way a user leaves it.</summary>
+    private static async Task Commit(MainWindow window,string name,string text)
+    {
+        var box=Find<TextBox>(window,name);box.Text=text;
+        box.RaiseEvent(new RoutedEventArgs(UIElement.LostFocusEvent));
+        await Task.Delay(30);
+        await Wait(()=>((FrameworkElement)window.FindName("PageContent")).IsEnabled);
+    }
+    /// <summary>Language lives in Settings; switch there and come back to the page the check was on.</summary>
+    private static async Task SetLanguage(MainWindow window,string language)
+    {
+        var navigation=(ListBox)window.FindName("Navigation");var previous=navigation.SelectedItem;
+        navigation.SelectedItem=navigation.Items.Cast<ListBoxItem>().Single(i=>(string)i.Tag=="Settings");
+        await Wait(()=>FindAll<ComboBox>(window).Any(c=>c.Name=="LanguageChoice")&&((FrameworkElement)window.FindName("PageContent")).IsEnabled);
+        Find<ComboBox>(window,"LanguageChoice").SelectedValue=language;
+        var home=((RelayService)typeof(MainWindow).GetField("service",System.Reflection.BindingFlags.Instance|System.Reflection.BindingFlags.NonPublic)!.GetValue(window)!).Home;
+        await Wait(()=>Appearance.Load(home).Language==language);
+        await Wait(()=>((FrameworkElement)window.FindName("PageContent")).IsEnabled);
+        navigation.SelectedItem=previous;window.UpdateLayout();
+        await Wait(()=>((FrameworkElement)window.FindName("PageContent")).IsEnabled);
+        await Task.Delay(30);
     }
     private static void Expand(DependencyObject root){foreach(var expander in FindAll<Expander>(root))expander.IsExpanded=true;if(root is Window window)window.UpdateLayout();}
     private static void Press(DependencyObject root,string name)=>Find<Button>(root,name).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));

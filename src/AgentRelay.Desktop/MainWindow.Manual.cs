@@ -84,53 +84,57 @@ public partial class MainWindow
         return string.Format(CultureInfo.CurrentUICulture,T("A file is waiting for you. Read {0}, perform the request and write its receipt. No extra acknowledgement message is needed."),context);
     }
 
-    private void FileTaskPane(StackPanel pane,TaskView view)
+    private void FileTaskPane(StackPanel card,TaskView view,TaskRow row)
     {
         var task=view.Task;var progress=view.Progress!;
-        Heading(pane,AgentName(task.RequesterId)+" → "+AgentName(task.RecipientId),FileState(task));
-        if(receiptImportErrors.TryGetValue(task.TaskId,out var receiptError))pane.Children.Add(Note(T("Receipt needs attention")+": "+receiptError));
-        if(task.ResumeStatus=="operator_completed")pane.Children.Add(Note(T("Marked complete by the user. Agent completion was not verified.")));
-        if(task.ErrorMessage is not null)pane.Children.Add(Note(task.ErrorMessage));
-        if(task.HandoffPlan is {} plan)pane.Children.Add(Note(T("Planned steps")+": "+string.Join(" → ",plan.Select(AgentName))+" · "+T("Current step")+" "+(task.ManualTurn+1)+"/"+plan.Length));
+        var head=DetailSection(card);
+        DetailHeader(head,task,row);
+        if(receiptImportErrors.TryGetValue(task.TaskId,out var receiptError))Alert(head,"warn",T("Receipt needs attention"),receiptError);
+        if(task.ResumeStatus=="operator_completed")Alert(head,"info",null,T("Marked complete by the user. Agent completion was not verified."));
+        if(task.ErrorMessage is not null)Alert(head,"bad",null,task.ErrorMessage);
+        var footerActions=new List<Action<WrapPanel>>();
+        if(!progress.Finished)
+        {
+            var recipient=AgentName(task.AwaitingAgentId??task.RecipientId);
+            var tone=progress.Delivery=="cli_blocked"?"bad":task.State==TaskState.Paused?"warn":"info";
+            var (_,actions)=Alert(head,tone,null,FileDeliveryHint(task,progress,recipient));
+            if(task.State==TaskState.Paused)
+            {
+                var note=EntryDialogLayout.Input("ContinueNote",multiline:true);note.Height=60;note.Margin=new(0,2,0,0);
+                var label=new Label{Content=T("Note for the next Agent (optional)"),Target=note,Padding=new(0,10,0,2)};
+                var host=(Panel)actions.Parent;host.Children.Insert(host.Children.IndexOf(actions),label);host.Children.Insert(host.Children.IndexOf(actions),note);
+                var extra=task.PauseReason=="round_limit"?2:0;
+                Styled(Add(actions,extra>0?string.Format(CultureInfo.CurrentUICulture,T("Continue with {0} more rounds"),extra):T("Continue"),()=>
+                {service.ContinueFileHandoff(task.TaskId,note.Text,extra);StartAutoDeliveries();return Task.CompletedTask;}),"PrimaryButtonStyle");
+            }
+            else Styled(Add(actions,string.Format(CultureInfo.CurrentUICulture,T("Copy prompt for {0}"),recipient),()=>{Clipboard.SetText(FilePrompt(task));return Task.CompletedTask;},false),"PrimaryButtonStyle");
+            AddFileDeliveryAction(actions,task,progress);
+            footerActions.Add(footer=>Styled(Add(footer,"Cancel",()=>ConfirmTaskCancellation(task.TaskId)),"GhostButtonStyle"));
+        }
+
+        var steps=DetailSection(card);
+        Caption(steps,"Progress");
         if(task.Collaboration is {} c)
         {
             var completed=c.History.Count(step=>step.Outcome is not ("failed" or "criteria_ready"));
             var reviews=c.History.Count(step=>step.Phase=="review" && step.Outcome is "approved" or "changes_requested");
-            var round=Note(c.MaxReviewRounds==0
+            steps.Children.Add(new TextBlock{Name="HandoffRoundSummary",TextWrapping=TextWrapping.Wrap,Margin=new(0,0,0,10),Text=c.MaxReviewRounds==0
                 ?string.Format(CultureInfo.CurrentUICulture,T("Completed steps: {0} · Completed reviews: {1} (no limit)"),completed,reviews)
-                :string.Format(CultureInfo.CurrentUICulture,T("Completed steps: {0} · Completed reviews: {1} (limit: {2})"),completed,reviews,c.MaxReviewRounds));
-            round.Name="HandoffRoundSummary";pane.Children.Add(round);
+                :string.Format(CultureInfo.CurrentUICulture,T("Completed steps: {0} · Completed reviews: {1} (limit: {2})"),completed,reviews,c.MaxReviewRounds)});
+            steps.Children.Add(RoundBar(c.History.Where(step=>step.Outcome is not "criteria_ready").Select(step=>step.Outcome).ToArray(),!progress.Finished));
         }
-        else if(!progress.Finished)pane.Children.Add(Note(progress.MaxTurns is null?string.Format(CultureInfo.CurrentUICulture,T("Transfer turn {0}"),task.ManualTurn+1):string.Format(CultureInfo.CurrentUICulture,T("Turn {0} of at most {1}"),task.ManualTurn+1,progress.MaxTurns)));
+        else steps.Children.Add(new TextBlock{TextWrapping=TextWrapping.Wrap,Text=progress.Finished?T(task.State.ToString()):progress.MaxTurns is null
+            ?string.Format(CultureInfo.CurrentUICulture,T("Transfer turn {0}"),task.ManualTurn+1)
+            :string.Format(CultureInfo.CurrentUICulture,T("Turn {0} of at most {1}"),task.ManualTurn+1,progress.MaxTurns)});
+        if(task.HandoffPlan is {} plan)steps.Children.Add(Muted(T("Planned steps")+": "+string.Join(" → ",plan.Select(AgentName))+" · "+T("Current step")+" "+(task.ManualTurn+1)+"/"+plan.Length,12.5,new(0,8,0,0)));
         if(!progress.Finished)
         {
-            var next=Note(string.Format(CultureInfo.CurrentUICulture,T("Next recipient: {0}"),AgentName(task.AwaitingAgentId??task.RecipientId)));
-            next.Name="HandoffNextRecipient";pane.Children.Add(next);
+            var next=Muted(string.Format(CultureInfo.CurrentUICulture,T("Next recipient: {0}"),AgentName(task.AwaitingAgentId??task.RecipientId)),12.5,new(0,8,0,0));
+            next.Name="HandoffNextRecipient";steps.Children.Add(next);
         }
-        AddSessionBindings(pane,task);
-        var actions=Row(pane);
-        if(!progress.Finished)
-        {
-            var recipient=AgentName(task.AwaitingAgentId??task.RecipientId);
-            pane.Children.Add(new Border{Background=Theme("AccentSoftBrush"),CornerRadius=new(8),Padding=new(12),Margin=new(0,8,0,8),Child=new TextBlock{
-                Text=FileDeliveryHint(task,progress,recipient),TextWrapping=TextWrapping.Wrap}});
-            if(task.State==TaskState.Paused)
-            {
-                var note=EntryDialogLayout.Input("ContinueNote",multiline:true);note.Height=60;
-                pane.Children.Add(new Label{Content=T("Note for the next Agent (optional)"),Target=note,Padding=new(0,0,0,2)});pane.Children.Add(note);
-                var extra=task.PauseReason=="round_limit"?2:0;
-                Add(actions,extra>0?string.Format(CultureInfo.CurrentUICulture,T("Continue with {0} more rounds"),extra):T("Continue"),()=>
-                {service.ContinueFileHandoff(task.TaskId,note.Text,extra);StartAutoDeliveries();return Task.CompletedTask;});
-            }
-            else
-            {
-                Add(actions,string.Format(CultureInfo.CurrentUICulture,T("Copy prompt for {0}"),recipient),()=>{Clipboard.SetText(FilePrompt(task));return Task.CompletedTask;},false);
-            }
-            AddFileDeliveryAction(actions,task,progress);
-            Add(actions,"Cancel",()=>ConfirmTaskCancellation(task.TaskId));
-        }
-        AddTaskOperatorActions(actions,task);
-        Add(actions,"Open task folder",()=>{System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(Path.GetDirectoryName(task.RequestPath)!){UseShellExecute=true});return Task.CompletedTask;},false);
+        AddSessionBindings(DetailSection(card),task);
+
+        var details=DetailSection(card);
         var current=task.ManualCurrentFile??task.RequestPath;
         var contents=new StackPanel();
         contents.Children.Add(Note(T("Handoff file")+": "+current));
@@ -145,17 +149,33 @@ public partial class MainWindow
         text.Text=Path.GetExtension(current).ToLowerInvariant() is ".md" or ".txt" && File.Exists(current)
             ?File.ReadAllText(current):T("Content preview is unavailable. Open the task folder to read the file.");
         contents.Children.Add(Note(T("Current file text")));contents.Children.Add(text);
-        pane.Children.Add(new Expander{Name="ManualFileContents",Header=T("File contents"),Content=contents});
+        details.Children.Add(new Expander{Name="ManualFileContents",Header=T("File contents"),Content=contents});
         if(task.Collaboration is {History.Count:>0} loop)
+            details.Children.Add(new Expander{Header=T("Review history"),Content=Timeline(loop.History.Select(step=>(step.At,AgentName(step.AgentId)+" · "+T(step.Outcome)+
+                (step.OpenItems is {} items?" · "+string.Join("；",items):"")+(step.ResultPath is null?"":" · "+step.ResultPath),StepTone(step.Outcome))).ToArray())});
+        details.Children.Add(new Expander{Header=T("Processing history"),Content=Timeline(service.Audit(task.TaskId).Select(entry=>(entry.RecordedAt,entry.Event,"")).ToArray())});
+        var footer=DetailFooter(card,task);
+        foreach(var add in footerActions)add(footer);
+        AddTaskOperatorActions(footer,task);
+    }
+
+    private static string StepTone(string outcome)=>outcome switch{"changes_requested"=>"warn","failed"=>"bad",_=>"ok"};
+
+    /// <summary>One segment per finished step, colored by its outcome, plus an outlined segment for the step in progress.</summary>
+    private static Grid RoundBar(string[] outcomes,bool running)
+    {
+        var bar=new Grid{Height=6};
+        var shown=outcomes.TakeLast(16).ToArray();
+        var count=shown.Length+(running?1:0);
+        for(var i=0;i<count;i++)
         {
-            var rounds=new StackPanel();
-            foreach(var step in loop.History)rounds.Children.Add(Note(step.At.ToLocalTime().ToString("g")+" · "+AgentName(step.AgentId)+" · "+T(step.Outcome)+
-                (step.OpenItems is {} items?" · "+string.Join("；",items):"")+(step.ResultPath is null?"":" · "+step.ResultPath)));
-            pane.Children.Add(new Expander{Header=T("Review history"),Content=rounds});
+            bar.ColumnDefinitions.Add(new ColumnDefinition{Width=new(1,GridUnitType.Star)});
+            var segment=new Border{CornerRadius=new(3),Margin=new(i==0?0:3,0,0,0)};
+            if(i<shown.Length)segment.SetResourceReference(Border.BackgroundProperty,StepTone(shown[i]) switch{"warn"=>"WarnBrush","bad"=>"BadBrush",_=>"OkBrush"});
+            else{segment.BorderThickness=new(1.2);segment.SetResourceReference(Border.BorderBrushProperty,"AccentInkBrush");}
+            Grid.SetColumn(segment,i);bar.Children.Add(segment);
         }
-        var history=new StackPanel();
-        foreach(var entry in service.Audit(task.TaskId))history.Children.Add(Note(entry.RecordedAt.ToLocalTime().ToString("g")+" · "+entry.Event));
-        pane.Children.Add(new Expander{Header=T("Processing history"),Content=history});
+        return bar;
     }
 
     private void InstallRules(string id)

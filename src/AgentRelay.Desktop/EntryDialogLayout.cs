@@ -11,8 +11,8 @@ internal sealed class EntryDialogLayout
 {
     private readonly string language;
     public StackPanel Body { get; } = new();
-    public WrapPanel Actions { get; } = new();
-    public TextBlock Status { get; } = new() { TextWrapping = TextWrapping.Wrap, Margin = new(0, 8, 0, 8) };
+    public WrapPanel Actions { get; } = new() { HorizontalAlignment = HorizontalAlignment.Right, Margin = new(0, 0, -8, -8) };
+    public TextBlock Status { get; } = new() { TextWrapping = TextWrapping.Wrap, Margin = new(0, 0, 0, 10), FontSize = 12.5 };
 
     public EntryDialogLayout(Window dialog, Window owner, string title, string language)
     {
@@ -24,15 +24,26 @@ internal sealed class EntryDialogLayout
         dialog.FontFamily = owner.FontFamily; dialog.FontSize = owner.FontSize; dialog.Resources = owner.Resources;
         dialog.Background = (Brush)owner.FindResource("PageBrush"); dialog.Foreground = (Brush)owner.FindResource("TextBrush");
         dialog.UseLayoutRounding = true;
-        var dock = new DockPanel { Margin = new(22) }; dialog.Content = dock;
+        dialog.SourceInitialized += (_, _) => Appearance.ApplyTitleBar(dialog);
+        var dock = new DockPanel(); dialog.Content = dock;
+        var heading = new TextBlock { Text = title, FontSize = 19, FontWeight = FontWeights.SemiBold, Margin = new(26, 22, 26, 12), TextWrapping = TextWrapping.Wrap };
+        DockPanel.SetDock(heading, Dock.Top); dock.Children.Add(heading);
         var footer = new StackPanel(); footer.Children.Add(Status); footer.Children.Add(Actions);
-        DockPanel.SetDock(footer, Dock.Bottom); dock.Children.Add(footer);
+        var footerFrame = new Border { Child = footer, Padding = new(26, 14, 26, 16), BorderThickness = new(0, 1, 0, 0) };
+        footerFrame.SetResourceReference(Border.BorderBrushProperty, "BorderBrush");
+        footerFrame.SetResourceReference(Border.BackgroundProperty, "SurfaceBrush");
+        DockPanel.SetDock(footerFrame, Dock.Bottom); dock.Children.Add(footerFrame);
         dock.Children.Add(new ScrollViewer { Content = Body, VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
-            HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled, Padding = new(0, 0, 10, 0) });
+            HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled, Padding = new(26, 0, 18, 16) });
     }
 
     public string T(string text) => EntryText.Get(text, language);
-    public TextBlock Note(string text) => new() { Text = T(text), TextWrapping = TextWrapping.Wrap, Margin = new(0, 0, 0, 12) };
+    public TextBlock Note(string text)
+    {
+        var note = new TextBlock { Text = T(text), TextWrapping = TextWrapping.Wrap, Margin = new(0, 2, 0, 10), FontSize = 12.5 };
+        note.SetResourceReference(TextBlock.ForegroundProperty, "MutedBrush");
+        return note;
+    }
     public TextBox Field(Panel parent, string label, string name, string value = "", bool multiline = false)
     {
         var input = Input(name, value, multiline);
@@ -47,7 +58,7 @@ internal sealed class EntryDialogLayout
             TextWrapping = multiline ? TextWrapping.Wrap : TextWrapping.NoWrap,
             VerticalScrollBarVisibility = multiline ? ScrollBarVisibility.Auto : ScrollBarVisibility.Hidden,
             HorizontalScrollBarVisibility = ScrollBarVisibility.Hidden,
-            Height = multiline ? 120 : double.NaN, MinHeight = 40,
+            Height = multiline ? 120 : double.NaN, MinHeight = 34,
             VerticalContentAlignment = multiline ? VerticalAlignment.Top : VerticalAlignment.Center };
         AutomationProperties.SetAutomationId(input, name);
         return input;
@@ -55,7 +66,7 @@ internal sealed class EntryDialogLayout
 
     public Button Button(Panel parent, string text, string name, Action action, bool primary = false)
     {
-        var button = new Button { Content = T(text), Name = name, Height = double.NaN, MinHeight = 38 };
+        var button = new Button { Content = T(text), Name = name, Height = double.NaN, MinHeight = 34, HorizontalAlignment = HorizontalAlignment.Left };
         AutomationProperties.SetAutomationId(button, name);
         if (primary) button.SetResourceReference(FrameworkElement.StyleProperty, "PrimaryButtonStyle");
         button.Click += (_, _) => Handle(action);
@@ -78,7 +89,7 @@ internal sealed class EntryDialogLayout
 
     public TextBox Assistant(Panel parent, string title, string explanation, string prefix, Func<string> prompt, Action<string> parse)
     {
-        var panel = new StackPanel { Margin = new(10) };
+        var panel = new StackPanel { Margin = new(0, 4, 0, 0) };
         var expander = new Expander { Header = T(title), IsExpanded = false, Content = panel, Margin = new(0, 8, 0, 12) };
         parent.Children.Add(expander); panel.Children.Add(Note(explanation));
         var buttons = new WrapPanel(); panel.Children.Add(buttons);

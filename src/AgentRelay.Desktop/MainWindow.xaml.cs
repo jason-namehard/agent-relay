@@ -22,7 +22,6 @@ public partial class MainWindow : Window
     private RelayService service;
     private bool demo;
     private DesktopPreferences preferences;
-    private bool languageReady;
     private readonly Dictionary<string, TextBox> fields = new(StringComparer.Ordinal);
     private bool busy;
     private bool reviewCancelled;
@@ -42,28 +41,28 @@ public partial class MainWindow : Window
         preferences = Appearance.Load(service.Home);
         InitializeComponent();
         Appearance.Apply(this, preferences);
-        QuickLanguage.ItemsSource = Appearance.Languages;
-        QuickLanguage.DisplayMemberPath = "Label"; QuickLanguage.SelectedValuePath = "Id";
-        QuickLanguage.SelectedValue = preferences.Language;
-        languageReady = true;
-        UpdateChrome();
-        HomePath.Text = service.Home;
+        RefreshButton.Content = Icons.Create("Refresh", size: 17);
+        DismissErrorButton.Content = Icons.Create("Close", size: 15);
+        ErrorIcon.Child = Icons.Create("Alert", size: 17, brushKey: "BadBrush");
+        PageHelp.Content = Icons.Create("Help", size: 16);
         VersionLabel.Text = "v" + RelayVersion.Current;
         if (demo)
         {
             Title = "Agent Relay — Demo";
-            ModeDescription.Tag = "DEMO · 虚构 Agent 与预设结果 · 未调用模型，未读取现用配置";
-            ModeDescription.Text = T((string)ModeDescription.Tag);
+            DemoBadge.Visibility = Visibility.Visible;
         }
+        UpdateChrome();
         SourceInitialized += (_, _) =>
         {
             ledgerMessage = WindowsLedgerSignal.Register();
             if (ledgerMessage == 0) throw new Win32Exception(Marshal.GetLastWin32Error());
             source = HwndSource.FromHwnd(new WindowInteropHelper(this).Handle);
             source.AddHook(ReceiveLedgerMessage);
+            Appearance.ApplyTitleBar(this);
             InstallTray();
         };
-        Closed += (_, _) => {RemoveTray();receiptWatcher?.Dispose();source?.RemoveHook(ReceiveLedgerMessage);};
+        SystemEvents.UserPreferenceChanged += FollowSystemTheme;
+        Closed += (_, _) => {SystemEvents.UserPreferenceChanged -= FollowSystemTheme;RemoveTray();receiptWatcher?.Dispose();source?.RemoveHook(ReceiveLedgerMessage);};
         Loaded += async (_, _) =>
         {
             Navigation.SelectedIndex = 0;
@@ -104,7 +103,7 @@ public partial class MainWindow : Window
     {
         if (busy) return;
         reviewCancelled = false;
-        busy = true; PageContent.IsEnabled = false; Navigation.IsEnabled = false; RefreshButton.IsEnabled = false; QuickLanguage.IsEnabled = false;
+        busy = true; PageContent.IsEnabled = false; Navigation.IsEnabled = false; RefreshButton.IsEnabled = false; PageActions.IsEnabled = false;
         if (clearError) { ErrorBanner.Visibility = Visibility.Collapsed; errorTaskId = null; }
         if (reportStatus) StatusText.Text = T("Working…");
         try
@@ -120,7 +119,8 @@ public partial class MainWindow : Window
             if (refresh && !reviewCancelled) { RenderPage(); LedgerHint.Text = ""; }
             if(receipts.Errors.Length>0)LedgerHint.Text=T("Receipt needs attention")+": "+receipts.Errors[0].Message;
             else if(receipts.UpdatedTaskIds.Length>0)LedgerHint.Text=T("Handoff receipts updated");
-            if(notificationHint is not null)LedgerHint.Text+=" · "+notificationHint;
+            // Notification problems stay visible in the sidebar instead of crowding the status line.
+            if(notificationHint is not null)notificationSetupHint=notificationHint;UpdateChrome();
             if (reportStatus) StatusText.Text = ErrorBanner.Visibility == Visibility.Visible ? T("Action failed") :
                 reviewCancelled ? T("Action cancelled · No changes") : T(success);
         }
@@ -136,7 +136,7 @@ public partial class MainWindow : Window
         }
         finally
         {
-            busy = false; PageContent.IsEnabled = true; Navigation.IsEnabled = true; RefreshButton.IsEnabled = true; QuickLanguage.IsEnabled = true;
+            busy = false; PageContent.IsEnabled = true; Navigation.IsEnabled = true; RefreshButton.IsEnabled = true; PageActions.IsEnabled = true;
             if (refreshPending) { refreshPending = false; QueueRefresh(); }
             if(receiptRefreshQueued)_=Dispatcher.BeginInvoke(new Action(async()=>await ReadReceipts()));
         }
@@ -145,12 +145,6 @@ public partial class MainWindow : Window
     private async void Navigate(object sender, SelectionChangedEventArgs e) => await Run(() => Task.CompletedTask, "Ready");
     private async void RefreshClick(object sender, RoutedEventArgs e) => await Run(() => Task.CompletedTask, "已刷新");
     private void DismissErrorClick(object sender,RoutedEventArgs e) { ErrorBanner.Visibility=Visibility.Collapsed; errorTaskId=null; }
-    private async void QuickLanguageChanged(object sender, SelectionChangedEventArgs e)
-    {
-        if (!languageReady || QuickLanguage.SelectedValue is not string language || language == preferences.Language) return;
-        await ChangeLanguage(language);
-    }
-
     private async Task ChangeLanguage(string language)
         => await ChangeAppearance(preferences with { Language = language });
 
@@ -163,15 +157,43 @@ public partial class MainWindow : Window
             return Task.CompletedTask;
         }, "Language and appearance saved");
         RestoreInputs(drafts);
-        languageReady=false;QuickLanguage.SelectedValue=preferences.Language;languageReady=true;
     }
+
+    /// <summary>"Follow system" redraws when Windows switches between light and dark apps.</summary>
+    private void FollowSystemTheme(object? sender, UserPreferenceChangedEventArgs e)
+    {
+        if (e.Category != UserPreferenceCategory.General || preferences.Palette != "system") return;
+        Dispatcher.BeginInvoke(new Action(() =>
+        {
+            var dark = Appearance.IsDark(this);
+            Appearance.Apply(this, preferences);
+            if (dark != Appearance.IsDark(this) && !busy) RenderPage();
+        }));
+    }
+
+    private void NotificationHealthClick(object sender, RoutedEventArgs e) { settingsAnchor = "SettingsNotifications"; Go("Settings"); }
+
+    private static readonly Dictionary<string, (string Subtitle, string? Help)> PageText = new(StringComparer.Ordinal)
+    {
+        ["Home"] = ("Handoffs between your Agents and their progress", "Relay stores collaboration messages, requests and temporary replies. Keep final deliverables and long-term references in your project folder; relay files expire under the retention policy."),
+        ["Agents"] = ("Registered Agents and how Relay reaches them", "One-click setup is for a new node. To change an existing node, select it and use Edit Agent. An Agent bridge connects Relay to the Agent through ACP or its CLI; ACP is used when the host supports it. Without a bridge you copy prompts by hand."),
+        ["Connections"] = ("One line per pair of Agents; each direction is enabled separately", "A → B means A can deliver files through Relay and notify B by CLI. A double arrow means both calling directions have a recipe. Green ends are enabled; red ends are paused or not enabled. A direction without an arrow has no recipe. Manual copy remains available; switches only control Relay routes."),
+        ["Settings"] = ("Appearance, notifications, relay storage and advanced options", null)
+    };
 
     private void RenderPage()
     {
         if (Navigation.SelectedItem is not ListBoxItem item) return;
         var page = (string)item.Tag;
         fields.Clear();
-        PageTitle.Text = T(page);
+        PageActions.Children.Clear();
+        PageTitle.Text = T(page == "Home" ? "Tasks" : page);
+        var (subtitle, help) = PageText[page];
+        PageSubtitle.Text = T(subtitle);
+        PageHelp.Visibility = help is null ? Visibility.Collapsed : Visibility.Visible;
+        PageHelp.ToolTip = help is null ? null : new TextBlock { Text = T(help), TextWrapping = TextWrapping.Wrap, MaxWidth = 380 };
+        AutomationProperties.SetName(PageHelp, help is null ? "" : T(help));
+        if (page == "Home") NewTaskMenu();
         PageContent.Content = page switch
         {
             "Home" => HomePage(), "Agents" => AgentsPage(), "Connections" => ConnectionsPage(),
@@ -179,6 +201,35 @@ public partial class MainWindow : Window
             _ => throw new InvalidOperationException(page)
         };
         Localize(PageContent.Content as DependencyObject);
+    }
+
+    /// <summary>One "New task" button; automatic or manual delivery is chosen from its menu.</summary>
+    private void NewTaskMenu()
+    {
+        var trigger = new Button { Tag = "New task", Margin = new(0) };
+        trigger.SetResourceReference(StyleProperty, "PrimaryButtonStyle");
+        var label = Icons.WithLabel("Plus", T("New task"));
+        var chevron = Icons.Create("Down", size: 14); chevron.Margin = new(8, 1, 0, 0);
+        label.Children.Add(chevron);
+        trigger.Content = label;
+        PageActions.Children.Add(trigger);
+        var menu = Flyout(trigger, PageActions);
+        MenuItem(menu, "New automatic transfer task", "Bolt", NewCliHandoff, "Relay delivers each turn through the Agent bridge");
+        MenuItem(menu, "New manual transfer task", "Copy", async () =>
+        {
+            var agents = service.Agents().Select(a => new HandoffAgentOption(a.AgentId, a.DisplayName ?? a.AgentId)).ToArray();
+            if (agents.Length < 2) throw new RelayException("agents_required", T("Add at least two Agents first."));
+            var dialog = new FileHandoffDialog(this, service, preferences.Language);
+            StatusText.Text = T("Waiting for handoff details…");
+            if (dialog.ShowDialog() != true) { reviewCancelled = true; return; }
+            var draft = dialog.Result!;
+            var existing = service.Tasks().FirstOrDefault(v => v.Task.IsFileHandoff && v.Task.RequesterId == draft.From && v.Task.RecipientId == draft.To && v.Task.ManualSourceFile == draft.File &&
+                v.Task.State is not (TaskState.Succeeded or TaskState.Failed or TaskState.Cancelled or TaskState.TimedOut));
+            if (existing is not null) { taskId = existing.Task.TaskId; return; }
+            var result = await Task.Run(() => service.CreateFileHandoff(draft));
+            taskId = result.Task.TaskId;
+            service.ConfigureFileHandoff(taskId, dialog.Options(draft));
+        }, "You copy the prompt into the Agent yourself");
     }
 
     private string AgentName(string id) => service.Agents().SingleOrDefault(a=>a.AgentId==id)?.DisplayName ?? id;
@@ -200,257 +251,11 @@ public partial class MainWindow : Window
             command+common+"complete"+identity+" --idempotency-key completed --status succeeded --result '"+task.ResultPath.Replace("'","''")+"'\n"+
             "On failure, use task fail with --status failed --error-code and --message plus the failure report path. Report only actual outcomes. If CLI/MCP is unavailable, return your reply file to the user; they can import it in the task details. File changes alone do not mark a task completed.";
     }
-    private TextBlock Note(string text) => new(){Text=T(text),TextWrapping=TextWrapping.Wrap,Foreground=Theme("MutedBrush"),Margin=new(0,6,0,12)};
+    private TextBlock Note(string text) => Brushed(new TextBlock{Text=T(text),TextWrapping=TextWrapping.Wrap,Margin=new(0,2,0,8),FontSize=12.5},"MutedBrush");
     private void Go(string page)
     {
         Navigation.SelectedItem=Navigation.Items.Cast<ListBoxItem>().Single(i=>(string)i.Tag==page);
     }
-
-    private StackPanel HomePage()
-    {
-        var page=Page();
-        page.Children.Add(Note("Relay stores collaboration messages, requests and temporary replies. Keep final deliverables and long-term references in your project folder; relay files expire under the retention policy."));
-        var summary=service.Summary();
-        var cards=Row(page);
-        Add(cards,T("Registered Agents")+": "+summary.RegisteredAgents,()=>{Go("Agents");return Task.CompletedTask;});
-        cards.Children.Add(Note(T("Pending Tasks")+": "+summary.PendingTasks+"  ·  "+T("Retention")+": "+summary.RetentionDays+" "+T("days")));
-        var actions=Row(page);
-        Add(actions,"New automatic transfer task",NewCliHandoff);
-        Add(actions,"New manual transfer task",async()=>
-        {
-            var agents=service.Agents().Select(a=>new HandoffAgentOption(a.AgentId,a.DisplayName??a.AgentId)).ToArray();
-            if(agents.Length<2)throw new RelayException("agents_required",T("Add at least two Agents first."));
-            var dialog=new FileHandoffDialog(this,service,preferences.Language);
-            StatusText.Text=T("Waiting for handoff details…");
-            if(dialog.ShowDialog()!=true){reviewCancelled=true;return;}
-            var draft=dialog.Result!;
-            var existing=service.Tasks().FirstOrDefault(v=>v.Task.IsFileHandoff&&v.Task.RequesterId==draft.From&&v.Task.RecipientId==draft.To&&v.Task.ManualSourceFile==draft.File&&
-                v.Task.State is not(TaskState.Succeeded or TaskState.Failed or TaskState.Cancelled or TaskState.TimedOut));
-            if(existing is not null){taskId=existing.Task.TaskId;return;}
-            var result=await Task.Run(()=>service.CreateFileHandoff(draft));
-            taskId=result.Task.TaskId;
-            service.ConfigureFileHandoff(taskId,dialog.Options(draft));
-
-        });
-        Add(actions,"Open relay folder",()=>{Process.Start(new ProcessStartInfo(service.Home){UseShellExecute=true});return Task.CompletedTask;},false);
-        TaskPane(page,service.Tasks());return page;
-    }
-
-    private StackPanel ConnectionsPage()
-    {
-        var page=Page();Heading(page,"Directed connections","One line per pair. Arrowheads show the available calling directions; each direction can be enabled or paused separately.");
-        page.Children.Add(Note("A → B means A can deliver files through Relay and notify B by CLI. A double arrow means both calling directions have a recipe. Green ends are enabled; red ends are paused or not enabled. A direction without an arrow has no recipe. Manual copy remains available; switches only control Relay routes."));
-        var edges=service.Connections();
-        var detail=Page();
-        void Select(ConnectionView edge)
-        {
-            connectionFrom=edge.From;connectionTo=edge.To;detail.Children.Clear();
-            foreach(var direction in new[]{edge,edges.Single(e=>e.From==edge.To&&e.To==edge.From)})
-            {
-                Heading(detail,AgentName(direction.From)+" → "+AgentName(direction.To),direction.Display=="Unavailable"?"No calling recipe. Copy a handoff prompt, or try an advanced CLI extension.":direction.Display=="Allowed"?"Automatic notification is enabled for this direction.":"A calling recipe is available; this direction is paused or not enabled.");
-                var actions=Row(detail);
-                Button button;
-                if(direction.Display!="Unavailable") button=Add(actions,direction.Display=="Allowed"?"Pause connection":"Enable connection",()=>{service.SetPermission(direction.From,direction.To,direction.Display=="Allowed"?"deny":"allow");return Task.CompletedTask;});
-                else button=Add(actions,"Agent bridges",()=>{agentId=direction.To;Go("Settings");return Task.CompletedTask;});
-                button.Name=(direction.Display=="Unavailable"?"ExtendConnection":direction.Display=="Allowed"?"PauseConnection":"EnableConnection")+"_"+direction.From.Replace('-','_')+"_"+direction.To.Replace('-','_');
-                AutomationProperties.SetAutomationId(button,button.Name);
-            }
-            Add(Row(detail),"Manual handoff",()=>{Go("Home");return Task.CompletedTask;});
-        }
-        page.Children.Add(new ConnectionGraph(service.Agents(),edges,Select,preferences.Language,this,AgentName,service.CliExtensions().ToDictionary(e=>e.AgentId)));
-        page.Children.Add(detail);
-        var selected=edges.SingleOrDefault(e=>e.From==connectionFrom&&e.To==connectionTo)??edges.FirstOrDefault();
-        if(selected is not null)Select(selected);
-        return page;
-    }
-
-    private void TaskPane(StackPanel page,IEnumerable<TaskView> views)
-    {
-        var rows=views.OrderByDescending(v=>v.Task.CreatedAt).Select(v=>new TaskRow(v.Task.TaskId,AgentName(v.Task.RequesterId)+" → "+AgentName(v.Task.RecipientId),T(v.Task.Mode=="manual"?"Manual transfer":"Automatic transfer"),v.Task.IsFileHandoff||v.Task.Mode=="manual"?FileState(v.Task):v.Task.State.ToString(),v.Task.CreatedAt.ToLocalTime(),v.Task.State.ToString())).ToArray();
-        var table=Table("TasksTable",("Route","Route"),("Delivery","Mode"),("State","State"),("Created","Created"));table.Height=230;
-        var stateStyle=new Style(typeof(TextBlock),(Style)FindResource("TableTextStyle"));
-        foreach(var state in new[]{"Succeeded","Failed","TimedOut","DeliveryUnknown","Running","Acknowledged","Paused"})
-        {
-            var trigger=new DataTrigger{Binding=new Binding("StateCode"),Value=state};
-            trigger.Setters.Add(new Setter(TextBlock.ForegroundProperty,state=="Succeeded"?Theme("AllowedBrush"):state is "Running" or "Acknowledged"?Brush("#8C691F"):Theme("DeniedBrush")));
-            stateStyle.Triggers.Add(trigger);
-        }
-        ((DataGridTextColumn)table.Columns[2]).ElementStyle=stateStyle;
-        ((DataGridTextColumn)table.Columns[3]).Binding=new Binding("Created"){StringFormat="yyyy-MM-dd HH:mm:ss",ConverterCulture=CultureInfo.InvariantCulture};
-        AddTaskBatchControls(page,table,rows);
-        table.ItemsSource=rows;page.Children.Add(table);
-        var pane=Page();page.Children.Add(pane);
-        table.SelectionChanged+=(_,_)=>
-        {
-            pane.Children.Clear();if(table.SelectedItem is not TaskRow row)return;
-            taskId=row.TaskId;var view=service.Status(taskId);var task=view.Task;
-            if(task.IsFileHandoff){FileTaskPane(pane,view);return;}
-            var success=task.State==TaskState.Succeeded;
-            Heading(pane,row.Route,T(task.State.ToString())+(task.ErrorMessage is null?"":" · "+task.ErrorMessage));
-            if(task.ResumeStatus=="operator_completed")pane.Children.Add(Note(T("Marked complete by the user. Agent completion was not verified.")));
-            var actions=Row(pane);
-            var recipient=task.State is TaskState.AwaitingManual or TaskState.Dispatched or TaskState.Acknowledged or TaskState.Running?task.RecipientId:task.RequesterId;
-            Add(actions,string.Format(CultureInfo.CurrentUICulture,T("Copy prompt for {0}"),AgentName(recipient)),()=>{Clipboard.SetText(HandoffPrompt(view));return Task.CompletedTask;},false);
-            if(task.State==TaskState.AwaitingConfirmation)Add(actions,"Approve Dispatch",async()=>{await service.ApproveAsync(task.TaskId);});
-            Add(actions,"Open task folder",()=>{Process.Start(new ProcessStartInfo(Path.GetDirectoryName(task.RequestPath)!){UseShellExecute=true});return Task.CompletedTask;},false);
-            AddTaskOperatorActions(actions,task);
-            if(task.State is TaskState.AwaitingManual or TaskState.Dispatched or TaskState.Acknowledged or TaskState.Running)
-                Add(actions,"Import completed reply",async()=>
-                {
-                    var picker=new OpenFileDialog{Title=T("Import completed reply"),InitialDirectory=Path.GetDirectoryName(task.ResultPath),Filter="Markdown / Text|*.md;*.txt|All files|*.*"};
-                    StatusText.Text=T("Waiting for reply file selection…");
-                    if(picker.ShowDialog(this)!=true){reviewCancelled=true;return;}
-                    StatusText.Text=T("Waiting for confirmation…");
-                    if(MessageBox.Show(this,T("Confirm that the recipient finished this handoff and this file is its reply."),T("Import completed reply"),MessageBoxButton.OKCancel)!=MessageBoxResult.OK){reviewCancelled=true;return;}
-                    StatusText.Text=T("Importing reply…");
-                    var artifact=service.RegisterArtifact(task.TaskId,task.AttemptId,"result",picker.FileName);
-                    service.Complete(task.TaskId,task.AttemptId,task.RecipientId,Guid.NewGuid().ToString(),artifact.Path);
-                    await service.ProcessContinuationsAsync(task.TaskId);
-                });
-            var request=Output("TaskRequest",130);request.Text=File.Exists(task.RequestPath)?File.ReadAllText(task.RequestPath):T("File expired or missing.");
-            pane.Children.Add(new Expander{Header=T("Request"),Content=request,IsExpanded=true,Margin=new(0,8,0,8)});
-            if(success||task.State==TaskState.Failed)
-            {
-                var reply=Output("TaskResult",130);reply.Text=File.Exists(task.ResultPath)?File.ReadAllText(task.ResultPath):T("File expired or missing.");
-                pane.Children.Add(new Expander{Header=T("Reply"),Content=reply,IsExpanded=true,Margin=new(0,8,0,8)});
-            }
-            var history=Page();
-            foreach(var e in service.Audit(task.TaskId))history.Children.Add(Note(e.RecordedAt.ToLocalTime().ToString("g")+" · "+DesktopLocalizedContent.NotificationEvent(e.Event,preferences.Language)));
-            var more=Row(history);
-            if(task.State is not (TaskState.Succeeded or TaskState.Failed or TaskState.Cancelled or TaskState.TimedOut))
-                Add(more,"Cancel",()=>ConfirmTaskCancellation(task.TaskId));
-            if(task.State is TaskState.Failed or TaskState.TimedOut or TaskState.DeliveryUnknown)
-                Add(more,"Retry",async()=>{if(MessageBox.Show(this,T("Retry may repeat a delivery or model call. Continue?"),T("Retry"),MessageBoxButton.OKCancel)==MessageBoxResult.OK)await service.RetryAsync(task.TaskId,"Retry requested by user",true);else reviewCancelled=true;});
-            Add(more,"Copy diagnostics",()=>{Clipboard.SetText(RelayJson.Write(new{view,events=service.Audit(task.TaskId),delivery=service.DeliveryEvidence(task.TaskId)}));return Task.CompletedTask;},false);
-            pane.Children.Add(new Expander{Header=T("Processing history"),Content=history,Margin=new(0,8,0,8)});
-        };
-        table.SelectedItem=rows.SingleOrDefault(r=>r.TaskId==taskId)??rows.FirstOrDefault();
-        if(rows.Length==0)page.Children.Add(Note("No handoffs yet. Add two Agents, then create your first handoff."));
-    }
-
-    private StackPanel SettingsPage()
-    {
-        var page=Page(); Heading(page,"Appearance","Choose language and palette");
-        AddCloseBehaviorSetting(page);
-        if (demo)
-        {
-            page.Children.Add(Note("Demo mode blocks real CLI calls. Keep this workspace and switch to normal use to test your registered Agents."));
-            Add(Row(page),"Use this workspace normally",()=>
-            {
-                demo=false; RelayLocation.Save(service.Home); Title="Agent Relay";
-                ModeDescription.Tag="本机协作 · 明确授权 · 事件驱动"; UpdateChrome();
-                return Task.CompletedTask;
-            });
-        }
-        var appearanceForm = new WrapPanel(); page.Children.Add(appearanceForm);
-        var language = Choice(appearanceForm, "Language", "LanguageChoice", Appearance.Languages, preferences.Language);
-        var palette = Choice(appearanceForm, "Color palette", "PaletteChoice", Appearance.Palettes, preferences.Palette);
-        var accent = Field(appearanceForm, "Custom accent (#RRGGBB)", "CustomAccent", 230); accent.Text = preferences.Accent ?? "";
-        var accentPanel=(StackPanel)accent.Parent; accentPanel.Width=268;
-        accentPanel.Children.Remove(accent);
-        var accentRow=new DockPanel(); accentPanel.Children.Add(accentRow);
-        var swatch=new Border{Name="AccentPreview",Width=24,Height=24,CornerRadius=new(6),BorderThickness=new(1),BorderBrush=Theme("BorderBrush"),Margin=new(8,3,0,10),VerticalAlignment=VerticalAlignment.Center,ToolTip=T("Accent preview")};
-        DockPanel.SetDock(swatch,Dock.Right);accentRow.Children.Add(swatch);accentRow.Children.Add(accent);
-        var accentError=new TextBlock{Name="AccentError",Foreground=Theme("DeniedBrush"),TextWrapping=TextWrapping.Wrap,Visibility=Visibility.Collapsed};accentPanel.Children.Add(accentError);
-        var appearanceActions = Row(page);
-        var saveAccent=Add(appearanceActions,"Save Accent",() =>
-        {
-            var next = preferences with { Accent = Optional(accent) };
-            Appearance.Save(service.Home,next); preferences=next; Appearance.Apply(this,next); UpdateChrome();
-            return Task.CompletedTask;
-        });
-        void PreviewAccent()
-        {
-            saveAccent.IsEnabled=Optional(accent)!=preferences.Accent;
-            try
-            {
-                swatch.Background=string.IsNullOrWhiteSpace(accent.Text) ? Theme("AccentBrush") : new SolidColorBrush(Appearance.ParseAccent(accent.Text.Trim()));
-                accentError.Text="";accentError.Visibility=Visibility.Collapsed;
-            }
-            catch(RelayException error)
-            {
-                swatch.Background=Brushes.Transparent;accentError.Text=T(error.Message);accentError.Visibility=Visibility.Visible;
-            }
-        }
-        accent.TextChanged+=(_,_)=>PreviewAccent();PreviewAccent();
-        language.SelectionChanged+=async(_,_)=>{if(language.SelectedValue is string selected && selected!=preferences.Language)await ChangeLanguage(selected);};
-        palette.SelectionChanged+=async(_,_)=>{if(palette.SelectedValue is string selected && selected!=preferences.Palette)await ChangeAppearance(preferences with{Palette=selected});};
-        Heading(page,"Relay storage","This folder holds temporary handoff files and the local ledger.");
-        var location=Output("RelayLocation",60);location.Text=service.Home;page.Children.Add(location);
-        if(migrationSummary is not null)page.Children.Add(Note(migrationSummary));
-        var storageActions=Row(page);
-        Add(storageActions,"Change relay folder",()=>
-        {
-            var picker=new OpenFolderDialog{Title=T("Choose relay folder")};
-            if(picker.ShowDialog(this)!=true){reviewCancelled=true;return Task.CompletedTask;}
-            var previousHome=service.Home;var next=service.Relocate(picker.FolderName);
-            service=next;HomePath.Text=service.Home;
-            service.RefreshGuidance();WatchReceipts();
-            RecordMigration(previousHome);
-            if(!demo)RelayLocation.Save(service.Home);
-            return Task.CompletedTask;
-        });
-        Add(storageActions,"Check migration",()=>{var previousHome=service.Home;service=service.VerifyRelocation();service.RefreshGuidance();WatchReceipts();RecordMigration(previousHome);if(!demo)RelayLocation.Save(service.Home);HomePath.Text=service.Home;return Task.CompletedTask;});
-        page.Children.Add(Note("Migration copies all current relay files before switching. The old folder remains a backup; retention cleanup only manages the current relay folder. Migration check retries an unfinished migration; it does not move files by itself."));
-        var settings=service.Settings();var form=new WrapPanel();page.Children.Add(form);
-        var ttl=Field(form,"Artifact TTL (days)","TtlDays",180);ttl.Text=settings.ArtifactTtlDays.ToString(CultureInfo.InvariantCulture);
-        var advanced=Page();var advancedForm=new WrapPanel();advanced.Children.Add(advancedForm);
-        var timeout=Field(advancedForm,"Task timeout (minutes)","TaskTimeout",180);timeout.Text=settings.TaskTimeoutMinutes.ToString(CultureInfo.InvariantCulture);
-        var delivery=Field(advancedForm,"Delivery timeout (seconds)","DeliveryTimeout",180);delivery.Text=settings.DeliveryTimeoutSeconds.ToString(CultureInfo.InvariantCulture);
-        var retries=Field(advancedForm,"Delivery attempts (max 3)","DeliveryAttempts",180);retries.Text=settings.MaxDeliveryAttempts.ToString(CultureInfo.InvariantCulture);
-        page.Children.Add(new Expander{Header=T("Advanced task settings"),Content=advanced});
-        var actions=Row(page);Add(actions,"Save Settings",()=>{service.Configure(new(Number(ttl),Number(timeout),Number(delivery),Number(retries)));return Task.CompletedTask;});
-        Add(actions,"Clean expired files",()=>{var proposed=service.Cleanup(false);if(MessageBox.Show(this,string.Format(CultureInfo.CurrentUICulture,T("Delete {0} expired relay files?"),proposed.Eligible),T("Clean expired files"),MessageBoxButton.OKCancel)==MessageBoxResult.OK)service.Cleanup(true);else reviewCancelled=true;return Task.CompletedTask;});
-        Heading(page,"Desktop Notifications","Notify when Relay processes a completed handoff. Closing this app does not start a background monitor.");
-        var notify=new CheckBox{Name="EnableDesktopNotifications",Content=T("Enable Notifications"),IsChecked=service.DesktopExecutable() is not null,Margin=new(0,4,0,16)};
-        AutomationProperties.SetAutomationId(notify,notify.Name);
-        AutomationProperties.SetName(notify,T("Enable Notifications"));
-        page.Children.Add(notify);
-        var restoringNotification=false;
-        async void NotificationChanged(object sender,RoutedEventArgs args)
-        {
-            if(restoringNotification)return;
-            var enabled=notify.IsChecked==true;
-            await Run(async()=>
-            {
-                if(enabled)
-                {
-                    try
-                    {
-                        await service.ConfigureDesktopAsync(CurrentNotifierPath());
-                        notificationSetupHint=null;
-                    }
-                    catch(Exception error) when(error is RelayException or Win32Exception or IOException or UnauthorizedAccessException)
-                    {
-                        service.EnableDesktopFallback(CurrentNotifierPath());
-                        notificationSetupHint=T("Native notifications are unavailable. In-app notifications remain enabled.")+" "+error.Message;
-                    }
-                    SaveNotificationCursor(service.Inbox().Select(n=>n.NotificationId).DefaultIfEmpty().Max());
-                }
-                else service.DisableDesktop();
-            },enabled?"Desktop notifications enabled":"Desktop notifications disabled",refresh:false);
-            restoringNotification=true;
-            try{notify.IsChecked=service.DesktopExecutable() is not null;}
-            finally{restoringNotification=false;}
-        }
-        notify.Checked+=NotificationChanged;
-        notify.Unchecked+=NotificationChanged;
-        AddNotificationSoundSettings(page);
-        var extensions=Page();
-        extensions.Children.Add(Note("CLI extensions connect verified command-line tools or bridges. Availability depends on the target software, version, environment and session support. Not every Agent supports automatic calls or resuming a session. Test before enabling; manual handoff remains available."));
-        var extensionActions=Row(extensions);
-        Add(extensionActions,"One-click setup",()=>{Go("Agents");return Task.CompletedTask;});
-        extensions.Children.Add(Note("Configure CLI in Agents: use one-click setup, or edit the program, arguments and output format. Test before enabling a direction."));
-        page.Children.Add(new Expander{Header=T("Advanced: CLI interface extensions"),Content=extensions,IsExpanded=agentId is not null,Margin=new(0,16,0,8)});
-        Add(Row(page),"Remove all handoff rules",()=>
-        {
-            if(MessageBox.Show(this,T("Remove Relay's marked rules from registered instruction files? Your other instructions will be kept. Do this before deleting the portable software folder."),T("Remove all handoff rules"),MessageBoxButton.OKCancel)==MessageBoxResult.OK)service.RemoveAllGuidance();
-            else reviewCancelled=true;
-            return Task.CompletedTask;
-        });
-        return page;
-    }
-
 
     private void ShowCliProbe(string id)
     {
@@ -469,7 +274,6 @@ public partial class MainWindow : Window
         var name=System.Text.RegularExpressions.Regex.Replace(label,"[^a-zA-Z0-9_]","");
         if(name.Length==0 || !char.IsLetter(name[0]))name="Action"+Guid.NewGuid().ToString("N");
         var button=new Button{Content=T(label),Tag=label,Name=name};
-        if(label is "Save Accent" or "Save Settings" or "Register / Correct Path")button.Style=(Style)FindResource("PrimaryButtonStyle");
         AutomationProperties.SetAutomationId(button,button.Name);row.Children.Add(button);
         button.Click+=async(_,_)=>
         {
@@ -481,7 +285,7 @@ public partial class MainWindow : Window
     }
     private static StackPanel Page()=>new(){Margin=new Thickness(0,0,0,8)};
     private void Heading(Panel page,string title,string subtitle)
-    {page.Children.Add(new TextBlock{Text=T(title),FontSize=17,FontWeight=FontWeights.SemiBold,Margin=new(0,6,0,7)});page.Children.Add(new TextBlock{Text=T(subtitle),TextWrapping=TextWrapping.Wrap,Foreground=Theme("MutedBrush"),Margin=new(0,0,0,14)});}
+    {page.Children.Add(new TextBlock{Text=T(title),FontSize=15,FontWeight=FontWeights.SemiBold,Margin=new(0,6,0,4)});page.Children.Add(Muted(subtitle,12.5,new(0,0,0,12)));}
     private static WrapPanel Row(Panel page){var row=new WrapPanel{Margin=new(0,10,0,6)};page.Children.Add(row);return row;}
     private TextBox Field(Panel parent,string label,string name,double width)
     {
@@ -513,38 +317,44 @@ public partial class MainWindow : Window
         foreach(var child in LogicalTreeHelper.GetChildren(root).OfType<DependencyObject>())foreach(var reply in SetupReplies(child))yield return reply;
     }
     private Brush Theme(string key)=>(Brush)FindResource(key);
-    private ComboBox Choice(Panel parent,string label,string name,IReadOnlyList<AppearanceOption> options,string selected)
-    {
-        var panel=new StackPanel{Width=200,Margin=new(0,10,12,0)};parent.Children.Add(panel);
-        var header=new Grid{Height=36};header.Children.Add(new TextBlock{Text=T(label),Foreground=Theme("MutedBrush"),VerticalAlignment=VerticalAlignment.Center,TextWrapping=TextWrapping.Wrap});panel.Children.Add(header);
-        var choice=new ComboBox{Name=name,ItemsSource=options.Select(o=>new AppearanceOption(o.Id,T(o.Label))).ToArray(),DisplayMemberPath="Label",SelectedValuePath="Id",SelectedValue=selected,Margin=new(0,3,0,10)};
-        AutomationProperties.SetAutomationId(choice,name);panel.Children.Add(choice);return choice;
-    }
     private void UpdateChrome()
     {
         Language=System.Windows.Markup.XmlLanguage.GetLanguage(preferences.Language);
-        languageReady=false;QuickLanguage.SelectedValue=preferences.Language;languageReady=true;
-        RefreshButton.Content=T("Refresh");
+        RefreshButton.ToolTip=T("Refresh");AutomationProperties.SetName(RefreshButton,T("Refresh"));
         DismissErrorButton.ToolTip=T("Dismiss error");
         AutomationProperties.SetName(DismissErrorButton,T("Dismiss error"));
+        DemoBadgeText.Text=T("Demo");DemoBadge.ToolTip=T("DEMO · 虚构 Agent 与预设结果 · 未调用模型，未读取现用配置");
         foreach(ListBoxItem item in Navigation.Items)
         {
             var page=(string)item.Tag;
-            var row=new Grid();row.ColumnDefinitions.Add(new ColumnDefinition{Width=new(20)});row.ColumnDefinitions.Add(new ColumnDefinition{Width=new(1,GridUnitType.Star)});
-            row.Children.Add(NavigationIcon.Create(page,Theme("NavTextBrush")));
-            var label=new TextBlock{Text=T(page),Margin=new(10,0,0,0),VerticalAlignment=VerticalAlignment.Center,TextTrimming=TextTrimming.CharacterEllipsis,ToolTip=T(page)};
-            Grid.SetColumn(label,1);row.Children.Add(label);item.Content=row;item.ToolTip=T(page);
-            AutomationProperties.SetName(item,T(page));AutomationProperties.SetAutomationId(item,page);
+            var label=T(page=="Home"?"Tasks":page);
+            var row=new DockPanel();
+            var icon=Icons.Create(page,size:18);icon.Margin=new(0,0,11,0);
+            row.Children.Add(icon);
+            if(page=="Home"&&attentionCount>0)
+            {
+                var badge=new Border{CornerRadius=new(10),MinWidth=20,Height=20,Padding=new(6,0,6,0),Margin=new(6,0,0,0),
+                    ToolTip=string.Format(CultureInfo.CurrentUICulture,T("{0} tasks need attention"),attentionCount),
+                    Child=Brushed(new TextBlock{Text=attentionCount.ToString(CultureInfo.InvariantCulture),FontSize=11.5,FontWeight=FontWeights.SemiBold,HorizontalAlignment=HorizontalAlignment.Center,VerticalAlignment=VerticalAlignment.Center},"WarnBrush")};
+                badge.SetResourceReference(Border.BackgroundProperty,"WarnSoftBrush");
+                DockPanel.SetDock(badge,Dock.Right);row.Children.Add(badge);
+            }
+            row.Children.Add(new TextBlock{Text=label,VerticalAlignment=VerticalAlignment.Center,TextTrimming=TextTrimming.CharacterEllipsis});
+            item.Content=row;item.ToolTip=label;
+            AutomationProperties.SetName(item,label);AutomationProperties.SetAutomationId(item,page);
         }
-        Localize(ModeDescription);
-        Localize(BrandSubtitle);Localize(BrandTagline);HomePath.ToolTip=T("Relay data directory");
+        HealthText.Text=string.Format(CultureInfo.CurrentUICulture,T("Watching · {0} Agents"),service.Agents().Count);
+        NotificationHealth.Visibility=notificationSetupHint is null?Visibility.Collapsed:Visibility.Visible;
+        NotificationHealthText.Text=T("Desktop notification unavailable");
+        NotificationHealth.ToolTip=notificationSetupHint;
     }
     private void Localize(DependencyObject? root)
     {
         if(root is null)return;
         if(root is TextBlock text){text.Tag??=text.Text;text.Text=T((string)text.Tag);}
         if(root is TabItem tab && tab.Header is string header){tab.Tag??=header;tab.Header=T((string)tab.Tag);}
-        if(root is ContentControl control && control.Content is string content){control.Tag??=content;control.Content=T((string)control.Tag);}
+        // Controls whose Tag already names an action keep the label their page chose.
+        if(root is ContentControl control && control.Content is string content && control.Tag is null){control.Tag=content;control.Content=T(content);}
         foreach(var child in LogicalTreeHelper.GetChildren(root).OfType<DependencyObject>())Localize(child);
     }
 }

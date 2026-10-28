@@ -49,18 +49,14 @@ public partial class MainWindow
         preferences = next;
     }
 
-    private void AddCloseBehaviorSetting(Panel page)
+    private void AddCloseBehaviorSetting(Panel group)
     {
         string Text(string key) => CloseBehaviorText.Get(key, preferences.Language);
-        var setting = new CheckBox
-        {
-            Name = "CloseToTraySetting", IsChecked = preferences.CloseToTray == true,
-            Content = Text("setting"), Margin = new(0, 6, 0, 6), MinHeight = 30
-        };
+        var setting = new CheckBox { Name = "CloseToTraySetting", IsChecked = preferences.CloseToTray == true };
+        setting.SetResourceReference(StyleProperty, "SwitchStyle");
         AutomationProperties.SetAutomationId(setting, setting.Name);
         AutomationProperties.SetName(setting, Text("setting"));
-        page.Children.Add(setting);
-        page.Children.Add(new TextBlock { Text = Text("description"), TextWrapping = TextWrapping.Wrap, Margin = new(0, 0, 0, 18), Foreground = Theme("MutedBrush") });
+        SettingRow(group, Text("setting"), Text("description"), setting);
         var restoring = false;
         async void Changed(object sender, RoutedEventArgs args)
         {

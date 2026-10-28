@@ -5,6 +5,7 @@ using System.Windows.Automation;
 using System.Windows.Controls;
 using System.Windows.Data;
 using System.Windows.Input;
+using System.Windows.Media;
 
 namespace AgentRelay.Desktop;
 
@@ -12,7 +13,9 @@ public partial class MainWindow
 {
     private readonly HashSet<string> selectedTaskIds = [];
 
-    private sealed class TaskRow(string taskId,string route,string mode,string state,DateTimeOffset created,string stateCode)
+    /// <param name="Group">attention, active or done; drives the list filters and the sidebar count.</param>
+    private sealed class TaskRow(string taskId,string route,string mode,string state,DateTimeOffset created,string stateCode,
+        string fromName,string toName,Brush fromBrush,Brush toBrush,string title,string tone,string group,Brush toneBack,Brush toneFore)
         : INotifyPropertyChanged
     {
         public string TaskId { get; }=taskId;
@@ -21,6 +24,27 @@ public partial class MainWindow
         public string State { get; }=state;
         public DateTimeOffset Created { get; }=created;
         public string StateCode { get; }=stateCode;
+        public string FromName { get; }=fromName;
+        public string ToName { get; }=toName;
+        public string FromInitial => Initial(FromName);
+        public string ToInitial => Initial(ToName);
+        public Brush FromBrush { get; }=fromBrush;
+        public Brush ToBrush { get; }=toBrush;
+        public string Title { get; }=title;
+        public string Tone { get; }=tone;
+        public string Group { get; }=group;
+        public Brush ToneBack { get; }=toneBack;
+        public Brush ToneFore { get; }=toneFore;
+        /// <summary>Local 24-hour time: the clock for today, the date and clock this year, otherwise the full date.</summary>
+        public string When
+        {
+            get
+            {
+                var local=Created.ToLocalTime();var now=DateTimeOffset.Now;
+                return local.Date==now.Date?local.ToString("HH:mm",CultureInfo.InvariantCulture)
+                    :local.Year==now.Year?local.ToString("MM-dd HH:mm",CultureInfo.InvariantCulture):local.ToString("yyyy-MM-dd",CultureInfo.InvariantCulture);
+            }
+        }
         private bool batchSelected;
         public bool BatchSelected
         {
@@ -35,37 +59,41 @@ public partial class MainWindow
         public event PropertyChangedEventHandler? PropertyChanged;
     }
 
-    private void AddTaskBatchControls(Panel page,DataGrid table,TaskRow[] rows)
+    private void AddTaskBatchControls(WrapPanel actions,DataGrid table,TaskRow[] rows)
     {
         selectedTaskIds.IntersectWith(rows.Select(row=>row.TaskId));
         foreach (var row in rows) row.BatchSelected=selectedTaskIds.Contains(row.TaskId);
 
-        var actions=Row(page);actions.Name="TaskBatchActions";
+        actions.Name="TaskBatchActions";
         AutomationProperties.SetAutomationId(actions,actions.Name);
+        var count=Brushed(new TextBlock{Name="TaskBatchCount",VerticalAlignment=VerticalAlignment.Center,Margin=new(4,0,10,8),FontSize=12.5},"MutedBrush");
+        actions.Children.Add(count);
+        // Select all covers the tasks the current filter shows.
         var all=Add(actions,"Select all tasks",()=>
         {
-            foreach(var row in rows)row.BatchSelected=true;
+            foreach(var row in table.Items.Cast<TaskRow>())row.BatchSelected=true;
             return Task.CompletedTask;
         },false);
         all.Name="SelectAllTasks";AutomationProperties.SetAutomationId(all,all.Name);
-        var count=new TextBlock{Name="TaskBatchCount",VerticalAlignment=VerticalAlignment.Center,Margin=new(0,0,12,0)};
-        actions.Children.Add(count);
         var complete=Add(actions,"Mark selected complete",()=>ApplyTaskBatch(rows,false));
         complete.Name="CompleteSelectedTasks";AutomationProperties.SetAutomationId(complete,complete.Name);
         var delete=Add(actions,"Delete selected tasks",()=>ApplyTaskBatch(rows,true));
         delete.Name="DeleteSelectedTasks";AutomationProperties.SetAutomationId(delete,delete.Name);
+        Styled(delete,"DangerButtonStyle");
         var clear=Add(actions,"Clear selection",()=>
         {
             foreach (var row in rows) row.BatchSelected=false;
             return Task.CompletedTask;
         },false);
         clear.Name="ClearTaskSelection";AutomationProperties.SetAutomationId(clear,clear.Name);
+        foreach(var button in new[]{all,complete,delete,clear}){button.MinHeight=28;button.Padding=new(10,0,10,0);button.FontSize=12.5;}
+        Styled(all,"GhostButtonStyle");Styled(clear,"GhostButtonStyle");
 
         void UpdateActions()
         {
-            actions.Visibility=rows.Length==0?Visibility.Collapsed:Visibility.Visible;
+            actions.Visibility=rows.Length==0||!selectingTasks?Visibility.Collapsed:Visibility.Visible;
             all.IsEnabled=selectedTaskIds.Count<rows.Length;
-            count.Visibility=complete.Visibility=delete.Visibility=selectedTaskIds.Count==0?Visibility.Collapsed:Visibility.Visible;
+            complete.Visibility=delete.Visibility=selectedTaskIds.Count==0?Visibility.Collapsed:Visibility.Visible;
             count.Text=string.Format(CultureInfo.CurrentUICulture,T("Selected: {0}"),selectedTaskIds.Count);
             complete.IsEnabled=rows.Any(row=>row.BatchSelected&&row.StateCode!="Succeeded");
             clear.Visibility=selectedTaskIds.Count>=2?Visibility.Visible:Visibility.Collapsed;
@@ -79,9 +107,9 @@ public partial class MainWindow
         UpdateActions();
 
         var checkbox=new FrameworkElementFactory(typeof(CheckBox));
-        checkbox.SetValue(FrameworkElement.MarginProperty,new Thickness(0));
+        checkbox.SetValue(FrameworkElement.MarginProperty,new Thickness(8,0,0,0));
         checkbox.SetValue(FrameworkElement.HorizontalAlignmentProperty,HorizontalAlignment.Center);
-        checkbox.SetValue(FrameworkElement.VerticalAlignmentProperty,VerticalAlignment.Center);
+        checkbox.SetValue(FrameworkElement.VerticalAlignmentProperty,VerticalAlignment.Top);
         checkbox.SetValue(FrameworkElement.ToolTipProperty,T("Select this task for batch actions"));
         checkbox.SetBinding(CheckBox.IsCheckedProperty,new Binding(nameof(TaskRow.BatchSelected)){Mode=BindingMode.TwoWay,UpdateSourceTrigger=UpdateSourceTrigger.PropertyChanged});
         checkbox.SetBinding(AutomationProperties.AutomationIdProperty,new Binding(nameof(TaskRow.TaskId)){StringFormat="SelectTask_{0}"});
@@ -94,9 +122,10 @@ public partial class MainWindow
             args.Handled=true;
         }));
         var cellStyle=new Style(typeof(DataGridCell),(Style)FindResource(typeof(DataGridCell)));
+        cellStyle.Setters.Add(new Setter(Control.PaddingProperty,new Thickness(0)));
         cellStyle.Setters.Add(new Setter(AutomationProperties.NameProperty,new Binding(nameof(TaskRow.Route)){StringFormat=T("Select task: {0}")}));
-        table.Columns.Insert(0,new DataGridTemplateColumn{Header=T("Select"),Width=54,CanUserResize=false,CanUserSort=false,
-            CellStyle=cellStyle,CellTemplate=new DataTemplate{VisualTree=checkbox}});
+        table.Columns.Insert(0,new DataGridTemplateColumn{Header=T("Select"),Width=34,CanUserResize=false,CanUserSort=false,
+            CellStyle=cellStyle,CellTemplate=new DataTemplate{VisualTree=checkbox},Visibility=selectingTasks?Visibility.Visible:Visibility.Collapsed});
     }
 
     private Task ApplyTaskBatch(TaskRow[] rows,bool delete)
