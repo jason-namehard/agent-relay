@@ -66,6 +66,22 @@ internal static class RedesignUiText
         Add("New conversations", "新会话", "新對話", "新しい会話", "새 대화", "Conversaciones nuevas");
         Add("Show models", "查看模型", "查看模型", "モデルを表示", "모델 보기", "Ver modelos");
 
+        Add("Choose how to add it. If you are not sure, let the Agent set itself up.", "选择添加方式。不确定的话，就让 Agent 自己配置。", "選擇新增方式。不確定的話，就讓 Agent 自行設定。",
+            "追加方法を選んでください。迷ったら Agent 自身に設定させましょう。", "추가 방법을 고르세요. 잘 모르겠다면 Agent가 직접 설정하게 하세요.", "Elige cómo añadirlo. Si no estás seguro, deja que el Agente se configure solo.");
+        Add("Let the Agent set itself up", "让 Agent 自己配置", "讓 Agent 自行設定", "Agent 自身に設定させる", "Agent가 직접 설정", "Que el Agente se configure solo");
+        Add("Relay copies a setup prompt. Paste it into a new conversation with the Agent; it checks how it can be called and registers itself.",
+            "Relay 会复制一段配置提示词。把它粘贴到该 Agent 的新会话里，Agent 会自己查清调用方式并完成登记。", "Relay 會複製一段設定提示詞。把它貼到該 Agent 的新對話裡，Agent 會自行查清呼叫方式並完成登記。",
+            "Relay が設定用プロンプトをコピーします。Agent の新しい会話に貼り付けると、呼び出し方法を調べて自分で登録します。", "Relay가 설정 프롬프트를 복사합니다. Agent의 새 대화에 붙여 넣으면 호출 방법을 확인하고 스스로 등록합니다.",
+            "Relay copia un prompt de configuración. Pégalo en una conversación nueva con el Agente; comprobará cómo se le llama y se registrará solo.");
+        Add("Enter the name, configuration path and calling method yourself. Suits users who know how the Agent is set up.",
+            "自己填写名称、配置路径和调用方式，适合熟悉该 Agent 配置的用户。", "自行填寫名稱、設定路徑與呼叫方式，適合熟悉該 Agent 設定的使用者。",
+            "名前、設定パス、呼び出し方法を自分で入力します。Agent の設定に詳しい方向けです。", "이름, 설정 경로, 호출 방식을 직접 입력합니다. Agent 설정을 잘 아는 사용자에게 맞습니다.",
+            "Introduce tú el nombre, la ruta de configuración y el método de llamada. Para quien conoce la configuración del Agente.");
+        Add("OK", "确定", "確定", "OK", "확인", "Aceptar");
+        Add("Yes", "是", "是", "はい", "예", "Sí");
+        Add("No", "否", "否", "いいえ", "아니요", "No");
+        Add("Recommended", "推荐", "推薦", "おすすめ", "추천", "Recomendado");
+
         // Connections
         Add("Set up a bridge for {0}", "为 {0} 配置桥接", "為 {0} 設定橋接", "{0} のブリッジを設定", "{0}의 브리지 설정", "Configurar un puente para {0}");
         Add("Switches only control Relay's automatic delivery. Copying a prompt by hand always works.", "开关只影响 Relay 的自动传递，手动复制提示词始终可用。", "開關只影響 Relay 的自動傳遞，手動複製提示詞始終可用。",

@@ -26,7 +26,7 @@ internal sealed class EntryDialogLayout
         dialog.UseLayoutRounding = true;
         dialog.SourceInitialized += (_, _) => Appearance.ApplyTitleBar(dialog);
         var dock = new DockPanel(); dialog.Content = dock;
-        var heading = new TextBlock { Text = title, FontSize = 19, FontWeight = FontWeights.SemiBold, Margin = new(26, 22, 26, 12), TextWrapping = TextWrapping.Wrap };
+        var heading = new TextBlock { Text = title, FontSize = 19, FontWeight = FontWeights.SemiBold, Margin = new(26, 22, 60, 12), TextWrapping = TextWrapping.Wrap };
         DockPanel.SetDock(heading, Dock.Top); dock.Children.Add(heading);
         var footer = new StackPanel(); footer.Children.Add(Status); footer.Children.Add(Actions);
         var footerFrame = new Border { Child = footer, Padding = new(26, 14, 26, 16), BorderThickness = new(0, 1, 0, 0) };
@@ -35,6 +35,7 @@ internal sealed class EntryDialogLayout
         DockPanel.SetDock(footerFrame, Dock.Bottom); dock.Children.Add(footerFrame);
         dock.Children.Add(new ScrollViewer { Content = Body, VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
             HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled, Padding = new(26, 0, 18, 16) });
+        ThemedChrome.ApplyToDialog(dialog, resizable: true);
     }
 
     public string T(string text) => EntryText.Get(text, language);

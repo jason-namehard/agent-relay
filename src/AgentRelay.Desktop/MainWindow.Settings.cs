@@ -114,7 +114,7 @@ public partial class MainWindow
         var settings = service.Settings();
         var ttl = NumberBox("TtlDays", settings.ArtifactTtlDays);
         var retention = SettingRow(storage, "Keep handoff files", "Expired temporary files can be cleaned. Registered results are kept.", ttl, Muted("days", 12.5, new(8, 0, 0, 0)));
-        Styled(RowAction(retention, "Clean expired files", () => { var proposed = service.Cleanup(false); if (MessageBox.Show(this, string.Format(CultureInfo.CurrentUICulture, T("Delete {0} expired relay files?"), proposed.Eligible), T("Clean expired files"), MessageBoxButton.OKCancel) == MessageBoxResult.OK) service.Cleanup(true); else reviewCancelled = true; return Task.CompletedTask; }), "GhostButtonStyle").Margin = new(16, 0, 0, 0);
+        Styled(RowAction(retention, "Clean expired files", () => { var proposed = service.Cleanup(false); if (ThemedMessageBox.Show(this, string.Format(CultureInfo.CurrentUICulture, T("Delete {0} expired relay files?"), proposed.Eligible), T("Clean expired files"), MessageBoxButton.OKCancel) == MessageBoxResult.OK) service.Cleanup(true); else reviewCancelled = true; return Task.CompletedTask; }), "GhostButtonStyle").Margin = new(16, 0, 0, 0);
 
         var advanced = Group(content, "Advanced", "SettingsAdvanced");
         var timeout = NumberBox("TaskTimeout", settings.TaskTimeoutMinutes);
@@ -141,7 +141,7 @@ public partial class MainWindow
         Styled(RowAction(SettingRow(danger, "Remove all handoff rules", "Removes Relay's marked rules from every registered instruction file. Your other instructions are kept. Do this before deleting the portable software folder."),
             "Remove all handoff rules", () =>
             {
-                if (MessageBox.Show(this, T("Remove Relay's marked rules from registered instruction files? Your other instructions will be kept. Do this before deleting the portable software folder."), T("Remove all handoff rules"), MessageBoxButton.OKCancel) == MessageBoxResult.OK) service.RemoveAllGuidance();
+                if (ThemedMessageBox.Show(this, T("Remove Relay's marked rules from registered instruction files? Your other instructions will be kept. Do this before deleting the portable software folder."), T("Remove all handoff rules"), MessageBoxButton.OKCancel) == MessageBoxResult.OK) service.RemoveAllGuidance();
                 else reviewCancelled = true;
                 return Task.CompletedTask;
             }), "DangerButtonStyle");

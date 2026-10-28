@@ -184,7 +184,7 @@ public partial class MainWindow
         if(picker.ShowDialog(this)!=true){reviewCancelled=true;return;}
         var preview=service.PreviewGuidance(id,picker.FileName);
         var message=T("Relay will append one small rule to this file. Detailed instructions load only when the Agent follows that rule. Removing Relay's ZIP folder cannot remove this rule; use Remove rules first.")+"\n\n"+preview.InstructionFile+"\n"+preview.Rule;
-        if(MessageBox.Show(this,message,T("Install handoff rule"),MessageBoxButton.OKCancel)!=MessageBoxResult.OK){reviewCancelled=true;return;}
+        if(ThemedMessageBox.Show(this,message,T("Install handoff rule"),MessageBoxButton.OKCancel)!=MessageBoxResult.OK){reviewCancelled=true;return;}
         service.InstallGuidance(id,picker.FileName);
     }
 }

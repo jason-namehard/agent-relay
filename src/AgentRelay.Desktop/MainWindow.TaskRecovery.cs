@@ -7,7 +7,7 @@ public partial class MainWindow
 {
     private Task ConfirmTaskCancellation(string id)
     {
-        if(MessageBox.Show(this,T("Cancel this task now? Relay will end the task immediately, stop waiting for receipts and stop scheduling further deliveries, even if a delivery is in progress. Work already started in the host may continue and must be stopped there separately. Existing files will be kept."),
+        if(ThemedMessageBox.Show(this,T("Cancel this task now? Relay will end the task immediately, stop waiting for receipts and stop scheduling further deliveries, even if a delivery is in progress. Work already started in the host may continue and must be stopped there separately. Existing files will be kept."),
             T("Cancel task"),MessageBoxButton.OKCancel,MessageBoxImage.Warning)!=MessageBoxResult.OK)
         {reviewCancelled=true;return Task.CompletedTask;}
         service.Cancel(id,"Cancelled by user");return Task.CompletedTask;
@@ -18,7 +18,7 @@ public partial class MainWindow
         var result=await Task.Run(()=>service.RecheckDesktopBridgeAsync(targetAgentId));
         if(!result.BlockCleared&&service.CliExtension(targetAgentId)?.Block is not null)
             throw new RelayException("bridge_not_restored",result.Message+"\n"+string.Join("\n",result.Checks.Where(c=>c.Id!="block"&&c.Status=="fail").Select(c=>c.Message)));
-        MessageBox.Show(this,result.Message,T("Bridge recovery result"),MessageBoxButton.OK,MessageBoxImage.Information);
+        ThemedMessageBox.Show(this,result.Message,T("Bridge recovery result"),MessageBoxButton.OK,MessageBoxImage.Information);
     }
 
     private async Task RecheckBridge(string id)
@@ -32,11 +32,11 @@ public partial class MainWindow
         var detail=string.Join("\n",checks.Where(c=>c.Id!="block").Select(c=>c.Message));
         if(extension.Block is null)
         {
-            MessageBox.Show(this,T("Local configuration checks passed. This does not confirm that the Agent can accept a session.")+"\n\n"+detail,
+            ThemedMessageBox.Show(this,T("Local configuration checks passed. This does not confirm that the Agent can accept a session.")+"\n\n"+detail,
                 T("Bridge recovery result"),MessageBoxButton.OK,MessageBoxImage.Information);
             return;
         }
-        if(MessageBox.Show(this,T("Local configuration checks passed, but cannot confirm that the Agent can accept a session. Clear the saved failure? Previously authorized automatic tasks may send again.")+"\n\n"+detail,
+        if(ThemedMessageBox.Show(this,T("Local configuration checks passed, but cannot confirm that the Agent can accept a session. Clear the saved failure? Previously authorized automatic tasks may send again.")+"\n\n"+detail,
             T("Recheck and restore bridge"),MessageBoxButton.OKCancel,MessageBoxImage.Warning)!=MessageBoxResult.OK)
         {reviewCancelled=true;return;}
         var current=service.CliExtension(id)??throw new RelayException("cli_recipe_missing",T("No bridge is configured for this Agent."));

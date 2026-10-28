@@ -195,14 +195,14 @@ public partial class MainWindow
                 StatusText.Text = T("Waiting for reply file selection…");
                 if (picker.ShowDialog(this) != true) { reviewCancelled = true; return; }
                 StatusText.Text = T("Waiting for confirmation…");
-                if (MessageBox.Show(this, T("Confirm that the recipient finished this handoff and this file is its reply."), T("Import completed reply"), MessageBoxButton.OKCancel) != MessageBoxResult.OK) { reviewCancelled = true; return; }
+                if (ThemedMessageBox.Show(this, T("Confirm that the recipient finished this handoff and this file is its reply."), T("Import completed reply"), MessageBoxButton.OKCancel) != MessageBoxResult.OK) { reviewCancelled = true; return; }
                 StatusText.Text = T("Importing reply…");
                 var artifact = service.RegisterArtifact(task.TaskId, task.AttemptId, "result", picker.FileName);
                 service.Complete(task.TaskId, task.AttemptId, task.RecipientId, Guid.NewGuid().ToString(), artifact.Path);
                 await service.ProcessContinuationsAsync(task.TaskId);
             });
         if (task.State is TaskState.Failed or TaskState.TimedOut or TaskState.DeliveryUnknown)
-            Add(actions, "Retry", async () => { if (MessageBox.Show(this, T("Retry may repeat a delivery or model call. Continue?"), T("Retry"), MessageBoxButton.OKCancel) == MessageBoxResult.OK) await service.RetryAsync(task.TaskId, "Retry requested by user", true); else reviewCancelled = true; });
+            Add(actions, "Retry", async () => { if (ThemedMessageBox.Show(this, T("Retry may repeat a delivery or model call. Continue?"), T("Retry"), MessageBoxButton.OKCancel) == MessageBoxResult.OK) await service.RetryAsync(task.TaskId, "Retry requested by user", true); else reviewCancelled = true; });
         Add(actions, "Copy diagnostics", () => { Clipboard.SetText(RelayJson.Write(new { view, events = service.Audit(task.TaskId), delivery = service.DeliveryEvidence(task.TaskId) })); return Task.CompletedTask; }, false);
 
         var files = DetailSection(card);

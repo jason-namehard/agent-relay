@@ -550,6 +550,58 @@
   </ControlTemplate></Setter.Value></Setter>
  </Style>
 
+ <!-- Caption buttons drawn by the app, so the title area takes the theme instead of the system's white bar. -->
+ <Style x:Key="CaptionButtonStyle" TargetType="Button">
+  <Setter Property="Width" Value="46"/><Setter Property="Height" Value="38"/><Setter Property="Margin" Value="0"/>
+  <Setter Property="Foreground" Value="{DynamicResource MutedBrush}"/>
+  <Setter Property="Background" Value="Transparent"/>
+  <Setter Property="FocusVisualStyle" Value="{x:Null}"/><Setter Property="IsTabStop" Value="False"/>
+  <Setter Property="WindowChrome.IsHitTestVisibleInChrome" Value="True"/>
+  <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="Button">
+   <Grid Background="{TemplateBinding Background}">
+    <Border x:Name="Hover" Background="{DynamicResource TextBrush}" Opacity="0"/>
+    <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+   </Grid>
+   <ControlTemplate.Triggers>
+    <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="Hover" Property="Opacity" Value="0.07"/><Setter Property="Foreground" Value="{DynamicResource TextBrush}"/></Trigger>
+    <Trigger Property="IsPressed" Value="True"><Setter TargetName="Hover" Property="Opacity" Value="0.12"/></Trigger>
+   </ControlTemplate.Triggers>
+  </ControlTemplate></Setter.Value></Setter>
+ </Style>
+ <Style x:Key="CaptionCloseButtonStyle" TargetType="Button" BasedOn="{StaticResource CaptionButtonStyle}">
+  <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="Button">
+   <Grid x:Name="Frame" Background="Transparent">
+    <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+   </Grid>
+   <ControlTemplate.Triggers>
+    <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="Frame" Property="Background" Value="#C42B1C"/><Setter Property="Foreground" Value="White"/></Trigger>
+    <Trigger Property="IsPressed" Value="True"><Setter TargetName="Frame" Property="Background" Value="#A92A1F"/><Setter Property="Foreground" Value="White"/></Trigger>
+   </ControlTemplate.Triggers>
+  </ControlTemplate></Setter.Value></Setter>
+ </Style>
+ <!-- A filled red action for confirmations that delete or cannot be undone. -->
+ <Style x:Key="DangerPrimaryButtonStyle" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
+  <Setter Property="Background" Value="{DynamicResource BadBrush}"/>
+  <Setter Property="BorderBrush" Value="{DynamicResource BadBrush}"/>
+  <Setter Property="Foreground" Value="{DynamicResource PageBrush}"/>
+  <Setter Property="FontWeight" Value="SemiBold"/>
+ </Style>
+ <!-- A large choice card: icon, title and explanation. -->
+ <Style x:Key="OptionCardStyle" TargetType="Button">
+  <Setter Property="Cursor" Value="Hand"/><Setter Property="FocusVisualStyle" Value="{x:Null}"/>
+  <Setter Property="Foreground" Value="{DynamicResource TextBrush}"/>
+  <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+  <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="Button">
+   <Border x:Name="Frame" CornerRadius="12" BorderThickness="1" Padding="16,14" Background="{DynamicResource SurfaceBrush}" BorderBrush="{DynamicResource BorderStrongBrush}">
+    <ContentPresenter HorizontalAlignment="Stretch"/>
+   </Border>
+   <ControlTemplate.Triggers>
+    <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="Frame" Property="BorderBrush" Value="{DynamicResource FocusBrush}"/><Setter TargetName="Frame" Property="Background" Value="{DynamicResource SurfaceAltBrush}"/></Trigger>
+    <Trigger Property="IsKeyboardFocused" Value="True"><Setter TargetName="Frame" Property="BorderBrush" Value="{DynamicResource FocusBrush}"/><Setter TargetName="Frame" Property="BorderThickness" Value="2"/></Trigger>
+   </ControlTemplate.Triggers>
+  </ControlTemplate></Setter.Value></Setter>
+ </Style>
+
  <!-- One task in the list: route, time, request title, state pill and delivery mode. -->
  <DataTemplate x:Key="TaskRowTemplate">
   <Grid Margin="10,0,8,0">

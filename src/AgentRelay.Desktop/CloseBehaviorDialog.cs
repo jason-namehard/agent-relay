@@ -25,6 +25,7 @@ public sealed class CloseBehaviorDialog : Window
         Add("tray", "CloseToTrayChoice", true);
         Add("exit", "ExitApplicationChoice", false);
         KeyDown += (_, e) => { if (e.Key == Key.Escape) DialogResult = false; };
+        ThemedChrome.ApplyToDialog(this, resizable: false);
 
         void Add(string key, string name, bool tray)
         {

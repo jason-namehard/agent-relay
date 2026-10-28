@@ -159,6 +159,14 @@ public static class Appearance
         if (handle == IntPtr.Zero) return;
         var dark = IsDark(window) ? 1 : 0;
         _ = DwmSetWindowAttribute(handle, 20, ref dark, sizeof(int));
+        // Windows 11: rounded corners and a hairline border in the theme's own color.
+        var round = 2;
+        _ = DwmSetWindowAttribute(handle, 33, ref round, sizeof(int));
+        if (window.Resources["BorderStrongBrush"] is SolidColorBrush border)
+        {
+            var color = border.Color.R | border.Color.G << 8 | border.Color.B << 16;
+            _ = DwmSetWindowAttribute(handle, 34, ref color, sizeof(int));
+        }
     }
 
     public static Color ParseAccent(string accent)

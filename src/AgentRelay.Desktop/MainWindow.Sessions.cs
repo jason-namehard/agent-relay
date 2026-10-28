@@ -46,7 +46,7 @@ public partial class MainWindow
             });
             var fresh=Add(actions,"New conversation",()=>
             {
-                if(MessageBox.Show(this,T("Create a new conversation on the next CLI delivery? The previous conversation is kept."),T("New conversation"),MessageBoxButton.OKCancel)==MessageBoxResult.OK)
+                if(ThemedMessageBox.Show(this,T("Create a new conversation on the next CLI delivery? The previous conversation is kept."),T("New conversation"),MessageBoxButton.OKCancel)==MessageBoxResult.OK)
                     service.UseNewTaskSession(task.TaskId,id);
                 else reviewCancelled=true;
                 return Task.CompletedTask;

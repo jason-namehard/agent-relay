@@ -46,6 +46,17 @@ public partial class MainWindow : Window
         ErrorIcon.Child = Icons.Create("Alert", size: 17, brushKey: "BadBrush");
         PageHelp.Content = Icons.Create("Help", size: 16);
         VersionLabel.Text = "v" + RelayVersion.Current;
+        // The theme draws the title area; these are the window's own caption buttons.
+        CaptionButtons.Children.Add(ThemedChrome.CaptionButton("Minimize", "Minimize", () => SystemCommands.MinimizeWindow(this)));
+        var maximize = ThemedChrome.CaptionButton("Maximize", "Maximize", () => { if (WindowState == WindowState.Maximized) SystemCommands.RestoreWindow(this); else SystemCommands.MaximizeWindow(this); });
+        CaptionButtons.Children.Add(maximize);
+        CaptionButtons.Children.Add(ThemedChrome.CaptionButton("Close", "Close", () => SystemCommands.CloseWindow(this), close: true));
+        StateChanged += (_, _) =>
+        {
+            // A maximized window extends past the screen by its resize border; keep the content on screen.
+            Root.Margin = WindowState == WindowState.Maximized ? new Thickness(7) : new Thickness(0);
+            maximize.Content = ((Button)ThemedChrome.CaptionButton(WindowState == WindowState.Maximized ? "Restore" : "Maximize", "Maximize", () => { })).Content;
+        };
         if (demo)
         {
             Title = "Agent Relay — Demo";
@@ -320,6 +331,7 @@ public partial class MainWindow : Window
     private void UpdateChrome()
     {
         Language=System.Windows.Markup.XmlLanguage.GetLanguage(preferences.Language);
+        ThemedMessageBox.UiLanguage=preferences.Language;
         RefreshButton.ToolTip=T("Refresh");AutomationProperties.SetName(RefreshButton,T("Refresh"));
         DismissErrorButton.ToolTip=T("Dismiss error");
         AutomationProperties.SetName(DismissErrorButton,T("Dismiss error"));

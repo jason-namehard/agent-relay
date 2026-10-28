@@ -137,7 +137,7 @@ public partial class MainWindow
             ?"Delete this task and its history? Files will be kept; unregistered relay files remain eligible for retention cleanup. This does not stop an already running Agent. This action cannot be undone."
             :"Mark this handoff complete yourself? Relay will stop waiting and record your decision. This does not verify the Agent's work or stop an already running Agent.");
         var targets=string.Join("\n",selected.Select(row=>row.TaskId+" · "+row.Route));
-        if (MessageBox.Show(this,question+"\n\n"+targets+"\n\n"+explanation,title,MessageBoxButton.OKCancel,
+        if (ThemedMessageBox.Show(this,question+"\n\n"+targets+"\n\n"+explanation,title,MessageBoxButton.OKCancel,
                 delete?MessageBoxImage.Warning:MessageBoxImage.Question)!=MessageBoxResult.OK)
         {reviewCancelled=true;return Task.CompletedTask;}
         foreach (var row in selected)

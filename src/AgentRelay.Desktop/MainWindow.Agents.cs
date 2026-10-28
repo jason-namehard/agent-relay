@@ -59,22 +59,19 @@ public partial class MainWindow
         AgentRecord Selected() => table.SelectedItem is AgentRow row ? row.Source
             : throw new RelayException("selection_required", T("Select an Agent."));
 
-        // The header offers one way to add an Agent; the menu next to it hands the job to the Agent itself.
-        var create = Styled(Add(PageActions, "New Agent", () => Edit(null)), "PrimaryButtonStyle", "Plus");
-        create.Margin = new(0); create.Padding = new(12, 0, 12, 0);
-        var more = IconButton("Down", "More ways to add an Agent", "NewAgentOptions");
-        Styled(more, "PrimaryButtonStyle"); more.Width = 30; more.Padding = new(0); more.Margin = new(1, 0, 0, 0); more.Content = Icons.Create("Down", size: 15);
-        create.Template = SplitHalf(true); more.Template = SplitHalf(false);
-        PageActions.Children.Add(more);
-        var options = Flyout(more, PageActions);
-        MenuItem(options, "One-click setup", "Bolt", () =>
+        // One button to add an Agent; the dialog behind it asks first whether the Agent should set itself up.
+        var create = Styled(Add(PageActions, "New Agent", () =>
         {
+            var choice = new AgentSetupChoiceDialog(this, preferences.Language);
+            StatusText.Text = T("Waiting for Agent details…");
+            if (choice.ShowDialog() != true) { reviewCancelled = true; return Task.CompletedTask; }
+            if (choice.Choice == "manual") return Edit(null);
             Clipboard.SetText(service.AgentSetupPrompt(relayCommand: AgentEntryDialog.ResolveRelayCommand()));
-            MessageBox.Show(this, T("Setup prompt copied. Paste it into a new conversation with the Agent you want to register. It will inspect its calling method and fill Relay directly. This creates a new node and does not overwrite the selected Agent."),
+            ThemedMessageBox.Show(this, T("Setup prompt copied. Paste it into a new conversation with the Agent you want to register. It will inspect its calling method and fill Relay directly. This creates a new node and does not overwrite the selected Agent."),
                 T("One-click setup"), MessageBoxButton.OK, MessageBoxImage.Information);
             return Task.CompletedTask;
-        }, "Copy a prompt; the Agent fills in its own details", refresh: false);
-        MenuItem(options, "Fill in by hand", "Edit", () => Edit(null), "Name, paths and calling method");
+        }), "PrimaryButtonStyle", "Plus");
+        create.Margin = new(0);
 
         // One menu serves every row; the ⋯ button selects its row and opens it there.
         var rowMenuHost = new StackPanel();
@@ -93,7 +90,7 @@ public partial class MainWindow
             if (ActiveAgentIds().Contains(agent.AgentId))
                 throw new RelayException("agent_busy", T("This Agent has unfinished handoffs. Complete or cancel them before removing it."));
             StatusText.Text = T("Waiting for confirmation…");
-            if (MessageBox.Show(this, T("Remove this Agent from Relay? Existing task history is kept."), agent.DisplayName ?? agent.AgentId,
+            if (ThemedMessageBox.Show(this, T("Remove this Agent from Relay? Existing task history is kept."), agent.DisplayName ?? agent.AgentId,
                     MessageBoxButton.OKCancel, MessageBoxImage.Question) != MessageBoxResult.OK)
             { reviewCancelled = true; return Task.CompletedTask; }
             service.RemoveAgent(agent.AgentId); service.RemoveGuidance(agent.AgentId); agentId = null;
@@ -192,24 +189,6 @@ public partial class MainWindow
         table.SelectedItem = rows.SingleOrDefault(row => row.Source.AgentId == agentId) ?? rows.FirstOrDefault();
         UpdateSidebar();
         return scroll;
-    }
-
-    /// <summary>Left and right halves of a split button share one rounded outline.</summary>
-    private static ControlTemplate SplitHalf(bool left)
-    {
-        var frame = new FrameworkElementFactory(typeof(Border), "Frame");
-        frame.SetValue(Border.CornerRadiusProperty, left ? new CornerRadius(7, 0, 0, 7) : new CornerRadius(0, 7, 7, 0));
-        frame.SetBinding(Border.BackgroundProperty, new Binding(nameof(Control.Background)) { RelativeSource = RelativeSource.TemplatedParent });
-        frame.SetValue(Border.PaddingProperty, new TemplateBindingExtension(Control.PaddingProperty));
-        var content = new FrameworkElementFactory(typeof(ContentPresenter));
-        content.SetValue(HorizontalAlignmentProperty, HorizontalAlignment.Center); content.SetValue(VerticalAlignmentProperty, VerticalAlignment.Center);
-        frame.AppendChild(content);
-        var template = new ControlTemplate(typeof(Button)) { VisualTree = frame };
-        var hover = new Trigger { Property = IsMouseOverProperty, Value = true };
-        hover.Setters.Add(new Setter(OpacityProperty, 0.9, "Frame")); template.Triggers.Add(hover);
-        var disabled = new Trigger { Property = IsEnabledProperty, Value = false };
-        disabled.Setters.Add(new Setter(OpacityProperty, 0.45)); template.Triggers.Add(disabled);
-        return template;
     }
 
     private DataGridTemplateColumn AgentColumn()

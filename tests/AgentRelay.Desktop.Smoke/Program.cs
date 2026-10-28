@@ -9,6 +9,7 @@ using System.Windows.Automation;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
+using System.Windows.Shell;
 using System.Windows.Threading;
 using AgentRelay.Core;
 using AgentRelay.Desktop;
@@ -91,7 +92,7 @@ internal static class Program
         await Click(window,"Delete Agent");
         Check(service.Agents().Any(a=>a.AgentId=="agent-b") && ((Border)window.FindName("ErrorBanner")).Visibility==Visibility.Visible && ((TextBox)window.FindName("ErrorText")).Text.Contains("未完成交接"),"Removing an active Agent is blocked before any confirmation dialog");
         Check(!FindAll<TextBox>(window).Any(b=>b.Name.StartsWith("AgentEntry")||b.Name.EndsWith("SetupReply")),"Agent page has no competing setup form");
-        Check(FindAll<Button>(window).Count(b=>Equals(b.Tag,"New Agent"))==1&&FindAll<Button>(window).Any(b=>Equals(b.Tag,"One-click setup")),"The Agent page has one New Agent action, with one-click setup in its menu");
+        Check(FindAll<Button>(window).Count(b=>Equals(b.Tag,"New Agent"))==1,"The Agent page has one New Agent action");
         var rowMenu=(Panel)FindAll<Button>(window).Single(b=>Equals(b.Tag,"Edit Agent")).Parent;
         Check(rowMenu.Children.OfType<Button>().Select(b=>(string)b.Tag).SequenceEqual(new[]{"Edit Agent","Test bridge","Recheck and restore bridge","Delete Agent"}),"Each Agent's row menu holds editing, bridge testing, recovery and removal");
         window.UpdateLayout();
@@ -99,7 +100,7 @@ internal static class Program
         Check(FindAll<Button>(window).Single(b=>Equals(b.Tag,"Test bridge")).IsEnabled,"CLI test remains available to explain missing calling methods instead of silently disabling itself");
         Check(FindAll<Button>(window).Any(b=>Equals(b.Tag,"Install handoff rule"))&&FindAll<Button>(window).Any(b=>Equals(b.Tag,"Remove handoff rule")),"Agent page exposes explicit installation and removal of handoff rules");
         var count=service.Agents().Count;
-        await Modal<AgentEntryDialog>(window,"New Agent",async dialog=>
+        await NewAgentByHand(window,async dialog=>
         {
             Check(((TextBlock)window.FindName("StatusText")).Text!=UiText.Translate("Working…","zh-CN"),"Agent form reports a waiting state instead of processing during modal input");
             Expand(dialog);
@@ -116,7 +117,7 @@ internal static class Program
             Press(dialog,"CancelAgentEntry");
         });
         Check(service.Agents().Count==count,"Cancelled Agent entry writes nothing");
-        await Modal<AgentEntryDialog>(window,"New Agent",dialog=>
+        await NewAgentByHand(window,dialog=>
         {
             Expand(dialog);
             Find<TextBox>(dialog,"AgentEntryName").Text="任意节点甲";
@@ -813,25 +814,53 @@ internal static class Program
 
     private static async Task ConfirmAction(MainWindow owner,string button,bool accept)
     {
-        var handle=new System.Windows.Interop.WindowInteropHelper(owner).Handle;
-        var thread=GetWindowThreadProcessId(handle,out _);
-        var response=Task.Run(async()=>
+        var answered=AnswerMessage(owner,accept);
+        await Click(owner,button);await answered;
+    }
+
+    /// <summary>Waits for the themed confirmation the action opens and chooses OK/Yes or Cancel/No.</summary>
+    private static async Task AnswerMessage(Window owner,bool accept)
+    {
+        for(var attempt=0;attempt<200;attempt++)
         {
-            for(var attempt=0;attempt<100;attempt++)
+            var box=Application.Current.Windows.OfType<ThemedMessageBox>().FirstOrDefault(w=>w.Owner==owner&&w.IsVisible);
+            if(box is not null)
             {
-                nint dialog=0;
-                EnumThreadWindows(thread,(candidate,_)=>
-                {
-                    var className=new StringBuilder(128);GetClassName(candidate,className,className.Capacity);
-                    if(className.ToString()=="#32770"&&GetWindow(candidate,4)==handle){dialog=candidate;return false;}
-                    return true;
-                },0);
-                if(dialog!=0){SendMessage(dialog,0x111,accept?1:2,0);return;}
-                await Task.Delay(50);
+                var names=accept?new[]{"MessageOk","MessageYes"}:new[]{"MessageCancel","MessageNo"};
+                Check(FindAll<Button>(box).Any(b=>b.Name is "CaptionClose")&&WindowChrome.GetWindowChrome(box) is not null,"Confirmations use the themed window frame");
+                FindAll<Button>(box).First(b=>names.Contains(b.Name)).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+                return;
             }
-            throw new TimeoutException("Expected confirmation dialog did not appear.");
-        });
-        await Click(owner,button);await response;
+            await Task.Delay(25);
+        }
+        throw new TimeoutException("Expected confirmation dialog did not appear.");
+    }
+
+    /// <summary>"New Agent" asks how to add the Agent first; choose the manual form and exercise it.</summary>
+    private static async Task NewAgentByHand(MainWindow owner,Func<AgentEntryDialog,Task> exercise)
+    {
+        var done=new TaskCompletionSource();
+        async Task Answer()
+        {
+            var chooser=await Next<AgentSetupChoiceDialog>();
+            Check(FindAll<Button>(chooser).Any(b=>b.Name=="ChooseOneClickSetup")&&FindAll<Button>(chooser).Any(b=>b.Name=="ChooseManualSetup"),"New Agent offers one-click setup and the manual form side by side");
+            Press(chooser,"ChooseManualSetup");
+            var entry=await Next<AgentEntryDialog>();
+            try{await exercise(entry);done.SetResult();}
+            catch(Exception error){entry.Close();done.SetException(error);}
+        }
+        _=Answer();
+        await Click(owner,"New Agent");await done.Task;
+    }
+
+    private static async Task<T> Next<T>() where T:Window
+    {
+        for(var attempt=0;attempt<200;attempt++)
+        {
+            if(Application.Current.Windows.OfType<T>().FirstOrDefault(w=>w.IsVisible) is {} window)return window;
+            await Task.Delay(25);
+        }
+        throw new TimeoutException("Expected "+typeof(T).Name+" did not appear.");
     }
 
     private static void CheckGraphCliStates(Window owner)
@@ -852,12 +881,6 @@ internal static class Program
         Check(failed.Fill==owner.FindResource("DeniedBrush")&&failed.ToolTip.ToString()!.Contains("probe failed"),"Failed CLI probe has a red indicator and a test-result explanation");
     }
 
-    private delegate bool EnumThreadWindowCallback(nint window,nint state);
-    [DllImport("user32.dll")] private static extern uint GetWindowThreadProcessId(nint window,out uint process);
-    [DllImport("user32.dll")] [return:MarshalAs(UnmanagedType.Bool)] private static extern bool EnumThreadWindows(uint thread,EnumThreadWindowCallback callback,nint state);
-    [DllImport("user32.dll",EntryPoint="GetClassNameW",CharSet=CharSet.Unicode)] private static extern int GetClassName(nint window,StringBuilder className,int count);
-    [DllImport("user32.dll")] private static extern nint GetWindow(nint window,uint command);
-    [DllImport("user32.dll",EntryPoint="SendMessageW")] private static extern nint SendMessage(nint window,uint message,nint wParam,nint lParam);
     private static async Task CheckProbeProgress(MainWindow window,RelayService service,string root)
     {
         const string id="progress-agent";

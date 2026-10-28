@@ -47,7 +47,11 @@ public partial class MainWindow
         var right = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
         foreach (var control in controls)
         {
-            if (control is FrameworkElement element && element is Button or ComboBox or TextBox) element.Margin = new(8, 0, 0, 0);
+            if (control is FrameworkElement element)
+            {
+                if (element is Button or ComboBox or TextBox) element.Margin = new(8, 0, 0, 0);
+                element.VerticalAlignment = VerticalAlignment.Center;
+            }
             right.Children.Add(control);
         }
         Grid.SetColumn(right, 1); row.Children.Add(right);
@@ -59,7 +63,7 @@ public partial class MainWindow
     private Button RowAction(Grid row, string label, Func<Task> action, bool refresh = true)
     {
         var button = Add((Panel)row.Children[1], label, action, refresh);
-        button.Margin = new(8, 0, 0, 0);
+        button.Margin = new(8, 0, 0, 0); button.VerticalAlignment = VerticalAlignment.Center;
         return button;
     }
 

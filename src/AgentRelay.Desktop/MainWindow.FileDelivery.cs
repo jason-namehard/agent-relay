@@ -37,7 +37,7 @@ public partial class MainWindow
         if (progress.Delivery == "cli_unconfirmed" || task.CliFileTurn == task.ManualTurn && task.CliFileStatus is "unknown" or "failed")
             Add(actions,"Not received · Allow resending",()=>
             {
-                if (MessageBox.Show(this,T("Check the target conversation first. Allow one more CLI send only if this turn did not arrive; otherwise the Agent may do the work twice."),
+                if (ThemedMessageBox.Show(this,T("Check the target conversation first. Allow one more CLI send only if this turn did not arrive; otherwise the Agent may do the work twice."),
                         T("Not received · Allow resending"),MessageBoxButton.OKCancel,MessageBoxImage.Warning)!=MessageBoxResult.OK)
                 { reviewCancelled=true; return Task.CompletedTask; }
                 service.AllowFileHandoffResend(task.TaskId,"User confirmed the turn did not arrive",true);

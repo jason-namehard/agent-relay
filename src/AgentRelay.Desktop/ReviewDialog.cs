@@ -16,7 +16,7 @@ public sealed class ReviewDialog : Window
         FontFamily = owner.FontFamily; FontSize = 13; Resources = owner.Resources;
         Background=(Brush)owner.FindResource("PageBrush");Foreground=(Brush)owner.FindResource("TextBrush");
         SourceInitialized += (_, _) => Appearance.ApplyTitleBar(this);
-        var panel = new DockPanel { Margin = new Thickness(26, 22, 26, 20) };
+        var panel = new DockPanel { Margin = new Thickness(26, 40, 26, 20) };
         Content = panel;
         var bottom = new StackPanel(); DockPanel.SetDock(bottom, Dock.Bottom); panel.Children.Add(bottom);
         bottom.Children.Add(new TextBlock { Text = T("Approval reason"), Margin = new Thickness(0,12,0,0) });
@@ -32,5 +32,6 @@ public sealed class ReviewDialog : Window
         approve.Click += (_, _) => { Reason = reason.Text.Trim(); DialogResult = true; };
         panel.Children.Add(new TextBox { Text = preview, IsReadOnly = true, TextWrapping = TextWrapping.Wrap,
             AcceptsReturn = true, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, FontFamily = new("Consolas") });
+        ThemedChrome.ApplyToDialog(this, resizable: true);
     }
 }
