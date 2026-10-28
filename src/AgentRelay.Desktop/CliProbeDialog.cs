@@ -112,6 +112,9 @@ public sealed class CliProbeDialog : Window
 
     private void ProbeResult(CliProbe probe)
     {
+        var stamp=Note(string.Format(System.Globalization.CultureInfo.CurrentUICulture,T("Probe tested at {0}. This is a saved result, separate from the current connection check."),probe.TestedAt.ToLocalTime().ToString("g")));
+        stamp.Name=probe.Operation=="create"?"CreateProbeTestedAt":"ResumeProbeTestedAt";
+        layout.Body.Children.Add(stamp);
         var text=EntryDialogLayout.Input("Probe"+(probe.Operation=="create"?"Create":"Resume")+"Result",
             T("Marker")+": "+probe.Marker+"\n"+T("Session")+": "+probe.SessionId+"\n"+
             (probe.MachinePassed?T("Machine receipt passed"):probe.Error),true);

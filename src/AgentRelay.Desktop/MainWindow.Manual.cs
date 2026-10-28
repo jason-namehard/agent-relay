@@ -91,22 +91,16 @@ public partial class MainWindow
         if(task.HandoffPlan is {} plan)pane.Children.Add(Note(T("Planned steps")+": "+string.Join(" → ",plan.Select(AgentName))+" · "+T("Current step")+" "+(task.ManualTurn+1)+"/"+plan.Length));
         if(task.Collaboration is {} c)
         {
-            pane.Children.Add(Note(string.Format(CultureInfo.CurrentUICulture,T("Review loop · Author {0} · Reviewer {1} · Review round {2}/{3}"),
-                AgentName(c.AuthorId),AgentName(c.ReviewerId),Math.Min(c.ReviewRound,c.MaxReviewRounds),c.MaxReviewRounds)));
-            if(c.Criteria is not null)pane.Children.Add(Note(T("Acceptance criteria")+": "+c.Criteria));
-            if(c.OpenItems.Length>0)pane.Children.Add(Note(T("Open items")+":\n· "+string.Join("\n· ",c.OpenItems)));
-            if(c.Deliverable is not null)pane.Children.Add(Note(T("Deliverable")+": "+c.Deliverable));
-            if(!progress.Finished)
-            {
-                var next=c.Phase=="review"
-                    ?string.Format(CultureInfo.CurrentUICulture,T("Next: if it passes, {0} accepts; if changes are needed, {0} revises."),AgentName(c.AuthorId))
-                    :c.Phase=="accept"
-                        ?string.Format(CultureInfo.CurrentUICulture,T("Next: if {0} accepts, the task is delivered; a new change goes back to {1} for review."),AgentName(c.AuthorId),AgentName(c.ReviewerId))
-                        :string.Format(CultureInfo.CurrentUICulture,T("Next: {0} reviews the submission."),AgentName(c.ReviewerId));
-                pane.Children.Add(Note(next));
-            }
+            var round=Note(string.Format(CultureInfo.CurrentUICulture,T("Review round {0}/{1}"),
+                Math.Max(1,Math.Min(c.ReviewRound,c.MaxReviewRounds)),c.MaxReviewRounds));
+            round.Name="HandoffRoundSummary";pane.Children.Add(round);
         }
         else if(!progress.Finished)pane.Children.Add(Note(string.Format(CultureInfo.CurrentUICulture,T("Turn {0} of at most {1}"),task.ManualTurn+1,progress.MaxTurns)));
+        if(!progress.Finished)
+        {
+            var next=Note(string.Format(CultureInfo.CurrentUICulture,T("Next recipient: {0}"),AgentName(task.AwaitingAgentId??task.RecipientId)));
+            next.Name="HandoffNextRecipient";pane.Children.Add(next);
+        }
         AddSessionBindings(pane,task);
         var actions=Row(pane);
         if(!progress.Finished)
@@ -127,24 +121,31 @@ public partial class MainWindow
                 Add(actions,string.Format(CultureInfo.CurrentUICulture,T("Copy prompt for {0}"),recipient),()=>{Clipboard.SetText(FilePrompt(task));return Task.CompletedTask;},false);
             }
             AddFileDeliveryAction(actions,task,progress);
-            Add(actions,"Cancel",()=>{service.Cancel(task.TaskId,"Cancelled by user");return Task.CompletedTask;});
+            Add(actions,"Cancel",()=>ConfirmTaskCancellation(task.TaskId));
         }
         AddTaskOperatorActions(actions,task);
         Add(actions,"Open task folder",()=>{System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(Path.GetDirectoryName(task.RequestPath)!){UseShellExecute=true});return Task.CompletedTask;},false);
         var current=task.ManualCurrentFile??task.RequestPath;
-        pane.Children.Add(Note(T("Handoff file")+": "+current));
-        if(!string.IsNullOrWhiteSpace(task.ManualNextAction))pane.Children.Add(Note(task.ManualNextAction));
-        if(Path.GetExtension(current) is ".md" or ".txt" && File.Exists(current))
+        var contents=new StackPanel();
+        contents.Children.Add(Note(T("Handoff file")+": "+current));
+        if(task.Collaboration is {} content)
         {
-            var text=Output("ManualFilePreview",150);text.Text=File.ReadAllText(current);
-            pane.Children.Add(new Expander{Header=T("File preview"),Content=text});
+            if(content.Criteria is not null)contents.Children.Add(Note(T("Acceptance criteria")+": "+content.Criteria));
+            if(content.OpenItems.Length>0)contents.Children.Add(Note(T("Open items")+":\n· "+string.Join("\n· ",content.OpenItems)));
+            if(content.Deliverable is not null)contents.Children.Add(Note(T("Deliverable")+": "+content.Deliverable));
         }
+        if(!string.IsNullOrWhiteSpace(task.ManualNextAction))contents.Children.Add(Note(T("Instructions for this turn")+":\n"+task.ManualNextAction));
+        var text=Output("ManualFilePreview",150);
+        text.Text=Path.GetExtension(current).ToLowerInvariant() is ".md" or ".txt" && File.Exists(current)
+            ?File.ReadAllText(current):T("Content preview is unavailable. Open the task folder to read the file.");
+        contents.Children.Add(Note(T("Current file text")));contents.Children.Add(text);
+        pane.Children.Add(new Expander{Name="ManualFileContents",Header=T("File contents"),Content=contents});
         if(task.Collaboration is {History.Count:>0} loop)
         {
             var rounds=new StackPanel();
             foreach(var step in loop.History)rounds.Children.Add(Note(step.At.ToLocalTime().ToString("g")+" · "+AgentName(step.AgentId)+" · "+T(step.Outcome)+
                 (step.OpenItems is {} items?" · "+string.Join("；",items):"")+(step.ResultPath is null?"":" · "+step.ResultPath)));
-            pane.Children.Add(new Expander{Header=T("Review history"),Content=rounds,IsExpanded=true});
+            pane.Children.Add(new Expander{Header=T("Review history"),Content=rounds});
         }
         var history=new StackPanel();
         foreach(var entry in service.Audit(task.TaskId))history.Children.Add(Note(entry.RecordedAt.ToLocalTime().ToString("g")+" · "+entry.Event));

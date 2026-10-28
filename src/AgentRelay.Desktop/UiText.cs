@@ -386,6 +386,7 @@ public static class UiText
         DeliveryUiText.AddTo(entries);
         AgentEntryUiText.AddTo(entries);
         ProbeVisibilityUiText.AddTo(entries);
+        CompactTaskUiText.AddTo(entries);
         return entries;
     }
 }

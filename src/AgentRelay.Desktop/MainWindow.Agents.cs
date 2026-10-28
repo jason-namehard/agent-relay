@@ -108,7 +108,9 @@ public partial class MainWindow
                 {
                     details.Children.Add(Note(string.Format(System.Globalization.CultureInfo.CurrentUICulture,T("Saved failure at {0}. Automatic sends remain paused until you resolve it; use the connection check to see the current status."),block.At.ToLocalTime().ToString("g"))));
                     details.Children.Add(Note(block.Message));
-                    Add(Row(details),"I have resolved this · Allow automatic sends",()=>{service.ClearCliBlock(row.Source.AgentId);return Task.CompletedTask;});
+                    if(CanRecheckDesktopBridge(row.Source.AgentId))
+                        Add(Row(details),"Recheck and restore bridge",()=>RecheckDesktopBridge(row.Source.AgentId));
+                    else Add(Row(details),"I have resolved this · Allow automatic sends",()=>{service.ClearCliBlock(row.Source.AgentId);return Task.CompletedTask;});
                 }
             }
             if(service.Bridge(row.Source.AgentId).HostNote is {} hostNote)details.Children.Add(Note(hostNote));

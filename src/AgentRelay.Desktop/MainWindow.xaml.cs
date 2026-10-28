@@ -321,7 +321,7 @@ public partial class MainWindow : Window
             foreach(var e in service.Audit(task.TaskId))history.Children.Add(Note(e.RecordedAt.ToLocalTime().ToString("g")+" · "+DesktopLocalizedContent.NotificationEvent(e.Event,preferences.Language)));
             var more=Row(history);
             if(task.State is not (TaskState.Succeeded or TaskState.Failed or TaskState.Cancelled or TaskState.TimedOut))
-                Add(more,"Cancel",()=>{if(MessageBox.Show(this,T("Cancel this handoff? This does not stop an already running Agent."),T("Cancel"),MessageBoxButton.OKCancel)==MessageBoxResult.OK)service.Cancel(task.TaskId,"Cancelled by user");else reviewCancelled=true;return Task.CompletedTask;});
+                Add(more,"Cancel",()=>ConfirmTaskCancellation(task.TaskId));
             if(task.State is TaskState.Failed or TaskState.TimedOut or TaskState.DeliveryUnknown)
                 Add(more,"Retry",async()=>{if(MessageBox.Show(this,T("Retry may repeat a delivery or model call. Continue?"),T("Retry"),MessageBoxButton.OKCancel)==MessageBoxResult.OK)await service.RetryAsync(task.TaskId,"Retry requested by user",true);else reviewCancelled=true;});
             Add(more,"Copy diagnostics",()=>{Clipboard.SetText(RelayJson.Write(new{view,events=service.Audit(task.TaskId),delivery=service.DeliveryEvidence(task.TaskId)}));return Task.CompletedTask;},false);

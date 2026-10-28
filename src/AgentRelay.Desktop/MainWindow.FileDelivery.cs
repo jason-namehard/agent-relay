@@ -29,6 +29,8 @@ public partial class MainWindow
         {
             Add(actions,"Check Agent bridge",()=>{agentId=task.AwaitingAgentId??task.RecipientId;Go("Agents");return Task.CompletedTask;});
             Add(actions,"Copy bridge diagnostic prompt",()=>CopyBridgeDiagnostic(task.AwaitingAgentId??task.RecipientId),false);
+            if(CanRecheckDesktopBridge(task.AwaitingAgentId??task.RecipientId))
+                Add(actions,"Recheck and restore bridge",()=>RecheckDesktopBridge(task.AwaitingAgentId??task.RecipientId));
         }
         if (!demo && service.CanSendFileHandoff(task) && !sendingTasks.Contains(task.TaskId))
             Add(actions,"Send via bridge",()=>{StartCliSend(task.TaskId);return Task.CompletedTask;});

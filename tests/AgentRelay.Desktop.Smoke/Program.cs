@@ -62,6 +62,7 @@ internal static class Program
         await CheckNotificationDelivery(window,root);
         await CheckBatchTasks(window,root);
         await CheckBlockedDeliveryUi(window,root);
+        await CheckFileCancellation(window,root);
         Check(navigation.Items.Cast<ListBoxItem>().Select(i=>(string)i.Tag).SequenceEqual(new[]{"Home","Agents","Connections","Settings"}),"Exactly four main pages");
         Check(Find<DataGrid>(window,"TasksTable").Items.Count==2,"Board combines all handoffs");
         SelectTask(window,task.TaskId);
@@ -218,6 +219,7 @@ internal static class Program
         {
             Check(!service.CliExtension("agent-c")!.CanCreate,"Passing machine receipt alone does not enable CLI");
             Check(!Find<CheckBox>(dialog,"ConfirmCreateVisible").IsChecked!.Value,"Visibility is never preconfirmed");
+            Check(Find<TextBlock>(dialog,"CreateProbeTestedAt").Text.Contains("saved result"),"Probe results show their test time and remain separate from current connection health");
             Find<CheckBox>(dialog,"ConfirmCreateVisible").IsChecked=true;Press(dialog,"SaveCreateConfirmation");
             await Wait(()=>service.CliExtension("agent-c")!.CanCreate);
             Check(service.CliExtension("agent-c")!.CanCreate&&!service.CliExtension("agent-c")!.CanResume,"Visibility confirmation enables only verified new-session ability");
@@ -506,13 +508,27 @@ internal static class Program
             station.ImportManualReceipts();
         }
         Receipt("submitted");Receipt("changes_requested",["Missing the CLI changes"]);Receipt("submitted");
+        new RelayStore(station.Home).Write(s=>
+        {
+            var current=s.Task(task.TaskId);
+            current.Collaboration!.OpenItems=["LONG_REQUIREMENT: "+new string('x',400)];
+            current.ManualNextAction="LONG_NEXT_ACTION: fix and review";
+            s.Save(current);return true;
+        });
         Check(station.Status(task.TaskId).Task is {State:TaskState.Paused,PauseReason:"round_limit"},"Review loop pauses when its review budget is used up");
         Appearance.Save(station.Home,new DesktopPreferences("en",NotificationSound:"none"));
         var window=new MainWindow(station){Owner=owner};window.Show();
         await Wait(()=>((TextBlock)window.FindName("StatusText")).Text!="Working…");
         var table=Find<DataGrid>(window,"TasksTable");table.SelectedItem=table.Items.Cast<object>().Single();
         await Wait(()=>FindAll<Button>(window).Any(b=>Equals(b.Tag,"Continue with 2 more rounds")));
-        Check(FindAll<TextBlock>(window).Any(t=>t.Text.Contains("Reviewer Reviewer",StringComparison.Ordinal)&&t.Text.Contains("1/1",StringComparison.Ordinal)),"Review loop card names both roles and the round budget");
+        Check(Find<TextBlock>(window,"HandoffRoundSummary").Text.Contains("1/1")&&Find<TextBlock>(window,"HandoffNextRecipient").Text.Contains("Reviewer"),"Compact task summary shows the review round and actual next recipient");
+        var contents=Find<Expander>(window,"ManualFileContents");
+        var contentBlocks=FindAll<TextBlock>(contents).ToHashSet();
+        Check(!contents.IsExpanded&&FindAll<TextBlock>(window).Where(t=>t.Text.Contains("LONG_REQUIREMENT")||t.Text.Contains("LONG_NEXT_ACTION")||t.Text.Contains("Covers every change")).All(contentBlocks.Contains),"Long requirements and next actions appear only inside collapsed file contents");
+        Check(FindAll<Expander>(window).Single(e=>Equals(e.Header,"Review history")).IsExpanded==false,"Detailed review history stays collapsed");
+        contents.IsExpanded=true;window.UpdateLayout();
+        Check(Find<TextBox>(window,"ManualFilePreview").Text==File.ReadAllText(station.Status(task.TaskId).Task.ManualCurrentFile!),"Expanding file contents preserves the actual file body separately from metadata");
+        contents.IsExpanded=false;
         Check(!FindAll<Button>(window).Any(b=>Equals(b.Tag,"Copy prompt for Reviewer")),"Paused loop does not offer to hand the next turn on before the user decides");
         await SaveImage(window,Path.Combine(root,"Review-loop-paused.png"));
         await Click(window,"Continue with 2 more rounds");
@@ -595,6 +611,28 @@ internal static class Program
         Check(service.Tasks().All(v=>v.Task.TaskId!=active.TaskId),"User can confirm deletion of an unfinished handoff");
     }
 
+    private static async Task CheckFileCancellation(MainWindow owner,string root)
+    {
+        var service=new RelayService(Path.Combine(root,"cancel-file-task"));service.Initialize();
+        service.RegisterManual("source","fixture","Source");service.RegisterManual("target","fixture","Target");
+        var file=Path.Combine(root,"cancel-file.md");File.WriteAllText(file,"Existing work stays on disk.");
+        var task=service.CreateFileHandoff(new("source","target",file)).Task;
+        new RelayStore(service.Home).Write(s=>
+        {
+            var current=s.Task(task.TaskId);current.CliFileTurn=current.ManualTurn;current.CliFileStatus="submitting";s.Save(current);return true;
+        });
+        Appearance.Save(service.Home,new DesktopPreferences("en",NotificationSound:"none"));
+        var window=new MainWindow(service){Owner=owner};window.Show();await Task.Delay(100);SelectTask(window,task.TaskId);
+        await ConfirmAction(window,"Cancel",false);
+        Check(service.Status(task.TaskId).Task.State==TaskState.AwaitingManual,"Declining cancellation leaves an in-flight handoff unchanged");
+        await ConfirmAction(window,"Cancel",true);
+        Check(service.Status(task.TaskId).Task.State==TaskState.Cancelled&&File.Exists(file),"Confirmed cancellation ends an in-flight Relay task while keeping its files");
+        File.WriteAllText(service.ManualReceiptPath(task),RelayJson.Write(new ManualReceipt(task.TaskId,task.AttemptId,"target",0,"done",false)));
+        service.ImportManualReceipts();
+        Check(service.Status(task.TaskId).Task.State==TaskState.Cancelled,"A late receipt cannot restart a cancelled handoff");
+        window.RequestExit();
+    }
+
     private static async Task CheckBlockedDeliveryUi(MainWindow owner,string root)
     {
         var service=new RelayService(Path.Combine(root,"blocked-delivery"));service.Initialize();
@@ -626,6 +664,12 @@ internal static class Program
         await Click(window,"Check bridge setup (no model call)");
         await Click(window,"Copy bridge diagnostic prompt");
         Check(Clipboard.GetText().Contains("\"agent_id\": \"target\"")&&service.Status(task.TaskId).Task.State==TaskState.Paused&&service.CliExtension("target")!.Block is not null,"Agent diagnostics and copying leave tasks, verification and blockers unchanged");
+        var saved=service.CliExtension("target")!;
+        SaveExtension(service,saved with {Recipe=saved.Recipe with {OutputFormat="dsh-desktop",Create=new("relay-test-"+Guid.NewGuid().ToString("N")+".exe",[],null,null,new(){["DSH_HOME"]=Path.Combine(root,"missing-desktop")}),Resume=null}});
+        await Click(window,"Refresh");
+        Check(FindAll<Button>(window).Any(b=>Equals(b.Tag,"Recheck and restore bridge")),"DSH authentication blockers offer an explicit recheck-and-restore action");
+        await Click(window,"Recheck and restore bridge");
+        Check(((Border)window.FindName("ErrorBanner")).Visibility==Visibility.Visible&&service.CliExtension("target")!.Block is not null&&service.Status(task.TaskId).Task.State==TaskState.Paused,"An unsuccessful restore check keeps the blocker and does not send or continue the task");
         window.RequestExit();
     }
 

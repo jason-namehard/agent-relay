@@ -7,7 +7,7 @@
 
 A local handoff desk for people working with several AI agents. Pass a file from A to B, see who needs to act next, and finish without unnecessary back-and-forth.
 
-The current source is the `0.1.0-preview.18` release candidate; it has not been published. The download below is the published `preview.15`. The bridge and review-loop features described here require the candidate or a source build.
+The current source is the `0.1.0-preview.19` release candidate; it has not been published. The download below is the published `preview.15`. The bridge and review-loop features described here require the candidate or a source build.
 
 ## Quick start — Windows x64
 
@@ -97,6 +97,8 @@ Source identity is automatic only when the calling adapter supplies exact sessio
 Zcode may need its client restarted before CLI-created sessions or continued turns appear. A stale view is separate from delivery failure; refresh or reopen first, and do not rerun a paid probe just to refresh it. DSH desktop bridging normally appears live. The task board distinguishes sending, blocked bridges, unconfirmed delivery and unverified automatic capability. Use its leading checkboxes to mark selected tasks complete or delete them after confirmation.
 
 Select all is available on the task board. Blocked task cards, Agent details and bridge tests can copy a targeted repair prompt with the node ID and local diagnostic entry points. It excludes command parameters, environment values and host transcripts. DSH setup checks authenticate a read-only API request without starting a model turn; saved blockers remain until the user resolves them.
+
+Task summaries show the round and next recipient; work requirements live in collapsed file contents. Cancellation requires confirmation and ends Relay tracking and further delivery, while host work already started may continue. DSH authentication blockers offer an explicit recheck-and-restore action: successful checks clear the saved blocker without changing probe evidence or restarting cancelled tasks.
 
 A bridge is one of three kinds:
 - ACP;
