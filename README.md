@@ -7,7 +7,7 @@
 
 A local handoff desk for people working with several AI agents. Pass a file from A to B, see who needs to act next, and finish without unnecessary back-and-forth.
 
-The current public preview is `0.1.0-preview.22`.
+The public download is `0.1.0-preview.22`; the source contains the redesigned `0.1.0` desktop candidate.
 
 ## Quick start — Windows x64
 
@@ -47,7 +47,7 @@ Independent local and CI builds are not claimed to be byte-for-byte reproducible
 
 1. **Configure A and B** in Agents with **One-click setup** or the manual fields. CLI delivery needs a real calling method.
 2. **Choose New task** on the task board. Select A and, optionally, its source conversation (without one, turns for A are copied manually), select B, and choose a new or existing target conversation. Write the work request directly; Relay prepares the prompt and invokes the selected CLI. No preliminary handoff file or JSON is required.
-3. **Choose the collaboration.** A **Single handoff** ends when B finishes. **Keep revising until the review passes** lets you pick the author; the other Agent reviews against your acceptance criteria for up to a set number of review rounds (default 5). The reviewer requests changes with concrete `open_items` or approves; only the author's `accepted` receipt delivers the task. Optionally set a per-turn time limit and allow automatic CLI delivery.
+3. **Choose the collaboration.** A **Single handoff** ends when B finishes. **Keep revising until the review passes** lets you select the final reviewer, enter acceptance criteria or have the initiating Agent prepare them, and optionally set a review limit. The selected reviewer requests concrete changes or approves with no unresolved issues; Relay records that decision without independently verifying the work. Optionally set a per-turn time limit and allow automatic CLI delivery.
 4. **Create task.** Explicitly allow any required directions that are not enabled yet. This starts a real host call and may incur model charges. The board names the current worker, role, round and phase and updates from receipts; later turns resume the exact bound conversations. Automatic sends happen only after that Agent's CLI is verified.
 
 Running out of rounds, a turn timeout or no progress pauses the task; you continue (optionally with a note), cancel or mark it complete. Unconfirmed delivery is not automatically retried; after checking, **Not received · Allow resending** permits one more send. A missing session requires another explicit choice, never a fallback to the latest conversation. A CLI response alone does not prove the work is complete. [Session selection and limits](docs/SESSIONS.md).
@@ -55,15 +55,12 @@ Running out of rounds, a turn timeout or no progress pauses the task; you contin
 <details>
 <summary>Pass an existing file manually</summary>
 
-### A file handoff in practice
+### A manual handoff in practice
 
-1. **Configure A and B** in Agents. Choose **One-click setup**, then paste the copied prompt into a new conversation with the Agent to register. It inspects its environment and submits configuration directly. Each prompt creates a fresh registration request. **New Agent** provides separate manual fields; only a name is required.
-2. **Optionally install the handoff rule.** Choose the instruction file the host actually loads, inspect the one-line addition and confirm. Detailed instructions are read when needed; existing sessions may need to reread their instructions.
-3. **Ask A to write a file for B.** The installed rule can make A return short handoff JSON. Without a rule, append the format copied from New handoff to your request. Paste the JSON and choose **Parse and create handoff**, or select a file yourself.
-4. **Choose B's conversation.** The same collaboration options are offered; automatic delivery is off by default here. When a CLI method is configured, choose a new conversation or explicitly select an existing one. The picker refreshes only that Agent and never chooses a row for you. A clipboard handoff cannot identify A's source conversation automatically; select it once if you want CLI replies to return there.
-5. **Deliver the prompt to B.** Relay sends automatically when the task allows it, the A → B direction is enabled and B's CLI is verified. A registered but unverified method can still be sent by hand; otherwise, choose **Copy prompt for B**. The short prompt points to the file, work request and receipt template.
-6. **B writes a receipt.** While the app is open, receipt file events update the task. Startup and Refresh also read outstanding receipts; no manual reply import is required for this workflow.
-7. **Continue until done.** In a single handoff, `done` with `needs_reply: false` ends the task, but cannot also request further work in `next_action`; after four turns the task pauses for your decision. In a review loop the receipt's `outcome` drives the phases until the author accepts. Relay resumes the bound conversation or offers the prompt for the other agent. Tasks created by earlier versions with a fixed handoff plan still finish under that plan.
+1. Register both Agents using **One-click setup** or the manual fields.
+2. Choose **New task → New manual transfer task**, select sender and recipient, and enter the work request. Copy the complete prompt and send it to the sender.
+3. Paste the sender's JSON response into Relay and parse it to create the task; alternatively, choose an existing file.
+4. Copy the next prompt to the indicated recipient. Relay reads its receipt while running and on refresh. Continue when further work is needed; the task ends only when the whole task is explicitly complete.
 
 While an Agent is processing, the board tells you to wait for its receipt. A CLI submission is recorded once per turn; if delivery is unconfirmed, inspect the target session before sending manually. Within the same task attempt, later turns reuse each Agent's exact bound session ID. A missing session stops automatic delivery and asks for another explicit choice; Relay never falls back to the latest conversation. [Session selection and limits](docs/SESSIONS.md).
 
@@ -88,7 +85,7 @@ GUI/notifications are Windows x64. Core CLI/MCP have Windows/Linux CI coverage a
 
 ### Agent setup and rule removal
 
-The Agents toolbar contains **New Agent**, **Edit Agent**, **Delete Agent**, **Test bridge** and **One-click setup**. Setup inspects CLI help and non-secret settings, reads the latest node directory, then submits through `agent setup --manifest` and imports a calling method when available. New setup never targets the selected node's ID. Edit changes the node you selected. If the local interface cannot run, use the manual fields rather than pasting a configuration block into the GUI.
+The Agents page offers **One-click setup** in the **New Agent** menu; each Agent row has edit, delete, bridge test and recovery actions. Setup inspects CLI help and non-secret settings, reads the latest node directory, then submits through `agent setup --manifest` and imports a calling method when available. New setup never targets the selected node's ID. Edit changes the node you selected. If the local interface cannot run, use the manual fields rather than pasting a configuration block into the GUI.
 
 Relay adapts supported native JSON, JSONL and final text outputs; the host does not have to emit Relay's private receipt format. Sending through CLI by hand needs only a registered method and an enabled direction. Automatic delivery also needs the task's opt-in and a verified capability: a passing probe (including a marker file the Agent writes) with visibility confirmation, or one real handoff turn whose receipt the Agent wrote. Login refusal, a missing model or missing tool permission blocks automatic sends for that Agent until you choose **I have resolved this · Allow automatic sends**. Enable the desired direction in Connections after configuring its command. Resuming an existing conversation requires an exact binding, a fresh host-store check and a matching session ID in the response. A green node dot means a method is recorded; its tooltip states diagnostic status. Red means a failed probe, grey means no method. A session log or CLI executable path alone is not a complete calling method.
 

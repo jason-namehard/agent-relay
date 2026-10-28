@@ -1,30 +1,20 @@
 # Agent Relay 发布包
 
-完整解压 Windows 包后，正式运行 `gui/AgentRelay.Desktop.exe` 配置真实 Agent。`TryDemo.cmd` 提供隔离样本，会禁止真实 CLI 调用；需要保留演示中登记的数据，可在设置转为正式使用。
+Windows 安装版可通过开始菜单启动；便携包解压后运行 `gui/AgentRelay.Desktop.exe`。`TryDemo.cmd` 是隔离演示，不会调用真实 Agent。安装版卸载只移除程序文件，保留中转站和用户数据。
 
-CLI 最短操作：分别配置 A、B → 看板“新建任务” → 选择来源及目标会话 → 直接填写工作要求 → 按需选择持续修改与验收（作者、验收标准、验收轮数）和自动投递 → 明确允许所需方向 → 创建并发送。软件准备任务提示，不要求先生成文件或 JSON。实际调用可能产生模型费用。
+在任务页面选择“新建任务”，再选自动或手动传递。自动传递直接填写工作要求、选择会话；持续验收可选择最终验收方，标准可手动填写或由发起方 Agent 拟定，也可以不设验收次数上限。最终验收方通过且无未解决问题时任务完成。Relay 发送标准并记录 Agent 回执，不独立验证工作质量；自动调用可能产生模型费用。
 
-已有文件使用“新建交接”：粘贴短 JSON 或自己选文件，再通过启用的 CLI 路线或手动复制投递。可安装一句话按需规则，帮助 Agent 输出交接格式。回执推动状态：单次交接默认最多 4 轮；持续修改与验收在作者确认接受后交付。轮数用完、单轮超时或无进展时暂停，等你选择继续、取消或标记完成。格式见 `CONFIGURATION_ASSISTANT.md`，详细上手见 `GETTING_STARTED.md`。
+手动传递先填写工作正文，复制完整提示词给发送方，将返回的 JSON 粘贴并解析创建，随后按看板提示传给当前接收方。需要继续时可多轮往返，整项任务明确完成后才结束。也可以选择已有文件。
 
 Agent 管理只有一个用户名称；一键配置复制的是独立新建请求，不覆盖当前选中节点。编辑已有节点请使用“编辑 Agent”。CLI 调用配置为分区字段，支持原生 JSON/JSONL/文本适配；导入方案不启动模型。手动 CLI 发送不要求测试；自动投递要求探针（含写文件检查）通过并确认可见，或一次真实交接写回了回执。真实调用可能产生费用；已有会话必须明确选择，执行前核实存储，不能用最近会话替代。
 
-规则安装只在用户确认后修改所选宿主指令文件，常驻一行仍占少量上下文。删除便携文件夹前先在设置移除全部规则，或用 `guidance remove --all`；直接删除不会执行卸载清理。
+规则安装只在用户确认后修改所选宿主指令文件，常驻一行仍占少量上下文。如果不再使用交接规则，请先在设置移除，或用 `guidance remove --all`；卸载不会自动修改宿主指令文件。
 
-GUI/通知自带运行库；CLI 和 `mcp/relay-mcp.dll` 需要 .NET 10 runtime。发布包不包含目标 Agent、账号或桥接程序。JSON 配置不等于可调用接口，真实 CLI 探针可能产生费用。
+Windows 安装版自带运行库；便携 CLI/MCP 包需要 .NET 10 runtime。发布包不包含目标 Agent、账号或桥接程序。JSON 配置不等于可调用接口，真实 CLI 探针可能产生费用。
 
 任务详情允许取消、确认删除记录以及人工标记完成。删除不直接删文件，后续仍可按保留期清理；人工完成不验证 Agent 的工作，也不停止已运行的 Agent。CLI 结果不确定时先检查真实会话，不重复发送同一轮。
 
-在解压目录用 PowerShell：
-
-```powershell
-$relay = Join-Path $PWD 'relay.dll'
-$dataRoot = Join-Path $PWD '.relay'
-dotnet $relay --home $dataRoot init
-dotnet $relay --help
-.\gui\AgentRelay.Desktop.exe --home $dataRoot
-```
-
-原 CLI/MCP 消息交接、自动投递和精确会话路线仍保留，旧任务不会自动转为新文件任务。MCP 由宿主启动：`dotnet .\mcp\relay-mcp.dll --home <目录> --agent <已登记ID>`，不实现 `--help`。高级说明见公开仓库的 [README](https://github.com/jason-namehard/agent-relay#readme)。
+Windows 安装版可在安装目录用 PowerShell 调用 `./relay.exe --help`，MCP 入口是 `mcp/relay-mcp.exe`。便携 CLI/MCP 包仍使用 `dotnet relay.dll` 和 `dotnet mcp/relay-mcp.dll`，需要 .NET 10 runtime；MCP 不实现 `--help`。详细上手见 `GETTING_STARTED.md`。
 
 文件回执位于任务的隐藏 `.relay` 子目录，GUI 打开时观察事件，启动和刷新补读。所有进程关闭后无后台监控。迁移要求没有未完成任务，复制文件与账本后切换，旧站备份不自动清理；无 pending 的迁移校验不会假称成功。
 

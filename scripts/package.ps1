@@ -8,7 +8,7 @@ $ErrorActionPreference='Stop'
 $projectRoot=Split-Path -Parent $PSScriptRoot
 [xml]$properties=Get-Content -LiteralPath (Join-Path $projectRoot 'Directory.Build.props') -Raw
 $version=[string]$properties.Project.PropertyGroup.Version
-if ($version -notmatch '^\d+\.\d+\.\d+-preview\.\d+$') { throw 'Expected an explicit preview version in Directory.Build.props' }
+if ($version -notmatch '^\d+\.\d+\.\d+(-preview\.\d+)?$') { throw 'Expected an explicit release or preview version in Directory.Build.props' }
 if ($env:GITHUB_REF_TYPE -eq 'tag' -and $env:GITHUB_REF_NAME -ne "v$version") { throw 'Release tag does not match the source version' }
 $windows=$Flavor -eq 'Windows'
 if ($windows -and -not $IsWindows) { throw 'Windows packages must be built on Windows' }

@@ -14,7 +14,6 @@ namespace AgentRelay.Desktop;
 
 public partial class MainWindow
 {
-    private bool selectingTasks;
     private string taskFilter = "all";
     private string taskQuery = "";
     private readonly Dictionary<string, string> taskTitles = new(StringComparer.Ordinal);
@@ -33,9 +32,6 @@ public partial class MainWindow
         layout.Children.Add(list);
         var tools = new DockPanel { Margin = new(0, 0, 0, 10) };
         DockPanel.SetDock(tools, Dock.Top); list.Children.Add(tools);
-        var select = Add(tools, selectingTasks ? "Done" : "Select tasks", () => { selectingTasks = !selectingTasks; return Task.CompletedTask; });
-        select.Tag = "Select tasks"; Styled(select, "GhostButtonStyle"); select.Margin = new(8, 0, 0, 0);
-        DockPanel.SetDock(select, Dock.Right);
         var search = SearchBox("TaskSearch", "Search Agents, tasks or conversation IDs");
         tools.Children.Add(search.Host);
 
@@ -234,7 +230,7 @@ public partial class MainWindow
         left.Children.Add(RouteLine(task.RequesterId, task.RecipientId, 24, 16));
         left.Children.Add(Muted(row.Title, 12.5, new(0, 6, 0, 0)));
         head.Children.Add(left);
-        var pill = Pill(row.State, row.Tone); pill.Margin = new(12, 2, 0, 0); pill.VerticalAlignment = VerticalAlignment.Top; pill.MaxWidth = 260;
+        var pill = Pill(row.State, row.Tone); pill.Margin = new(12, 2, 0, 0); pill.VerticalAlignment = VerticalAlignment.Top; pill.MaxWidth = 140;
         Grid.SetColumn(pill, 1); head.Children.Add(pill);
         section.Children.Add(head);
     }

@@ -62,6 +62,7 @@ internal static class Program
         await CheckModelDefaults(window,root);
         await CheckNotificationDelivery(window,root);
         await CheckBatchTasks(window,root);
+        await CheckLongAgentNames(window,root);
         await CheckBlockedDeliveryUi(window,root);
         await CheckFileCancellation(window,root);
         Check(navigation.Items.Cast<ListBoxItem>().Select(i=>(string)i.Tag).SequenceEqual(new[]{"Home","Agents","Connections","Settings"}),"Exactly four main pages");
@@ -741,8 +742,7 @@ internal static class Program
         }
         bool ClearShown()=>Find<Button>(window,"ClearTaskSelection").Visibility==Visibility.Visible;
         SelectTask(window,unselected.TaskId);window.UpdateLayout();
-        Check(!FindAll<CheckBox>(window).Any(c=>AutomationProperties.GetAutomationId(c).StartsWith("SelectTask_",StringComparison.Ordinal)),"Task checkboxes appear only after choosing Select");
-        await Click(window,"Select tasks");
+        Check(FindAll<CheckBox>(window).Any(c=>AutomationProperties.GetAutomationId(c).StartsWith("SelectTask_",StringComparison.Ordinal)),"Task checkboxes are visible without entering a separate selection mode");
         var table=Find<DataGrid>(window,"TasksTable");
         Check(table.Columns[0] is DataGridTemplateColumn,"Task board has a leading checkbox column for batch management");
         ToggleChoice(first.TaskId);
@@ -780,6 +780,34 @@ internal static class Program
         await Click(window,"Refresh");
         Check(Find<WrapPanel>(window,"TaskBatchActions").Visibility==Visibility.Collapsed&&!ClearShown(),
             "Refresh discards selections for tasks removed by another client");
+        window.RequestExit();
+    }
+
+    private static async Task CheckLongAgentNames(MainWindow owner,string root)
+    {
+        var service=new RelayService(Path.Combine(root,"long-agent-names"));service.Initialize();
+        var first="Writer agent with a long descriptive name 1234567890";
+        var second="Reviewer agent with a long descriptive name 1234567890";
+        service.RegisterManual("long-a","fixture",first);service.RegisterManual("long-b","fixture",second);
+        var path=Path.Combine(root,"long-agent-work.md");File.WriteAllText(path,"Review the work.");
+        service.CreateFileHandoff(new("long-a","long-b",path));
+        Appearance.Save(service.Home,new DesktopPreferences("en",NotificationSound:"none"));
+        var window=new MainWindow(service){Owner=owner,Width=960,Height=620};window.Show();
+        await Wait(()=>((TextBlock)window.FindName("StatusText")).Text!="Working…");window.UpdateLayout();
+        void CheckNames(string page)
+        {
+            foreach(var (id,name) in new[]{("long-a",first),("long-b",second)})
+            {
+                var labels=FindAll<TextBlock>(window).Where(t=>AutomationProperties.GetAutomationId(t).StartsWith("RouteName_",StringComparison.Ordinal)&&t.Text==name).ToArray();
+                Check(labels.Length>0&&labels.All(label=>label.TextWrapping==TextWrapping.Wrap&&label.ActualWidth>0&&label.ActualHeight>label.FontSize*1.8),
+                    page+" wraps the complete Agent name at the minimum window width");
+            }
+        }
+        CheckNames("Task details");
+        var navigation=(ListBox)window.FindName("Navigation");
+        navigation.SelectedItem=navigation.Items.Cast<ListBoxItem>().Single(i=>(string)i.Tag=="Connections");
+        await Wait(()=>FindAll<TextBlock>(window).Any(t=>AutomationProperties.GetAutomationId(t).StartsWith("RouteName_",StringComparison.Ordinal)));window.UpdateLayout();
+        CheckNames("Connection details");
         window.RequestExit();
     }
 

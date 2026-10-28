@@ -132,19 +132,26 @@ public partial class MainWindow
     }
 
     /// <summary>"Avatar Name → Avatar Name", the way every handoff is named.</summary>
-    private StackPanel RouteLine(string from, string to, double size = 22, double fontSize = 13.5)
+    private Grid RouteLine(string from, string to, double size = 22, double fontSize = 13.5)
     {
-        var row = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
-        void Agent(string id)
+        var row = new Grid { VerticalAlignment = VerticalAlignment.Center };
+        foreach (var width in new[] { GridLength.Auto, new GridLength(1, GridUnitType.Star), GridLength.Auto, GridLength.Auto, new GridLength(1, GridUnitType.Star) })
+            row.ColumnDefinitions.Add(new ColumnDefinition { Width = width });
+        void Agent(string id, int avatarColumn)
         {
-            row.Children.Add(Avatar(id, size));
-            row.Children.Add(new TextBlock { Text = AgentName(id), FontSize = fontSize, FontWeight = FontWeights.SemiBold, Margin = new(7, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center });
+            var avatar = Avatar(id, size); Grid.SetColumn(avatar, avatarColumn); row.Children.Add(avatar);
+            var name = AgentName(id);
+            var label = new TextBlock { Text = name, FontSize = fontSize, FontWeight = FontWeights.SemiBold, Margin = new(7, 0, 0, 0),
+                TextWrapping = TextWrapping.Wrap, VerticalAlignment = VerticalAlignment.Center, ToolTip = name };
+            AutomationProperties.SetAutomationId(label, "RouteName_" + from + "_" + to + "_" + id);
+            Grid.SetColumn(label, avatarColumn + 1); row.Children.Add(label);
         }
-        Agent(from);
+        Agent(from, 0);
         var arrow = Icons.Create("Arrow", size: 15, brushKey: "FaintBrush");
         arrow.Margin = new(9, 0, 9, 0);
+        Grid.SetColumn(arrow, 2);
         row.Children.Add(arrow);
-        Agent(to);
+        Agent(to, 3);
         return row;
     }
 

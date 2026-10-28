@@ -63,7 +63,12 @@ jobs:
             echo "Release $RELEASE_TAG already exists; preserving its notes and assets."
             exit 0
           fi
+          if [[ "$RELEASE_TAG" == *-preview.* ]]; then
+            release_flags=(--prerelease --latest=false)
+          else
+            release_flags=(--latest)
+          fi
           gh release create "$RELEASE_TAG" release-assets/*.zip \
-            --verify-tag --prerelease --latest=false \
+            --verify-tag "${release_flags[@]}" \
             --title "Agent Relay $RELEASE_TAG" \
             --notes-file "docs/releases/$RELEASE_TAG.md"

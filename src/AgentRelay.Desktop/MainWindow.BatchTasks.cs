@@ -91,7 +91,7 @@ public partial class MainWindow
 
         void UpdateActions()
         {
-            actions.Visibility=rows.Length==0||!selectingTasks?Visibility.Collapsed:Visibility.Visible;
+            actions.Visibility=rows.Length==0?Visibility.Collapsed:Visibility.Visible;
             all.IsEnabled=selectedTaskIds.Count<rows.Length;
             complete.Visibility=delete.Visibility=selectedTaskIds.Count==0?Visibility.Collapsed:Visibility.Visible;
             count.Text=string.Format(CultureInfo.CurrentUICulture,T("Selected: {0}"),selectedTaskIds.Count);
@@ -125,7 +125,7 @@ public partial class MainWindow
         cellStyle.Setters.Add(new Setter(Control.PaddingProperty,new Thickness(0)));
         cellStyle.Setters.Add(new Setter(AutomationProperties.NameProperty,new Binding(nameof(TaskRow.Route)){StringFormat=T("Select task: {0}")}));
         table.Columns.Insert(0,new DataGridTemplateColumn{Header=T("Select"),Width=34,CanUserResize=false,CanUserSort=false,
-            CellStyle=cellStyle,CellTemplate=new DataTemplate{VisualTree=checkbox},Visibility=selectingTasks?Visibility.Visible:Visibility.Collapsed});
+            CellStyle=cellStyle,CellTemplate=new DataTemplate{VisualTree=checkbox}});
     }
 
     private Task ApplyTaskBatch(TaskRow[] rows,bool delete)
