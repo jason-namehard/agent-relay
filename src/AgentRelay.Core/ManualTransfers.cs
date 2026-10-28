@@ -6,7 +6,7 @@ namespace AgentRelay.Core;
 public sealed record ManualTransferDraft(string From, string To, string File, string Message = "");
 public sealed record ManualReceipt(string TaskId, string AttemptId, string Sender, int Turn, string Status,
     bool? NeedsReply = null, string? ResultFile = null, string? NextAction = null, string? Outcome = null,
-    string[]? OpenItems = null, string? Deliverable = null,bool? TaskComplete = null);
+    string[]? OpenItems = null, string? Deliverable = null,bool? TaskComplete = null,string? AcceptanceCriteria = null);
 public sealed record ManualReceiptError(string TaskId, string Path, string Message);
 public sealed record ManualReceiptImportResult(string[] UpdatedTaskIds, ManualReceiptError[] Errors);
 
@@ -196,7 +196,7 @@ public sealed partial class RelayService
         s.Notify(task, "manual_turn_" + receipt.Turn + "_" + receipt.Status,
             task.State == TaskState.AwaitingReply ? "请将交接交给 " + (Agent(s, task.AwaitingAgentId!).DisplayName ?? task.AwaitingAgentId) + " 继续处理。" :
             task.State == TaskState.Paused ? task.PauseMessage! :
-            task.State == TaskState.Succeeded ? task.Collaboration is null ? "本次交接已结束，无需继续传递。" : "作者已确认接受并记录交付，协作已完成。" :
+            task.State == TaskState.Succeeded ? task.Collaboration is null ? "本次交接已结束，无需继续传递。" : "验收已完成，协作已结束。" :
             task.ErrorMessage ?? "交接进度已更新。", Now);
         return true;
     });
@@ -275,7 +275,7 @@ public sealed partial class RelayService
         var overdue = !Terminal(task.State) && !paused && task.DeadlineAt <= Now;
         var finished = Terminal(task.State);
         return new(task, overdue, finished ? "inspect" : paused ? "decide_paused_handoff" : "copy_file_handoff", finished ?
-            task.State == TaskState.Succeeded ? task.Collaboration?.Deliverable is { } delivered ? "作者已确认接受并交付：" + delivered : "交接已完成，无需继续传递。" :
+            task.State == TaskState.Succeeded ? task.Collaboration?.Deliverable is { } delivered ? "验收完成，已交付：" + delivered : "交接已完成，无需继续传递。" :
             task.ErrorMessage ?? "交接已结束。" : paused ? task.PauseMessage! :
             $"有文件交接给你。请读取 {Path.Combine(Path.GetDirectoryName(ManualReceiptPath(task))!, "context.json")}，完成其中要求并写回执，无需额外寒暄或确认消息。");
     }

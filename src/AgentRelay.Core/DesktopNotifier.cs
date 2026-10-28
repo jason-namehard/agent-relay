@@ -80,7 +80,7 @@ public sealed partial class RelayService
         };
         var instruction=task.State switch
         {
-            TaskState.Succeeded=>task.Collaboration?.Deliverable is {} delivered?"作者已确认接受并交付："+delivered:"本次任务已完成，无需继续传递。",
+            TaskState.Succeeded=>task.Collaboration?.Deliverable is {} delivered?"验收完成，已交付："+delivered:"本次任务已完成，无需继续传递。",
             TaskState.Paused=>task.PauseMessage??"请打开任务决定是否继续。",
             TaskState.Failed or TaskState.TimedOut=>task.ErrorMessage??"请打开任务查看处理原因。",
             TaskState.Cancelled=>"用户已取消此交接。",

@@ -16,6 +16,9 @@ public static class CliFailureDiagnostics
     {
         // These are known external host diagnostics. Keep full output in the probe's diagnostic detail.
         var output = process.Error + "\n" + process.Output;
+        if (recipe is not null && CliRecipes.OutputFormatFor(recipe) == "dsh-desktop" &&
+            process.Error.StartsWith("DSH desktop prompt accepted; observation failed: ", StringComparison.Ordinal))
+            return new("delivery_unconfirmed", "DSH 已接受本轮请求，但 Relay 未能确认执行结果。请检查目标会话和任务回执，不要重复发送。原始错误：" + process.Error, false);
         if (output.Contains("Select a model before", StringComparison.OrdinalIgnoreCase))
             return new("model_not_selected", "目标 CLI 尚未选择可用模型。请先在宿主选择默认模型，或在任务中选择已有且已配置模型的会话继续。Relay 不会猜测模型；原始错误见 CLI 诊断详情。", true);
         // Some hosts print the refusal and still exit 0, so the exit code cannot rule this out.
@@ -27,7 +30,7 @@ public static class CliFailureDiagnostics
                 // Our desktop client emits this controlled 401 message with listener metadata, never cookie or response content.
                 var diagnostic=process.Error.Contains("DSH 桌面拒绝了 Relay 的登录（401）",StringComparison.Ordinal)
                     ? "\n"+(process.Error.Length>8192?process.Error[..8192]:process.Error):"";
-                return new("auth_required", "DSH 桌面曾拒绝本机接口认证，自动发送已暂停。请先检查当前连接和桌面桥接方案，确认处理后再解除阻塞。此方案不需要另行登录 headless CLI。"+diagnostic, true);
+                return new("auth_required", "DSH 桌面曾拒绝本机接口认证，自动发送已暂停。请先检查当前连接和桌面桥接方案；连接检查通过后可重新检测并解除阻塞。此方案不需要另行登录 headless CLI。"+diagnostic, true);
             }
             return new("auth_required", "目标 CLI 没有可用的登录。桌面应用的登录不一定能被命令行使用，需要为该 CLI 单独登录" +
                 (string.IsNullOrWhiteSpace(recipe?.Login) ? "。" : "：在终端运行 " + recipe.Login + " 并按提示完成。") +

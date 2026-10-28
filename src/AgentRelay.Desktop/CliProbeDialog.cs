@@ -98,7 +98,7 @@ public sealed class CliProbeDialog : Window
 
     private static string VisibilityAdvice(CliRecipe recipe)=>CliRecipes.OutputFormatFor(recipe) switch
     {
-        "zcode-json" or "zcode-jsonl"=>"Zcode may show CLI-created sessions and continued turns only after its client restarts. First try refreshing the session list or reopening the conversation. If it is still missing, save your work and restart Zcode. A stale view does not mean the call failed; do not rerun the probe just to refresh it.",
+        "zcode-json" or "zcode-jsonl"=>"Zcode can keep an old conversation in memory after Relay writes to it. Switch to another conversation and reopen it after about 11 minutes, or save your work and restart Zcode. An old view does not mean the call failed; do not repeat the delivery just to refresh it.",
         "dsh-desktop"=>"The DSH desktop bridge runs inside the open DSH client, so new sessions and continued turns normally appear without restarting. Check the returned session ID and refresh or reopen that conversation if needed. Do not restart DSH while a turn is running.",
         _=>"A successful machine receipt does not confirm that the host's desktop has refreshed. For new and continued sessions, refresh the session list or reopen the conversation; if needed, save your work and restart that client. A missing marker in a stale view is not a reason to run the probe again."
     };

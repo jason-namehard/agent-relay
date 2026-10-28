@@ -66,13 +66,29 @@ public sealed class CliHandoffCreationTests
     {
         foreach(var request in new[]{Request() with {TurnTimeoutMinutes=0},
             Request() with {Collaboration=new("unregistered")},
-            Request() with {Collaboration=new("agent-b",MaxReviewRounds:0)}})
+            Request() with {Collaboration=new("agent-b",MaxReviewRounds:-1)}})
         {
             Assert.ThrowsExactly<RelayException>(()=>service.CreateCliHandoff(request));
             Assert.IsEmpty(service.Tasks());
             Assert.IsEmpty(service.ConnectionPermissions());
             Assert.IsFalse(Directory.Exists(Path.Combine(service.Home,".cli-drafts")));
         }
+    }
+
+    [TestMethod]
+    public void AutoCriteriaWithoutSourceConversationWaitsForManualInitiatorAndThenRoutesToRecipient()
+    {
+        var request=Request() with {OriginSessionId=null,OriginCwd=null,
+            Collaboration=new("agent-b",MaxReviewRounds:0,GenerateCriteria:true,ReviewerFinal:true)};
+        var task=service.CreateCliHandoff(request).Task;
+        Assert.AreEqual("agent-a",task.AwaitingAgentId);Assert.AreEqual("criteria",task.Collaboration!.Phase);
+        Assert.IsFalse(service.CanSendFileHandoff(task));
+        var receipt=new ManualReceipt(task.TaskId,task.AttemptId,"agent-a",0,"done",Outcome:"criteria_ready",AcceptanceCriteria:"The requested changes pass their tests.");
+        File.WriteAllText(service.ManualReceiptPath(task),RelayJson.Write(receipt));
+        Assert.IsEmpty(service.ImportManualReceipts().Errors);
+        task=service.Status(task.TaskId).Task;
+        Assert.AreEqual("agent-b",task.AwaitingAgentId);Assert.AreEqual("implement",task.Collaboration!.Phase);
+        Assert.IsTrue(service.CanSendFileHandoff(task));
     }
 
     private async Task<(int Code,JsonElement Json)> Invoke(params string[] arguments)

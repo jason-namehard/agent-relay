@@ -1,6 +1,7 @@
 namespace AgentRelay.Core;
 
-public sealed record CollaborationOptions(string AuthorId, string? Criteria = null, int MaxReviewRounds = 5);
+public sealed record CollaborationOptions(string AuthorId, string? Criteria = null, int MaxReviewRounds = 5,
+    bool GenerateCriteria = false, bool ReviewerFinal = false);
 public sealed record FileHandoffOptions(CollaborationOptions? Collaboration = null, bool AutoDeliver = false,
     int? TurnTimeoutMinutes = null,bool ManualContinuous = false);
 
@@ -12,6 +13,8 @@ public sealed class CollaborationRecord
     public required string AuthorId { get; set; }
     public required string ReviewerId { get; set; }
     public string? Criteria { get; set; }
+    public bool GenerateCriteria { get; set; }
+    public bool ReviewerFinal { get; set; }
     public int MaxReviewRounds { get; set; }
     // implement → review → (revise → review)* → accept → delivered
     public required string Phase { get; set; }
@@ -34,6 +37,7 @@ public sealed partial class RelayService
 
     internal static string[] AllowedOutcomes(string phase) => phase switch
     {
+        "criteria" => ["criteria_ready"],
         "implement" or "revise" => ["submitted"],
         "review" => ["changes_requested", "approved"],
         "accept" => ["accepted", "submitted"],
@@ -49,8 +53,8 @@ public sealed partial class RelayService
         if (options.Collaboration is not { } collaboration) return;
         if (collaboration.AuthorId != requesterId && collaboration.AuthorId != recipientId)
             throw new RelayException("collaboration_author", "作者必须是本任务的发送方或接收方。");
-        if (collaboration.MaxReviewRounds is < 1 or > MaxReviewRounds)
-            throw new RelayException("collaboration_rounds", $"验收轮数为 1–{MaxReviewRounds}。");
+        if (collaboration.MaxReviewRounds is < 0 or > MaxReviewRounds)
+            throw new RelayException("collaboration_rounds", $"验收轮数为 0–{MaxReviewRounds}，0 表示不设上限。");
     }
 
     public TaskView ConfigureFileHandoff(string taskId, FileHandoffOptions options) => store.Write(s =>
@@ -60,6 +64,7 @@ public sealed partial class RelayService
             task.ManualReceiptJson is not null || task.CliFileTurn is not null || task.HandoffPlan is not null)
             throw new RelayException("handoff_options_started", "协作方式只能在首次投递和回执之前设置。");
         ValidateFileHandoffOptions(options, task.RequesterId, task.RecipientId);
+        task.AwaitingAgentId = task.RecipientId;
         if (options.Collaboration is { } collaboration)
         {
             var reviewer = collaboration.AuthorId == task.RequesterId ? task.RecipientId : task.RequesterId;
@@ -68,11 +73,13 @@ public sealed partial class RelayService
             {
                 AuthorId = collaboration.AuthorId, ReviewerId = reviewer,
                 Criteria = string.IsNullOrWhiteSpace(collaboration.Criteria) ? null : collaboration.Criteria.Trim(),
+                GenerateCriteria = collaboration.GenerateCriteria, ReviewerFinal = collaboration.ReviewerFinal,
                 MaxReviewRounds = collaboration.MaxReviewRounds,
-                Phase = reviewFirst ? "review" : "implement", ReviewRound = reviewFirst ? 1 : 0,
+                Phase = collaboration.GenerateCriteria ? "criteria" : reviewFirst ? "review" : "implement", ReviewRound = reviewFirst ? 1 : 0,
                 // When the sender already holds the work, the original request file is the first submission.
                 SubmissionPath = reviewFirst ? task.RequestPath : null
             };
+            if (collaboration.GenerateCriteria) task.AwaitingAgentId = task.RequesterId;
         }
         else task.Collaboration = null;
         task.AutoDeliver = options.AutoDeliver;
@@ -212,6 +219,16 @@ public sealed partial class RelayService
         var author = c.AuthorId;
         switch (receipt.Outcome)
         {
+            case "criteria_ready":
+            {
+                if (string.IsNullOrWhiteSpace(receipt.AcceptanceCriteria))
+                    throw new RelayException("collaboration_criteria_required", "请在 acceptance_criteria 中填写具体、可检查的验收标准。");
+                c.Criteria = receipt.AcceptanceCriteria.Trim();
+                Record("criteria_ready", null);
+                c.Phase = c.ReviewerId == task.RecipientId ? "review" : "implement";
+                AdvanceFileHandoff(s, task, task.RecipientId, "验收标准已由发起方拟定，请继续处理原任务。");
+                break;
+            }
             case "submitted":
             {
                 if (string.IsNullOrWhiteSpace(receipt.ResultFile))
@@ -223,7 +240,7 @@ public sealed partial class RelayService
                 c.SubmissionPath = artifact.Path; c.ApprovedSubmissionPath = null; c.OpenItems = items;
                 c.ReviewRound++; c.Phase = "review";
                 AdvanceFileHandoff(s, task, c.ReviewerId, receipt.NextAction ?? "请按验收标准检查作者的最新提交。");
-                if (c.ReviewRound > c.MaxReviewRounds)
+                if (c.MaxReviewRounds > 0 && c.ReviewRound > c.MaxReviewRounds)
                     PauseFileHandoff(s, task, "round_limit", $"已用完 {c.MaxReviewRounds} 轮验收，最新提交尚未复验。请决定追加轮数继续、取消或人工标记完成。", TaskState.AwaitingReply);
                 else if (unchanged)
                     PauseFileHandoff(s, task, "no_progress", "作者本轮提交的文件与上一版完全相同，自动传递已暂停。请确认是否仍交给验收者复验。", TaskState.AwaitingReply);
@@ -250,6 +267,13 @@ public sealed partial class RelayService
                 Record("approved", KeepReceiptResult(s, task, receipt.ResultFile)?.Path);
                 c.ApprovedSubmissionPath = c.SubmissionPath ?? task.RequestPath; c.OpenItems = []; c.Phase = "accept";
                 task.ManualCurrentFile = c.ApprovedSubmissionPath;
+                if (c.ReviewerFinal)
+                {
+                    c.Deliverable = c.ApprovedSubmissionPath;
+                    task.State = TaskState.Succeeded;
+                    s.Event(task, "collaboration.delivered", receipt.Sender, Now, c.Deliverable);
+                    break;
+                }
                 AdvanceFileHandoff(s, task, author, receipt.NextAction ?? "验收已通过。请核对通过的版本，确认接受并写明交付物。");
                 break;
             }

@@ -59,6 +59,48 @@ public sealed class CollaborationTests
     }
 
     [TestMethod]
+    public void AgentGeneratedCriteriaMustBeReceivedBeforeUnboundedReviewerFinalLoop()
+    {
+        task=service.ConfigureFileHandoff(task.TaskId,new(new CollaborationOptions("agent-b",MaxReviewRounds:0,GenerateCriteria:true,ReviewerFinal:true))).Task;
+        Assert.AreEqual("criteria",task.Collaboration!.Phase);Assert.AreEqual("agent-a",task.AwaitingAgentId);
+        Assert.IsFalse(service.CanSendFileHandoff(task));
+        service.FileHandoffPrompt(task);
+        var context=File.ReadAllText(Path.Combine(Path.GetDirectoryName(service.ManualReceiptPath(task))!,"context.json"));
+        StringAssert.Contains(context,"acceptance_criteria");StringAssert.Contains(context,"criteria_ready");
+        using(var initial=JsonDocument.Parse(context))Assert.AreEqual("initiator",initial.RootElement.GetProperty("collaboration").GetProperty("role").GetString());
+        Rejected(Send("criteria_ready"),"acceptance_criteria");
+        Assert.AreEqual("criteria",task.Collaboration!.Phase);
+        var receipt=new ManualReceipt(task.TaskId,task.AttemptId,"agent-a",task.ManualTurn,"done",Outcome:"criteria_ready",AcceptanceCriteria:"Tests pass; documentation is complete.");
+        File.WriteAllText(service.ManualReceiptPath(task),RelayJson.Write(receipt));
+        Accepted(service.ImportManualReceipts());task=service.Status(task.TaskId).Task;
+        Assert.AreEqual("implement",task.Collaboration!.Phase);Assert.AreEqual("agent-b",task.AwaitingAgentId);
+        Assert.AreEqual("Tests pass; documentation is complete.",task.Collaboration.Criteria);
+        for(var round=1;round<=6;round++)
+        {
+            Cycle(round);
+            if(round==1)
+            {
+                service.FileHandoffPrompt(task);
+                using var review=JsonDocument.Parse(File.ReadAllText(Path.Combine(Path.GetDirectoryName(service.ManualReceiptPath(task))!,"context.json")));
+                Assert.AreEqual("Tests pass; documentation is complete.",review.RootElement.GetProperty("collaboration").GetProperty("acceptance_criteria").GetString());
+            }
+            if(round<6)Accepted(Send("changes_requested",["Issue "+round]));
+        }
+        Rejected(Send("approved",["Still unresolved"]),"changes_requested");
+        Assert.AreEqual(TaskState.AwaitingReply,task.State);
+        Accepted(Send("approved"));Assert.AreEqual(TaskState.Succeeded,task.State);
+        Assert.AreEqual("agent-a",task.Collaboration!.History.Last().AgentId);
+    }
+
+    [TestMethod]
+    public void RecipientAsFinalReviewerCanApproveAnExistingSubmission()
+    {
+        task=service.ConfigureFileHandoff(task.TaskId,new(new CollaborationOptions("agent-a","Work is complete",0,ReviewerFinal:true))).Task;
+        Assert.AreEqual("review",task.Collaboration!.Phase);Assert.AreEqual("agent-b",task.AwaitingAgentId);
+        Accepted(Send("approved"));Assert.AreEqual(TaskState.Succeeded,task.State);
+    }
+
+    [TestMethod]
     [DataRow(3)]
     [DataRow(5)]
     public void ReviewLoopRunsAsManyRoundsAsNeededAndEndsOnlyAfterAcceptance(int rounds)
@@ -250,7 +292,7 @@ public sealed class CollaborationTests
     public void OptionsCannotChangeOnceTheFirstTurnStarted()
     {
         Assert.ThrowsExactly<RelayException>(() => service.ConfigureFileHandoff(task.TaskId, new(new CollaborationOptions("other"))));
-        Assert.ThrowsExactly<RelayException>(() => service.ConfigureFileHandoff(task.TaskId, new(new CollaborationOptions("agent-b", null, 0))));
+        Assert.ThrowsExactly<RelayException>(() => service.ConfigureFileHandoff(task.TaskId, new(new CollaborationOptions("agent-b", null, -1))));
         Loop();
         Cycle(1);
         Assert.ThrowsExactly<RelayException>(() => Loop());

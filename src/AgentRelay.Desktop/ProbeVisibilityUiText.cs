@@ -5,12 +5,12 @@ internal static class ProbeVisibilityUiText
     public static void AddTo(Dictionary<string,string[]> entries)
     {
         void Add(string en,string cn,string tw,string ja,string ko,string es)=>entries[en]=[en,cn,tw,ja,ko,es];
-        Add("Zcode may show CLI-created sessions and continued turns only after its client restarts. First try refreshing the session list or reopening the conversation. If it is still missing, save your work and restart Zcode. A stale view does not mean the call failed; do not rerun the probe just to refresh it.",
-            "Zcode 的 CLI 新建会话及续接内容可能要重启客户端后才能显示。请先尝试刷新会话列表或重新打开该会话；仍看不到时，保存工作并重启 Zcode。界面未刷新不等于调用失败，不要为刷新显示而重复运行探针。",
-            "Zcode 的 CLI 新建會話及續接內容可能要重啟用戶端後才會顯示。請先嘗試重新整理會話列表或重新開啟該會話；仍看不到時，儲存工作並重啟 Zcode。介面未更新不等於呼叫失敗，請勿為更新顯示而重跑探針。",
-            "Zcode では CLI の新規セッションや続行内容がクライアント再起動まで表示されない場合があります。まず一覧の更新や会話の開き直しを試し、表示されなければ作業を保存して再起動してください。古い表示は呼び出し失敗を意味しません。表示更新のために再実行しないでください。",
-            "Zcode는 CLI로 만든 세션과 이어진 내용을 클라이언트 재시작 후에만 표시할 수 있습니다. 먼저 목록을 새로 고치거나 대화를 다시 열고, 그래도 없으면 작업을 저장하고 Zcode를 재시작하세요. 오래된 화면은 호출 실패를 뜻하지 않으므로 새로 고치려고 탐침을 다시 실행하지 마세요.",
-            "Zcode puede mostrar las sesiones creadas o continuadas por CLI solo tras reiniciar el cliente. Primero actualiza la lista o vuelve a abrir la conversación; si sigue sin aparecer, guarda el trabajo y reinicia Zcode. Una vista desactualizada no significa que falló la llamada; no repitas la prueba para actualizarla.");
+        Add("Zcode can keep an old conversation in memory after Relay writes to it. Switch to another conversation and reopen it after about 11 minutes, or save your work and restart Zcode. An old view does not mean the call failed; do not repeat the delivery just to refresh it.",
+            "Relay 写入后，Zcode 可能仍显示会话的旧内容。请切换到其他会话，约 11 分钟后再切回来；或者保存工作后重启 Zcode。界面未更新不代表调用失败，不要为了刷新而重复发送。",
+            "Relay 寫入後，Zcode 可能仍顯示會話的舊內容。請切換到其他會話，約 11 分鐘後再切回來；或者儲存工作後重啟 Zcode。介面未更新不代表呼叫失敗，請勿為了更新而重複傳送。",
+            "Relay の書き込み後も Zcode に古い会話が表示されることがあります。別の会話に切り替え、約 11 分後に戻るか、作業を保存して Zcode を再起動してください。表示が古くても呼び出し失敗とは限りません。更新のために再送しないでください。",
+            "Relay가 기록한 후에도 Zcode에 이전 대화가 표시될 수 있습니다. 다른 대화로 전환한 뒤 약 11분 후 돌아오거나 작업을 저장하고 Zcode를 재시작하세요. 이전 화면이 호출 실패를 뜻하지는 않으므로 갱신을 위해 다시 보내지 마세요.",
+            "Zcode puede conservar una conversación antigua en memoria después de que Relay escriba en ella. Cambia a otra conversación y vuelve tras unos 11 minutos, o guarda el trabajo y reinicia Zcode. Una vista antigua no significa que falló la llamada; no repitas el envío para actualizarla.");
         Add("The DSH desktop bridge runs inside the open DSH client, so new sessions and continued turns normally appear without restarting. Check the returned session ID and refresh or reopen that conversation if needed. Do not restart DSH while a turn is running.",
             "DSH 桌面桥接由已打开的 DSH 执行，新建会话和续接内容通常无需重启即可显示。请核对返回的会话 ID，必要时刷新或重新打开该会话。执行期间不要重启 DSH。",
             "DSH 桌面橋接由已開啟的 DSH 執行，新建會話及續接內容通常無需重啟即可顯示。請核對傳回的會話 ID，必要時重新整理或開啟該會話。執行期間請勿重啟 DSH。",

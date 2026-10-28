@@ -442,6 +442,26 @@ internal static class Program
         Appearance.Save(station.Home,new DesktopPreferences("en",NotificationSound:"none"));
         var window=new MainWindow(station){Owner=owner};window.Show();
         await Wait(()=>((TextBlock)window.FindName("StatusText")).Text!="Working…");
+        var automaticOptions=new CliHandoffDialog(window,station,"en");
+        await Show(automaticOptions,dialog=>
+        {
+            Find<RadioButton>(dialog,"CliTaskLoop").IsChecked=true;
+            Find<RadioButton>(dialog,"CliTaskAutoCriteria").IsChecked=true;
+            Find<RadioButton>(dialog,"CliTaskRecipientReviews").IsChecked=true;
+            Find<TextBox>(dialog,"CliTaskPrompt").Text="Review the existing work.";
+            Check(!Find<TextBox>(dialog,"CliTaskCriteria").IsEnabled&&Find<TextBox>(dialog,"CliTaskRounds").Text=="0","Automatic criteria and unlimited reviews are clearly selectable");
+            Press(dialog,"SendCliTask");return Task.CompletedTask;
+        });
+        Check(automaticOptions.Result?.Collaboration is {GenerateCriteria:true,ReviewerFinal:true,MaxReviewRounds:0,AuthorId:"ui-source"},"Receiving Agent can be selected as final reviewer with Agent-generated criteria");
+        var manualOptions=new CliHandoffDialog(window,station,"en");
+        await Show(manualOptions,dialog=>
+        {
+            Find<RadioButton>(dialog,"CliTaskLoop").IsChecked=true;
+            Find<TextBox>(dialog,"CliTaskCriteria").Text="Tests pass";
+            Find<TextBox>(dialog,"CliTaskPrompt").Text="Implement the work.";
+            Press(dialog,"SendCliTask");return Task.CompletedTask;
+        });
+        Check(manualOptions.Result?.Collaboration is {GenerateCriteria:false,ReviewerFinal:true,AuthorId:"ui-target",Criteria:"Tests pass"},"Manual criteria and initiating Agent as final reviewer are recorded");
         await Modal<CliHandoffDialog>(window,"New automatic transfer task",async dialog=>
         {
             Check(Find<RadioButton>(dialog,"CliTaskNewSession").IsChecked==true,"Explicit CLI task entry offers a new target conversation by default");

@@ -53,18 +53,7 @@ public static partial class DshDesktopClient
             var dshHome = command.Environment?.GetValueOrDefault("DSH_HOME")
                 ?? throw new DshDesktopException("调用方案缺少 DSH_HOME 环境变量，找不到 DSH 的数据目录。");
             using var host = await Connect(command.Executable, dshHome, deadline.Token);
-            sessionId ??= (await host.Call("session/create", new JsonObject { ["cwd"] = cwd, ["agentPreset"] = "standard" }, deadline.Token))
-                ?["sessionId"]?.GetValue<string>() ?? throw new DshDesktopException("DSH 没有返回新会话 ID。");
-            var baseline = await host.LatestSeq(sessionId, deadline.Token);
-            await host.Call("session/prompt", new JsonObject
-            {
-                ["requestId"] = Guid.NewGuid().ToString(), ["sessionId"] = sessionId, ["mode"] = "queue",
-                ["content"] = new JsonArray(new JsonObject { ["type"] = "text", ["text"] = prompt }),
-                // The desktop UI sends the browser's IANA zone; the same value keeps its time-context message identical.
-                ["clientTimeZone"] = TimeZoneInfo.TryConvertWindowsIdToIanaId(TimeZoneInfo.Local.Id, out var zone) ? zone : TimeZoneInfo.Local.Id
-            }, deadline.Token);
-            var reply = await host.WaitForTurn(sessionId, baseline, deadline.Token);
-            return new ProcessResult(0, RelayJson.Write(new { session_id = sessionId, reply, accepted = true }), "", false);
+            return await RunTurnAsync(host, prompt, sessionId, cwd, deadline.Token);
         }
         catch (OperationCanceledException) when (deadline.IsCancellationRequested && !cancellationToken.IsCancellationRequested)
         {
@@ -73,6 +62,29 @@ public static partial class DshDesktopClient
         catch (Exception error) when (error is DshDesktopException or HttpRequestException or JsonException or IOException)
         {
             return new ProcessResult(1, "", error.Message, false);
+        }
+    }
+
+    internal static async Task<ProcessResult> RunTurnAsync(Host host, string prompt, string? sessionId, string cwd, CancellationToken token)
+    {
+        sessionId ??= (await host.Call("session/create", new JsonObject { ["cwd"] = cwd, ["agentPreset"] = "standard" }, token))
+            ?["sessionId"]?.GetValue<string>() ?? throw new DshDesktopException("DSH 没有返回新会话 ID。");
+        var baseline = await host.LatestSeq(sessionId, token);
+        await host.Call("session/prompt", new JsonObject
+        {
+            ["requestId"] = Guid.NewGuid().ToString(), ["sessionId"] = sessionId, ["mode"] = "queue",
+            ["content"] = new JsonArray(new JsonObject { ["type"] = "text", ["text"] = prompt }),
+            // The desktop UI sends the browser's IANA zone; the same value keeps its time-context message identical.
+            ["clientTimeZone"] = TimeZoneInfo.TryConvertWindowsIdToIanaId(TimeZoneInfo.Local.Id, out var zone) ? zone : TimeZoneInfo.Local.Id
+        }, token);
+        try
+        {
+            var reply = await host.WaitForTurn(sessionId, baseline, token);
+            return new ProcessResult(0, RelayJson.Write(new { session_id = sessionId, reply, accepted = true }), "", false);
+        }
+        catch (Exception error) when (error is DshDesktopException or HttpRequestException or JsonException or IOException)
+        {
+            return new ProcessResult(1, "", "DSH desktop prompt accepted; observation failed: " + error.Message, false);
         }
     }
 
@@ -198,10 +210,16 @@ public static partial class DshDesktopClient
     public static bool DesktopRunning(string executable) =>
         Process.GetProcessesByName(Path.GetFileNameWithoutExtension(executable)).Length > 0;
 
+    /// <summary>
+    /// DSH rejects a cookie whose issuedAt is later than its own Date.now(). Allow for differences between the host and
+    /// desktop clocks without exceeding the desktop's maximum cookie age.
+    /// </summary>
+    private static readonly TimeSpan ClockSkewAllowance = TimeSpan.FromMinutes(5);
+
     public static string Cookie(int port, byte[] secret, DateTimeOffset now)
     {
         var authority = "127.0.0.1:" + port;
-        var issued = now.ToUnixTimeMilliseconds();
+        var issued = (now - ClockSkewAllowance).ToUnixTimeMilliseconds();
         var body = Base64Url(Encoding.UTF8.GetBytes(JsonSerializer.Serialize(new { version = 1, authority, issuedAt = issued, expiresAt = issued + 3_600_000 })));
         var signature = Base64Url(HMACSHA256.HashData(secret, Encoding.UTF8.GetBytes(body)));
         return "dsh-auth-" + Base64Url(SHA256.HashData(Encoding.UTF8.GetBytes(authority))) + "=v1." + body + "." + signature;
@@ -245,7 +263,7 @@ public static partial class DshDesktopClient
             call.Headers.Add("Cookie", Cookie(port, secret, DateTimeOffset.UtcNow));
             using var response = await http.SendAsync(call, token);
             if (response.StatusCode == HttpStatusCode.Unauthorized)
-                throw new DshDesktopException($"DSH 桌面拒绝了 Relay 的登录（401）。操作={method}。请检查 DSH_HOME、桌面启动状态与桥接版本。" + Diagnostic);
+                throw new DshDesktopException($"DSH 桌面拒绝了 Relay 的登录（401）。操作={method}。请检查 DSH_HOME、桌面启动状态与桥接版本。若连接检查通过，可重新检测后解除阻塞。" + Diagnostic);
             response.EnsureSuccessStatusCode();
             var envelope = JsonNode.Parse(await response.Content.ReadAsStringAsync(token)) as JsonObject;
             if (envelope?["result"] is not JsonObject result)

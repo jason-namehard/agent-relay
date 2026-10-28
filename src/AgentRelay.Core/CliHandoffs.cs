@@ -84,9 +84,10 @@ public sealed partial class RelayService
         if(task.Collaboration is {} c)
         {
             var allowed=AllowedOutcomes(c.Phase);
-            var role=current==c.AuthorId?"author":"reviewer";
+            var role=c.Phase=="criteria"?"initiator":current==c.AuthorId?"author":"reviewer";
             var duty=c.Phase switch
             {
+                "criteria"=>"You are the initiating Agent. Read original_request_file and derive specific, verifiable acceptance criteria for the entire request. Write them as a concise string in acceptance_criteria in the receipt, set outcome=criteria_ready, and do not start the recipient's work or declare the task complete.",
                 "implement"=>"You are the author. Do the work in original_request_file. Then save a real result file that states what you delivered and where it lives, and write a done receipt with outcome=submitted and result_file.",
                 "revise"=>"You are the author. The reviewer requested changes: fix every item in open_items (details in current_file when the reviewer wrote notes). Then save a real result file describing the changes and write a done receipt with outcome=submitted and result_file.",
                 "review"=>"You are the reviewer. Check submission_file and the project changes it describes against acceptance_criteria. If anything must change, set outcome=changes_requested and list each concrete unresolved issue in open_items; a notes file in result_file is optional. If it meets the criteria, set outcome=approved with no open_items. Never approve with open issues and never request changes without concrete items.",
@@ -104,8 +105,9 @@ public sealed partial class RelayService
                     acceptance_criteria=c.Criteria,submission_file=c.SubmissionPath,open_items=c.OpenItems,allowed_outcomes=allowed
                 },
                 receipt_template=new ManualReceipt(task.TaskId,task.AttemptId,current,task.ManualTurn,"done",null,
-                    c.Phase is "implement" or "revise"?reply:null,null,allowed[0],c.Phase=="review"?Array.Empty<string>():null,null),
-                instructions=duty+" The task finishes only after the reviewer approves and the author accepts; finishing your part hands it on. "+
+                    c.Phase is "implement" or "revise"?reply:null,null,allowed[0],c.Phase=="review"?Array.Empty<string>():null,null,
+                    AcceptanceCriteria:c.Phase=="criteria"?"Write the actual acceptance criteria here":null),
+                instructions=duty+(c.ReviewerFinal?" The task finishes only when the chosen reviewer approves with no unresolved items. ":" The task finishes only after the reviewer approves and the author accepts; finishing your part hands it on. ")+
                     "Use outcome, open_items and deliverable for the decision; needs_reply may be omitted. If you cannot do the work, write status=failed and explain in next_action. "+ReceiptRules
             };
         }

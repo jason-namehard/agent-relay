@@ -7,7 +7,7 @@
 
 A local handoff desk for people working with several AI agents. Pass a file from A to B, see who needs to act next, and finish without unnecessary back-and-forth.
 
-The current public preview is `0.1.0-preview.21`.
+The source is the `0.1.0-preview.22` candidate; the published download below is `0.1.0-preview.21`.
 
 ## Quick start — Windows x64
 
@@ -94,7 +94,7 @@ Relay adapts supported native JSON, JSONL and final text outputs; the host does 
 
 Source identity is automatic only when the calling adapter supplies exact session context. Relay does not ask models to discover IDs or make hidden conversations visible. Native create commands may still require a model configured in the host. Resume normally inherits that conversation's model and settings; Relay does not invent a common model or reasoning override.
 
-Zcode may need its client restarted before CLI-created sessions or continued turns appear. A stale view is separate from delivery failure; refresh or reopen first, and do not rerun a paid probe just to refresh it. DSH desktop bridging normally appears live. The task board distinguishes sending, blocked bridges, unconfirmed delivery and unverified automatic capability. Use its leading checkboxes to mark selected tasks complete or delete them after confirmation.
+Zcode can keep old conversation content in memory after a CLI delivery. Switch to another conversation and return after about 11 minutes, or save your work and restart Zcode. An old view does not mean delivery failed; do not repeat delivery or a paid probe just to refresh it. DSH desktop bridging normally appears live. The task board distinguishes sending, blocked bridges, unconfirmed delivery and unverified automatic capability. Use its leading checkboxes to mark selected tasks complete or delete them after confirmation.
 
 Select all is available on the task board. Blocked task cards, Agent details and bridge tests can copy a targeted repair prompt with the node ID and local diagnostic entry points. It excludes command parameters, environment values and host transcripts. DSH setup checks authenticate a read-only API request without starting a model turn; saved blockers remain until the user resolves them.
 

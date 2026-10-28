@@ -5,12 +5,13 @@ using AgentRelay.Core;
 
 namespace AgentRelay.Desktop;
 
-/// <summary>How a new handoff proceeds: one pass, or revise-and-review until the reviewer passes it and the author accepts.</summary>
+/// <summary>Configure a single handoff or a review loop with a selected final reviewer.</summary>
 internal sealed class CollaborationOptionsPanel
 {
     private readonly EntryDialogLayout ui;
     private readonly RadioButton loop;
     private readonly RadioButton senderReviews;
+    private readonly RadioButton automaticCriteria;
     private readonly TextBox criteria;
     private readonly TextBox rounds;
     private readonly TextBox turnMinutes;
@@ -31,12 +32,22 @@ internal sealed class CollaborationOptionsPanel
         parent.Children.Add(single); parent.Children.Add(loop);
         var details = new StackPanel { Margin = new(18, 4, 0, 8), IsEnabled = false };
         parent.Children.Add(details);
-        details.Children.Add(ui.Note("The reviewer checks each version. The task finishes only after the reviewer passes it and the author accepts and records the deliverable."));
-        senderReviews = Choice("Recipient does the work; sender reviews", "SenderReviews", "Roles", true);
-        var recipientReviews = Choice("Sender already has the work; recipient reviews", "RecipientReviews", "Roles", false);
+        details.Children.Add(ui.Note("The selected final reviewer checks each version against the criteria. The task ends only when that Agent approves with no unresolved issues. The other Agent makes revisions."));
+        details.Children.Add(ui.Note("Final reviewer"));
+        senderReviews = Choice("Initiating Agent", "SenderReviews", "Roles", true);
+        var recipientReviews = Choice("Receiving Agent", "RecipientReviews", "Roles", false);
         details.Children.Add(senderReviews); details.Children.Add(recipientReviews);
+        details.Children.Add(ui.Note("If the receiving Agent is the final reviewer, the initial work request must include the existing work or its location; the initiating Agent makes any revisions."));
+        details.Children.Add(ui.Note("Acceptance criteria describe observable conditions the reviewer must check. Relay sends them with every review and records the Agent's decision; Relay does not independently verify the work."));
+        var manualCriteria=Choice("I will enter the acceptance criteria", "ManualCriteria", "CriteriaSource", true);
+        automaticCriteria=Choice("Initiating Agent creates the acceptance criteria", "AutoCriteria", "CriteriaSource", false);
+        details.Children.Add(manualCriteria);details.Children.Add(automaticCriteria);
         criteria = ui.Field(details, "Acceptance criteria", prefix + "Criteria", multiline: true); criteria.Height = 70;
-        rounds = ui.Field(details, "Maximum review rounds", prefix + "Rounds", "5");
+        automaticCriteria.Checked+=(_,_)=>criteria.IsEnabled=false;
+        manualCriteria.Checked+=(_,_)=>criteria.IsEnabled=true;
+        details.Children.Add(ui.Note("When the initiating Agent creates criteria, Relay first asks it to write the criteria. Select its source conversation for CLI delivery; otherwise copy the prompt to it manually."));
+        rounds = ui.Field(details, "Review limit (0 means no limit)", prefix + "Rounds", "0");
+        details.Children.Add(ui.Note("Without a limit, automatic calls may continue and incur model charges until the reviewer approves. No-progress pauses and per-turn time limits still apply."));
         loop.Checked += (_, _) => details.IsEnabled = true;
         single.Checked += (_, _) => details.IsEnabled = false;
         turnMinutes = ui.Field(parent, "Time limit per turn (minutes)", prefix + "TurnMinutes", defaultTurnMinutes.ToString(CultureInfo.InvariantCulture));
@@ -57,8 +68,11 @@ internal sealed class CollaborationOptionsPanel
             return value;
         }
         var minutes = Number(turnMinutes, 1, 43200);
+        if(loop.IsChecked==true&&automaticCriteria.IsChecked!=true&&string.IsNullOrWhiteSpace(criteria.Text))
+            throw new RelayException("collaboration_criteria_required",ui.T("Enter the acceptance criteria or let the initiating Agent create them."));
         var collaboration = loop.IsChecked == true
-            ? new CollaborationOptions(senderReviews.IsChecked == true ? recipient : sender, criteria.Text, Number(rounds, 1, RelayService.MaxReviewRounds))
+            ? new CollaborationOptions(senderReviews.IsChecked == true ? recipient : sender, criteria.Text, Number(rounds, 0, RelayService.MaxReviewRounds),
+                GenerateCriteria:automaticCriteria.IsChecked==true,ReviewerFinal:true)
             : null;
         return new(collaboration, AutoDeliver, minutes);
     }

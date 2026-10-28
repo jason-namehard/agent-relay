@@ -72,9 +72,42 @@ public sealed class DshDesktopTests
         var parts = value.Split('.');
         Assert.AreEqual("v1", parts[0]);
         var body = Encoding.UTF8.GetString(Convert.FromBase64String(parts[1].Replace('-', '+').Replace('_', '/') + new string('=', (4 - parts[1].Length % 4) % 4)));
-        // Field order matters: DSH signs the base64url text of exactly this JSON.
-        Assert.AreEqual("""{"version":1,"authority":"127.0.0.1:5643","issuedAt":1793082855509,"expiresAt":1793086455509}""", body);
+        // Field order matters: DSH signs the base64url text of exactly this JSON. Backdating allows for clock differences.
+        Assert.AreEqual("""{"version":1,"authority":"127.0.0.1:5643","issuedAt":1793082555509,"expiresAt":1793086155509}""", body);
         Assert.AreEqual(Base64Url(HMACSHA256.HashData(secret, Encoding.UTF8.GetBytes(parts[1]))), parts[2]);
+        var payload = JsonNode.Parse(body)!;
+        Assert.IsLessThan(now.ToUnixTimeMilliseconds(), payload["issuedAt"]!.GetValue<long>());
+        Assert.IsGreaterThan(now.ToUnixTimeMilliseconds(), payload["expiresAt"]!.GetValue<long>());
+    }
+
+    [TestMethod]
+    public async Task PollingAuthenticationFailureAfterAcceptedPromptNeverBlocksBridgeOrAllowsAutomaticResend()
+    {
+        var path = Credentials(Base64Url(RandomNumberGenerator.GetBytes(32)));
+        var handler = new AcceptedThenUnauthorizedHandler();
+        using var host = new DshDesktopClient.Host(new(5004, 5014, DateTimeOffset.UtcNow),
+            DshDesktopClient.BrowserSessionSecret(path), path, handler);
+        var result = await DshDesktopClient.RunTurnAsync(host, "fixture", "session-fixture", root, CancellationToken.None);
+        var command = new CliCommand("dsh", [], null, root);
+        var recipe = new CliRecipe(1, "fixture", "DSH", command, command, [], "", "", "", "", "dsh-desktop");
+        var failure = CliFailureDiagnostics.Classify(result, recipe);
+        Assert.AreEqual("delivery_unconfirmed", failure.Kind);
+        Assert.IsFalse(failure.Blocking);
+        StringAssert.Contains(failure.Message, "不要重复发送");
+        StringAssert.Contains(failure.Message, "401");
+        CollectionAssert.AreEqual(new[] { "/api/session/projections", "/api/session/prompt", "/api/session/projections" }, handler.Paths);
+    }
+
+    private sealed class AcceptedThenUnauthorizedHandler : HttpMessageHandler
+    {
+        internal List<string> Paths { get; } = [];
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken token)
+        {
+            Paths.Add(request.RequestUri!.AbsolutePath);
+            if (Paths.Count == 3) return Task.FromResult(new HttpResponseMessage(HttpStatusCode.Unauthorized));
+            var response = Paths.Count == 1 ? "{\"result\":{\"ok\":true,\"value\":{\"asOfSeq\":0}}}" : "{\"result\":{\"ok\":true,\"value\":{}}}";
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(response) });
+        }
     }
 
     [TestMethod]
@@ -82,7 +115,7 @@ public sealed class DshDesktopTests
     {
         var service = new RelayService(Path.Combine(root, "relay")); service.Initialize();
         service.RegisterManual("dsh", "DeepSeek Harness", "DSH");
-        var command = new CliCommand(@"D:\DeepSeekHarness\DeepSeek Harness.exe", [], null, @"E:\DSHspace", new() { ["DSH_HOME"] = root });
+        var command = new CliCommand(@"D:\DeepSeekHarness\DeepSeek Harness.exe", [], null, Path.Combine(root, "workspace"), new() { ["DSH_HOME"] = root });
         var recipe = new CliRecipe(1, "DSH desktop", "DeepSeek Harness", command, command, [], "", "", "", "", "dsh-desktop");
         service.ImportCliRecipe("dsh", RelayJson.Write(recipe));
         Assert.AreEqual("desktop", service.Bridge("dsh").Kind);

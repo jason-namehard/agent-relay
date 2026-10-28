@@ -59,6 +59,10 @@ jobs:
           RELEASE_TAG: ${{ github.ref_name }}
         shell: bash
         run: |
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            echo "Release $RELEASE_TAG already exists; preserving its notes and assets."
+            exit 0
+          fi
           gh release create "$RELEASE_TAG" release-assets/*.zip \
             --verify-tag --prerelease --latest=false \
             --title "Agent Relay $RELEASE_TAG" \

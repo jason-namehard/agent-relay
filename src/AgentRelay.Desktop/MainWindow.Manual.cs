@@ -62,7 +62,7 @@ public partial class MainWindow
         if(progress?.Delivery=="cli_unconfirmed")return string.Format(CultureInfo.CurrentUICulture,T("Delivery unconfirmed · {0}"),agent);
         if(progress?.Delivery=="cli_ready" && progress.DeliveryMessage is not null)
             return string.Format(CultureInfo.CurrentUICulture,T("Automatic delivery not verified · {0}"),agent);
-        string Phase(string phase)=>T(phase switch{"implement"=>"Implementing","revise"=>"Revising","review"=>"Reviewing","accept"=>"Accepting the result",_=>phase});
+        string Phase(string phase)=>T(phase switch{"criteria"=>"Preparing acceptance criteria","implement"=>"Implementing","revise"=>"Revising","review"=>"Reviewing","accept"=>"Accepting the result",_=>phase});
         return task.State switch
         {
             TaskState.Paused=>T("Paused · Waiting for your decision"),
@@ -94,10 +94,11 @@ public partial class MainWindow
         if(task.HandoffPlan is {} plan)pane.Children.Add(Note(T("Planned steps")+": "+string.Join(" → ",plan.Select(AgentName))+" · "+T("Current step")+" "+(task.ManualTurn+1)+"/"+plan.Length));
         if(task.Collaboration is {} c)
         {
-            var completed=c.History.Count(step=>step.Outcome!="failed");
+            var completed=c.History.Count(step=>step.Outcome is not ("failed" or "criteria_ready"));
             var reviews=c.History.Count(step=>step.Phase=="review" && step.Outcome is "approved" or "changes_requested");
-            var round=Note(string.Format(CultureInfo.CurrentUICulture,T("Completed steps: {0} · Completed reviews: {1} (limit: {2})"),
-                completed,reviews,c.MaxReviewRounds));
+            var round=Note(c.MaxReviewRounds==0
+                ?string.Format(CultureInfo.CurrentUICulture,T("Completed steps: {0} · Completed reviews: {1} (no limit)"),completed,reviews)
+                :string.Format(CultureInfo.CurrentUICulture,T("Completed steps: {0} · Completed reviews: {1} (limit: {2})"),completed,reviews,c.MaxReviewRounds));
             round.Name="HandoffRoundSummary";pane.Children.Add(round);
         }
         else if(!progress.Finished)pane.Children.Add(Note(progress.MaxTurns is null?string.Format(CultureInfo.CurrentUICulture,T("Transfer turn {0}"),task.ManualTurn+1):string.Format(CultureInfo.CurrentUICulture,T("Turn {0} of at most {1}"),task.ManualTurn+1,progress.MaxTurns)));

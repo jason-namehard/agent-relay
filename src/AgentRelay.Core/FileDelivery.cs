@@ -18,6 +18,7 @@ public sealed partial class RelayService
         var extension = CliExtension(recipient);
         if (extension is null || extension.Block is not null) return false;
         var binding = TaskSession(task.TaskId, recipient);
+        if (task.Collaboration?.Phase == "criteria" && binding?.SessionId is null) return false;
         if (binding?.SessionId is not null && CliRecipes.ResumeCommand(extension.Recipe) is null) return false;
         if (binding?.Binding == "ephemeral" || task.ManualTurn > 0 && binding is null) return false;
         return
