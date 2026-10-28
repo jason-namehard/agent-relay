@@ -94,8 +94,10 @@ public partial class MainWindow
         if(task.HandoffPlan is {} plan)pane.Children.Add(Note(T("Planned steps")+": "+string.Join(" → ",plan.Select(AgentName))+" · "+T("Current step")+" "+(task.ManualTurn+1)+"/"+plan.Length));
         if(task.Collaboration is {} c)
         {
-            var round=Note(string.Format(CultureInfo.CurrentUICulture,T("Review round {0}/{1}"),
-                Math.Max(1,Math.Min(c.ReviewRound,c.MaxReviewRounds)),c.MaxReviewRounds));
+            var completed=c.History.Count(step=>step.Outcome!="failed");
+            var reviews=c.History.Count(step=>step.Phase=="review" && step.Outcome is "approved" or "changes_requested");
+            var round=Note(string.Format(CultureInfo.CurrentUICulture,T("Completed steps: {0} · Completed reviews: {1} (limit: {2})"),
+                completed,reviews,c.MaxReviewRounds));
             round.Name="HandoffRoundSummary";pane.Children.Add(round);
         }
         else if(!progress.Finished)pane.Children.Add(Note(progress.MaxTurns is null?string.Format(CultureInfo.CurrentUICulture,T("Transfer turn {0}"),task.ManualTurn+1):string.Format(CultureInfo.CurrentUICulture,T("Turn {0} of at most {1}"),task.ManualTurn+1,progress.MaxTurns)));

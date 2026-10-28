@@ -27,6 +27,8 @@ public partial class MainWindow : Window
     private bool busy;
     private bool reviewCancelled;
     private bool refreshPending;
+    private string? errorTaskId;
+    private int errorTaskTurn;
     private uint ledgerMessage;
     private HwndSource? source;
     private string? taskId;
@@ -103,7 +105,7 @@ public partial class MainWindow : Window
         if (busy) return;
         reviewCancelled = false;
         busy = true; PageContent.IsEnabled = false; Navigation.IsEnabled = false; RefreshButton.IsEnabled = false; QuickLanguage.IsEnabled = false;
-        if (clearError) ErrorBanner.Visibility = Visibility.Collapsed;
+        if (clearError) { ErrorBanner.Visibility = Visibility.Collapsed; errorTaskId = null; }
         if (reportStatus) StatusText.Text = T("Working…");
         try
         {
@@ -111,6 +113,8 @@ public partial class MainWindow : Window
             var receipts=service.ImportManualReceipts();
             receiptImportErrors.Clear();
             foreach(var error in receipts.Errors)receiptImportErrors[error.TaskId]=error.Message;
+            if(errorTaskId is { } failedTaskId && !IsCurrentDelivery(failedTaskId,errorTaskTurn))
+            { ErrorBanner.Visibility=Visibility.Collapsed; errorTaskId=null; }
             StartAutoDeliveries();
             var notificationHint=await DeliverPendingDesktopNotificationsAsync();
             if (refresh && !reviewCancelled) { RenderPage(); LedgerHint.Text = ""; }
@@ -128,6 +132,7 @@ public partial class MainWindow : Window
             if (error is RelayException setup && setup.Code.StartsWith("setup_", StringComparison.Ordinal))
                 ErrorText.Text = T("The Agent reply format is invalid. Check version, context and requested fields.") + "\n" + ErrorText.Text;
             ErrorBanner.Visibility = Visibility.Visible; StatusText.Text = T("Action failed");
+            errorTaskId=null;
         }
         finally
         {
@@ -139,6 +144,7 @@ public partial class MainWindow : Window
 
     private async void Navigate(object sender, SelectionChangedEventArgs e) => await Run(() => Task.CompletedTask, "Ready");
     private async void RefreshClick(object sender, RoutedEventArgs e) => await Run(() => Task.CompletedTask, "已刷新");
+    private void DismissErrorClick(object sender,RoutedEventArgs e) { ErrorBanner.Visibility=Visibility.Collapsed; errorTaskId=null; }
     private async void QuickLanguageChanged(object sender, SelectionChangedEventArgs e)
     {
         if (!languageReady || QuickLanguage.SelectedValue is not string language || language == preferences.Language) return;
@@ -260,7 +266,7 @@ public partial class MainWindow : Window
 
     private void TaskPane(StackPanel page,IEnumerable<TaskView> views)
     {
-        var rows=views.OrderByDescending(v=>v.Task.CreatedAt).Select(v=>new TaskRow(v.Task.TaskId,AgentName(v.Task.RequesterId)+" → "+AgentName(v.Task.RecipientId),T(v.Task.Mode=="manual"?"Manual handoff":"Agent bridge"),v.Task.IsFileHandoff||v.Task.Mode=="manual"?FileState(v.Task):v.Task.State.ToString(),v.Task.CreatedAt.ToLocalTime(),v.Task.State.ToString())).ToArray();
+        var rows=views.OrderByDescending(v=>v.Task.CreatedAt).Select(v=>new TaskRow(v.Task.TaskId,AgentName(v.Task.RequesterId)+" → "+AgentName(v.Task.RecipientId),T(v.Task.Mode=="manual"?"Manual transfer":"Automatic transfer"),v.Task.IsFileHandoff||v.Task.Mode=="manual"?FileState(v.Task):v.Task.State.ToString(),v.Task.CreatedAt.ToLocalTime(),v.Task.State.ToString())).ToArray();
         var table=Table("TasksTable",("Route","Route"),("Delivery","Mode"),("State","State"),("Created","Created"));table.Height=230;
         var stateStyle=new Style(typeof(TextBlock),(Style)FindResource("TableTextStyle"));
         foreach(var state in new[]{"Succeeded","Failed","TimedOut","DeliveryUnknown","Running","Acknowledged","Paused"})
@@ -519,6 +525,8 @@ public partial class MainWindow : Window
         Language=System.Windows.Markup.XmlLanguage.GetLanguage(preferences.Language);
         languageReady=false;QuickLanguage.SelectedValue=preferences.Language;languageReady=true;
         RefreshButton.Content=T("Refresh");
+        DismissErrorButton.ToolTip=T("Dismiss error");
+        AutomationProperties.SetName(DismissErrorButton,T("Dismiss error"));
         foreach(ListBoxItem item in Navigation.Items)
         {
             var page=(string)item.Tag;

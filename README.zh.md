@@ -7,14 +7,14 @@
 
 给同时使用多个 AI Agent 的人准备的本机交接台：把文件从 A 交给 B，看清下一步该谁处理，工作结束就停止往返。
 
-当前源码为 `0.1.0-preview.20` 候选版，尚未发布。下方下载的是已发布的 `preview.15`；本文描述的桥接与持续验收功能需要候选版或从源码构建。
+当前公开预览版为 `0.1.0-preview.21`。
 
 ## 快速开始 — Windows x64
 
-公开预览版：`0.1.0-preview.15`。在 Windows PowerShell 5.1 或 PowerShell 7 中下载并完整解压到新目录：
+公开预览版：`0.1.0-preview.21`。在 Windows PowerShell 5.1 或 PowerShell 7 中下载并完整解压到新目录：
 
 ```powershell
-$version = 'v0.1.0-preview.15'
+$version = 'v0.1.0-preview.21'
 $zip = "AgentRelay-$version-windows-x64.zip"
 $download = Join-Path $PWD $zip
 $ProgressPreference = 'SilentlyContinue'
@@ -24,7 +24,7 @@ Set-Location ".\AgentRelay-$version"
 .\gui\AgentRelay.Desktop.exe
 ```
 
-也可从 [Releases](https://github.com/jason-namehard/agent-relay/releases/tag/v0.1.0-preview.15) 下载。配置真实 Agent 请运行上述正式程序；`TryDemo.cmd` 是隔离演示，会禁止真实 CLI 调用。在设置中可保留当前演示数据并转为正式使用。GUI 与通知自带运行库，CLI/MCP 需要 [.NET 10 runtime](https://dotnet.microsoft.com/download/dotnet/10.0)。目前没有安装器和代码签名，Windows 可能给出安全提示。
+也可从 [Releases](https://github.com/jason-namehard/agent-relay/releases/tag/v0.1.0-preview.21) 下载。配置真实 Agent 请运行上述正式程序；`TryDemo.cmd` 是隔离演示，会禁止真实 CLI 调用。在设置中可保留当前演示数据并转为正式使用。GUI 与通知自带运行库，CLI/MCP 需要 [.NET 10 runtime](https://dotnet.microsoft.com/download/dotnet/10.0)。目前没有安装器和代码签名，Windows 可能给出安全提示。
 
 <details>
 <summary>核对上传的 GitHub 发布资产</summary>

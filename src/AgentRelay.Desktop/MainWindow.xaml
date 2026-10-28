@@ -35,7 +35,10 @@
     <Button x:Name="RefreshButton" Grid.Column="2" Height="34" VerticalAlignment="Center" Margin="0" Content="Refresh" Click="RefreshClick"/>
    </Grid>
    <Border x:Name="ErrorBanner" Grid.Row="1" Background="#FDEBE9" BorderBrush="#D98780" BorderThickness="1" Padding="12" Margin="0,0,0,12" Visibility="Collapsed">
-    <TextBox x:Name="ErrorText" IsReadOnly="True" TextWrapping="Wrap" Height="Auto" VerticalAlignment="Stretch" Background="Transparent" BorderThickness="0" Margin="0"/>
+    <DockPanel>
+     <Button x:Name="DismissErrorButton" DockPanel.Dock="Right" Content="×" Click="DismissErrorClick" VerticalAlignment="Top" Width="28" Height="28" Padding="0" Margin="8,0,0,0"/>
+     <TextBox x:Name="ErrorText" IsReadOnly="True" TextWrapping="Wrap" Height="Auto" VerticalAlignment="Stretch" Background="Transparent" BorderThickness="0" Margin="0"/>
+    </DockPanel>
    </Border>
    <ScrollViewer Grid.Row="2" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
     <ContentControl x:Name="PageContent" HorizontalContentAlignment="Stretch"/>

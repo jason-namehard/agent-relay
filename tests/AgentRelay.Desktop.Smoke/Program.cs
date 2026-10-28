@@ -66,6 +66,10 @@ internal static class Program
         await CheckFileCancellation(window,root);
         Check(navigation.Items.Cast<ListBoxItem>().Select(i=>(string)i.Tag).SequenceEqual(new[]{"Home","Agents","Connections","Settings"}),"Exactly four main pages");
         Check(Find<DataGrid>(window,"TasksTable").Items.Count==2,"Board combines all handoffs");
+        var batchColumn=Find<DataGrid>(window,"TasksTable").Columns[0];
+        var cellName=(Binding)batchColumn.CellStyle.Setters.OfType<Setter>().Single(s=>s.Property==AutomationProperties.NameProperty).Value;
+        Check(cellName.Path.Path=="Route"&&cellName.StringFormat!.Contains("{0}"),"Task checkbox cells have a meaningful accessible name");
+        Check(Find<DataGrid>(window,"TasksTable").Items.Cast<object>().All(r=>(string)r.GetType().GetProperty("Mode")!.GetValue(r)! == "Manual transfer"),"Manual task mode matches the creation label");
         Check(((Binding)((DataGridTextColumn)Find<DataGrid>(window,"TasksTable").Columns.Last()).Binding).StringFormat=="yyyy-MM-dd HH:mm:ss","Task timestamps use local 24-hour time without an offset");
         SelectTask(window,task.TaskId);
         await Click(window,"Copy prompt for 自选节点甲");
@@ -87,7 +91,7 @@ internal static class Program
         Check(service.Agents().Any(a=>a.AgentId=="agent-b") && ((Border)window.FindName("ErrorBanner")).Visibility==Visibility.Visible && ((TextBox)window.FindName("ErrorText")).Text.Contains("未完成交接"),"Removing an active Agent is blocked before any confirmation dialog");
         Check(!FindAll<TextBox>(window).Any(b=>b.Name.StartsWith("AgentEntry")||b.Name.EndsWith("SetupReply")),"Agent page has no competing setup form");
         var agentToolbar=(Panel)FindAll<Button>(window).Single(b=>Equals(b.Tag,"New Agent")).Parent;
-        Check(agentToolbar.Children.OfType<Button>().Select(b=>(string)b.Tag).SequenceEqual(new[]{"New Agent","Edit Agent","Delete Agent","Test bridge","One-click setup"}),"Agent toolbar contains exactly five primary configuration actions");
+        Check(agentToolbar.Children.OfType<Button>().Select(b=>(string)b.Tag).SequenceEqual(new[]{"New Agent","Edit Agent","Delete Agent","Test bridge","Recheck and restore bridge","One-click setup"}),"Agent toolbar exposes bridge recovery alongside the configuration actions");
         Check(FindAll<Button>(window).Single(b=>Equals(b.Tag,"Test bridge")).IsEnabled,"CLI test remains available to explain missing calling methods instead of silently disabling itself");
         Check(FindAll<Button>(window).Any(b=>Equals(b.Tag,"Install handoff rule"))&&FindAll<Button>(window).Any(b=>Equals(b.Tag,"Remove handoff rule")),"Agent page exposes explicit installation and removal of handoff rules");
         var count=service.Agents().Count;
@@ -503,12 +507,12 @@ internal static class Program
         var work=Path.Combine(root,"loop-work.md");File.WriteAllText(work,"Write the release notes.");
         var task=station.CreateFileHandoff(new("loop-reviewer","loop-author",work,"Write and submit")).Task;
         station.ConfigureFileHandoff(task.TaskId,new(new CollaborationOptions("loop-author","Covers every change",1)));
-        void Receipt(string outcome,string[]? items=null)
+        void Receipt(string outcome,string[]? items=null,string? deliverable=null)
         {
             task=station.Status(task.TaskId).Task;
             var reply=station.TurnReplyPath(task);File.WriteAllText(reply,"Version "+task.ManualTurn);
             File.WriteAllText(station.ManualReceiptPath(task),RelayJson.Write(new ManualReceipt(task.TaskId,task.AttemptId,task.AwaitingAgentId!,task.ManualTurn,"done",
-                null,outcome=="submitted"?reply:null,null,outcome,items)));
+                null,outcome=="submitted"?reply:null,null,outcome,items,deliverable)));
             station.ImportManualReceipts();
         }
         Receipt("submitted");Receipt("changes_requested",["Missing the CLI changes"]);Receipt("submitted");
@@ -525,7 +529,7 @@ internal static class Program
         await Wait(()=>((TextBlock)window.FindName("StatusText")).Text!="Working…");
         var table=Find<DataGrid>(window,"TasksTable");table.SelectedItem=table.Items.Cast<object>().Single();
         await Wait(()=>FindAll<Button>(window).Any(b=>Equals(b.Tag,"Continue with 2 more rounds")));
-        Check(Find<TextBlock>(window,"HandoffRoundSummary").Text.Contains("1/1")&&Find<TextBlock>(window,"HandoffNextRecipient").Text.Contains("Reviewer"),"Compact task summary shows the review round and actual next recipient");
+        Check(Find<TextBlock>(window,"HandoffRoundSummary").Text=="Completed steps: 3 · Completed reviews: 1 (limit: 1)"&&Find<TextBlock>(window,"HandoffNextRecipient").Text.Contains("Reviewer"),"Compact task summary distinguishes completed steps, completed reviews and the review limit");
         var contents=Find<Expander>(window,"ManualFileContents");
         var contentBlocks=FindAll<TextBlock>(contents).ToHashSet();
         Check(!contents.IsExpanded&&FindAll<TextBlock>(window).Where(t=>t.Text.Contains("LONG_REQUIREMENT")||t.Text.Contains("LONG_NEXT_ACTION")||t.Text.Contains("Covers every change")).All(contentBlocks.Contains),"Long requirements and next actions appear only inside collapsed file contents");
@@ -538,6 +542,9 @@ internal static class Program
         await Click(window,"Continue with 2 more rounds");
         await Wait(()=>station.Status(task.TaskId).Task.State==TaskState.AwaitingReply);
         Check(station.Status(task.TaskId).Task.Collaboration!.MaxReviewRounds==3,"Continuing records the user's extra review rounds");
+        Receipt("approved");Receipt("accepted",deliverable:"Final release notes");
+        await Click(window,"Refresh");
+        Check(Find<TextBlock>(window,"HandoffRoundSummary").Text=="Completed steps: 5 · Completed reviews: 2 (limit: 3)"&&station.Status(task.TaskId).Task.State==TaskState.Succeeded,"Completed task reports all five steps and only the two reviews actually performed");
         window.RequestExit();
     }
 
@@ -674,6 +681,16 @@ internal static class Program
         Check(FindAll<Button>(window).Any(b=>Equals(b.Tag,"Recheck and restore bridge")),"DSH authentication blockers offer an explicit recheck-and-restore action");
         await Click(window,"Recheck and restore bridge");
         Check(((Border)window.FindName("ErrorBanner")).Visibility==Visibility.Visible&&service.CliExtension("target")!.Block is not null&&service.Status(task.TaskId).Task.State==TaskState.Paused,"An unsuccessful restore check keeps the blocker and does not send or continue the task");
+        ((Button)window.FindName("DismissErrorButton")).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+        Check(((Border)window.FindName("ErrorBanner")).Visibility==Visibility.Collapsed&&service.CliExtension("target")!.Block is not null&&service.Status(task.TaskId).Task.State==TaskState.Paused,"Closing the error banner hides the message without changing the bridge or task");
+        const System.Reflection.BindingFlags flags=System.Reflection.BindingFlags.Instance|System.Reflection.BindingFlags.NonPublic;
+        typeof(MainWindow).GetField("errorTaskId",flags)!.SetValue(window,task.TaskId);
+        typeof(MainWindow).GetField("errorTaskTurn",flags)!.SetValue(window,task.ManualTurn);
+        ((Border)window.FindName("ErrorBanner")).Visibility=Visibility.Visible;
+        new RelayStore(service.Home).Write(s=>{var current=s.Task(task.TaskId);current.State=TaskState.Succeeded;s.Save(current);return true;});
+        await (Task)typeof(MainWindow).GetMethod("Run",flags)!.Invoke(window,new object[]{(Func<Task>)(()=>Task.CompletedTask),"Ready",true,false,false})!;
+        Check(((Border)window.FindName("ErrorBanner")).Visibility==Visibility.Collapsed&&service.CliExtension("target")!.Block is not null,
+            "Completed task clears its stale delivery banner while retaining bridge failure diagnostics");
         window.RequestExit();
     }
 

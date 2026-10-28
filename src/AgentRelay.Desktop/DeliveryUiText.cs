@@ -7,9 +7,16 @@ internal static class DeliveryUiText
         void Add(string en,string cn,string tw,string ja,string ko,string es)=>entries[en]=[en,cn,tw,ja,ko,es];
         Add("New automatic transfer task","新建自动传递任务","新增自動傳遞任務","自動転送タスクを作成","자동 전달 작업 만들기","Nueva tarea automática");
         Add("New manual transfer task","新建手动传递任务","新增手動傳遞任務","手動転送タスクを作成","수동 전달 작업 만들기","Nueva tarea manual");
+        Add("Automatic transfer","自动传递","自動傳遞","自動転送","자동 전달","Envío automático");
+        Add("Manual transfer","手动传递","手動傳遞","手動転送","수동 전달","Envío manual");
         Add("Transfer turn {0}","第 {0} 轮传递","第 {0} 輪傳遞","転送 {0} 回目","전달 {0}회차","Turno de transferencia {0}");
         Add("Check Agent bridge","检查 Agent 桥接","檢查 Agent 橋接","Agent 接続を確認","Agent 브리지 확인","Revisar puente del Agent");
         Add("Recheck and restore bridge","重新检测并恢复桥接","重新檢測並恢復橋接","再確認して接続を復元","재검사 후 브리지 복구","Revisar y restaurar el puente");
+        Add("Dismiss error","关闭错误提示","關閉錯誤提示","エラーを閉じる","오류 닫기","Cerrar error");
+        Add("No bridge is configured for this Agent.","该 Agent 尚未配置桥接。","此 Agent 尚未設定橋接。","この Agent の接続は未設定です。","이 Agent의 브리지가 구성되지 않았습니다.","Este Agent no tiene puente configurado.");
+        Add("The bridge configuration or saved failure changed during the check. Please check again.","检查期间桥接配置或失败记录发生变化，请重新检测。","檢查期間橋接設定或失敗記錄發生變化，請重新檢測。","確認中に接続設定または失敗記録が変わりました。もう一度確認してください。","검사 중 브리지 설정 또는 실패 기록이 변경되었습니다. 다시 확인하세요.","La configuración o el fallo guardado cambió durante la revisión. Vuelve a comprobarlo.");
+        Add("Local configuration checks passed. This does not confirm that the Agent can accept a session.","本机配置检查通过，但无法确认 Agent 能否接收会话。","本機設定檢查通過，但無法確認 Agent 能否接收工作階段。","ローカル設定は正常ですが、セッションの受信可否は未確認です。","로컬 설정은 확인되었지만 세션 수신 가능 여부는 확인되지 않았습니다.","La configuración local pasó la revisión, pero no confirma que el Agent acepte sesiones.");
+        Add("Local configuration checks passed, but cannot confirm that the Agent can accept a session. Clear the saved failure? Previously authorized automatic tasks may send again.","本机配置检查通过，但无法确认 Agent 能否接收会话。是否清除保存的失败记录？此前授权的自动任务可能再次发送。","本機設定檢查通過，但無法確認 Agent 能否接收工作階段。是否清除儲存的失敗記錄？先前授權的自動任務可能再次傳送。","ローカル設定は正常ですが、受信可否は未確認です。保存された失敗を消去しますか？承認済みタスクが再送される場合があります。","로컬 설정은 확인되었지만 수신 가능 여부는 확인되지 않았습니다. 저장된 실패를 지울까요? 승인된 자동 작업이 다시 전송될 수 있습니다.","La configuración local pasó la revisión, pero no confirma que el Agent acepte sesiones. ¿Borrar el fallo guardado? Las tareas automáticas autorizadas podrían volver a enviar.");
         Add("Bridge recovery result","桥接恢复结果","橋接恢復結果","接続復元の結果","브리지 복구 결과","Resultado de recuperación");
         Add("Probe tested at {0}. This is a saved result, separate from the current connection check.","测试时间：{0}。这是保存的探针结果，与当前连接检查分开显示。","測試時間：{0}。這是儲存的探針結果，與目前連線檢查分開顯示。","テスト日時：{0}。保存済み結果であり、現在の接続確認とは別です。","테스트 시간: {0}. 저장된 결과이며 현재 연결 검사와는 별개입니다.","Prueba realizada el {0}. Es un resultado guardado, separado de la conexión actual.");
         Add("Cancel task","取消任务","取消任務","タスクを中止","작업 취소","Cancelar tarea");

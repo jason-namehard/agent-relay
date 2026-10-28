@@ -21,6 +21,30 @@ public partial class MainWindow
         MessageBox.Show(this,result.Message,T("Bridge recovery result"),MessageBoxButton.OK,MessageBoxImage.Information);
     }
 
+    private async Task RecheckBridge(string id)
+    {
+        var extension=service.CliExtension(id)??throw new RelayException("cli_recipe_missing",T("No bridge is configured for this Agent."));
+        if(CliRecipes.OutputFormatFor(extension.Recipe)=="dsh-desktop")
+        { await RecheckDesktopBridge(id); return; }
+        var checks=await Task.Run(()=>service.CliHealthAsync(id));
+        var failures=checks.Where(c=>c.Id!="block"&&c.Status=="fail").Select(c=>c.Message).ToArray();
+        if(failures.Length>0)throw new RelayException("bridge_not_restored",string.Join("\n",failures));
+        var detail=string.Join("\n",checks.Where(c=>c.Id!="block").Select(c=>c.Message));
+        if(extension.Block is null)
+        {
+            MessageBox.Show(this,T("Local configuration checks passed. This does not confirm that the Agent can accept a session.")+"\n\n"+detail,
+                T("Bridge recovery result"),MessageBoxButton.OK,MessageBoxImage.Information);
+            return;
+        }
+        if(MessageBox.Show(this,T("Local configuration checks passed, but cannot confirm that the Agent can accept a session. Clear the saved failure? Previously authorized automatic tasks may send again.")+"\n\n"+detail,
+            T("Recheck and restore bridge"),MessageBoxButton.OKCancel,MessageBoxImage.Warning)!=MessageBoxResult.OK)
+        {reviewCancelled=true;return;}
+        var current=service.CliExtension(id)??throw new RelayException("cli_recipe_missing",T("No bridge is configured for this Agent."));
+        if(current.Revision!=extension.Revision||current.Block!=extension.Block)
+            throw new RelayException("cli_recipe_changed",T("The bridge configuration or saved failure changed during the check. Please check again."));
+        service.ClearCliBlock(id);
+    }
+
     private bool CanRecheckDesktopBridge(string id)=>service.CliExtension(id) is {Block.Kind:"auth_required"} extension&&
         CliRecipes.OutputFormatFor(extension.Recipe)=="dsh-desktop";
 }

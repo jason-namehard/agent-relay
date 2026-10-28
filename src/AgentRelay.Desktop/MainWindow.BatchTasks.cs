@@ -93,8 +93,10 @@ public partial class MainWindow
             control.SetCurrentValue(CheckBox.IsCheckedProperty,control.IsChecked!=true);
             args.Handled=true;
         }));
+        var cellStyle=new Style(typeof(DataGridCell),(Style)FindResource(typeof(DataGridCell)));
+        cellStyle.Setters.Add(new Setter(AutomationProperties.NameProperty,new Binding(nameof(TaskRow.Route)){StringFormat=T("Select task: {0}")}));
         table.Columns.Insert(0,new DataGridTemplateColumn{Header=T("Select"),Width=54,CanUserResize=false,CanUserSort=false,
-            CellTemplate=new DataTemplate{VisualTree=checkbox}});
+            CellStyle=cellStyle,CellTemplate=new DataTemplate{VisualTree=checkbox}});
     }
 
     private Task ApplyTaskBatch(TaskRow[] rows,bool delete)

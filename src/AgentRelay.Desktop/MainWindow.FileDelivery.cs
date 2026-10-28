@@ -29,9 +29,9 @@ public partial class MainWindow
         {
             Add(actions,"Check Agent bridge",()=>{agentId=task.AwaitingAgentId??task.RecipientId;Go("Agents");return Task.CompletedTask;});
             Add(actions,"Copy bridge diagnostic prompt",()=>CopyBridgeDiagnostic(task.AwaitingAgentId??task.RecipientId),false);
-            if(CanRecheckDesktopBridge(task.AwaitingAgentId??task.RecipientId))
-                Add(actions,"Recheck and restore bridge",()=>RecheckDesktopBridge(task.AwaitingAgentId??task.RecipientId));
         }
+        if(service.CliExtension(task.AwaitingAgentId??task.RecipientId) is not null)
+            Add(actions,"Recheck and restore bridge",()=>RecheckBridge(task.AwaitingAgentId??task.RecipientId));
         if (!demo && service.CanSendFileHandoff(task) && !sendingTasks.Contains(task.TaskId))
             Add(actions,"Send via bridge",()=>{StartCliSend(task.TaskId);return Task.CompletedTask;});
         if (progress.Delivery == "cli_unconfirmed" || task.CliFileTurn == task.ManualTurn && task.CliFileStatus is "unknown" or "failed")
@@ -56,7 +56,8 @@ public partial class MainWindow
     {
         if (demo) return;
         if (!sendingTasks.Add(id)) { StatusText.Text=T("This turn is already being sent. Wait for its result."); return; }
-        var prompt = FilePrompt(service.Status(id).Task);
+        var initialTask=service.Status(id).Task;
+        var prompt = FilePrompt(initialTask);
         StatusText.Text = T("Sending through CLI…");
         _ = Task.Run(async () =>
         {
@@ -73,9 +74,13 @@ public partial class MainWindow
             await Dispatcher.InvokeAsync(() =>
             {
                 sendingTasks.Remove(id);
-                if (failure is not null) { ErrorText.Text = failure; ErrorBanner.Visibility = Visibility.Visible; }
+                if (failure is not null && IsCurrentDelivery(id,initialTask.ManualTurn))
+                { ErrorText.Text = failure; ErrorBanner.Visibility = Visibility.Visible; errorTaskId=id; errorTaskTurn=initialTask.ManualTurn; }
                 QueueRefresh();
             });
         });
     }
+
+    private bool IsCurrentDelivery(string id,int turn)=>service.Tasks().FirstOrDefault(v=>v.Task.TaskId==id)?.Task is { } task &&
+        task.ManualTurn==turn && task.State is not (TaskState.Succeeded or TaskState.Failed or TaskState.TimedOut or TaskState.Cancelled);
 }

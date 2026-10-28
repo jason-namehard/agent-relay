@@ -7,14 +7,14 @@
 
 A local handoff desk for people working with several AI agents. Pass a file from A to B, see who needs to act next, and finish without unnecessary back-and-forth.
 
-The current source is the `0.1.0-preview.20` release candidate; it has not been published. The download below is the published `preview.15`. The bridge and review-loop features described here require the candidate or a source build.
+The current public preview is `0.1.0-preview.21`.
 
 ## Quick start — Windows x64
 
-Public preview: `0.1.0-preview.15`. In Windows PowerShell 5.1 or PowerShell 7, download and extract the whole package into a new folder:
+Public preview: `0.1.0-preview.21`. In Windows PowerShell 5.1 or PowerShell 7, download and extract the whole package into a new folder:
 
 ```powershell
-$version = 'v0.1.0-preview.15'
+$version = 'v0.1.0-preview.21'
 $zip = "AgentRelay-$version-windows-x64.zip"
 $download = Join-Path $PWD $zip
 $ProgressPreference = 'SilentlyContinue'
@@ -24,7 +24,7 @@ Set-Location ".\AgentRelay-$version"
 .\gui\AgentRelay.Desktop.exe
 ```
 
-Or download from [Releases](https://github.com/jason-namehard/agent-relay/releases/tag/v0.1.0-preview.15). Start the executable above to configure real Agents. `TryDemo.cmd` opens isolated samples and blocks real CLI calls; Settings can keep that workspace and switch it to normal use. GUI and notifications bundle their runtime. CLI/MCP require [.NET 10 runtime](https://dotnet.microsoft.com/download/dotnet/10.0). There is no installer or code signing; Windows may show a security warning.
+Or download from [Releases](https://github.com/jason-namehard/agent-relay/releases/tag/v0.1.0-preview.21). Start the executable above to configure real Agents. `TryDemo.cmd` opens isolated samples and blocks real CLI calls; Settings can keep that workspace and switch it to normal use. GUI and notifications bundle their runtime. CLI/MCP require [.NET 10 runtime](https://dotnet.microsoft.com/download/dotnet/10.0). There is no installer or code signing; Windows may show a security warning.
 
 <details>
 <summary>Verify the uploaded GitHub asset</summary>
