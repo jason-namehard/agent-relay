@@ -622,12 +622,13 @@
    <TextBlock Grid.Column="1" Text="{Binding When}" Margin="10,0,0,0" Foreground="{DynamicResource FaintBrush}" FontSize="12" VerticalAlignment="Center"/>
    <TextBlock Grid.Row="1" Grid.ColumnSpan="2" Text="{Binding Title}" Foreground="{DynamicResource MutedBrush}" FontSize="12.5" Margin="0,5,0,0"
               TextTrimming="CharacterEllipsis" ToolTip="{Binding Title}"/>
-   <StackPanel Grid.Row="2" Grid.ColumnSpan="2" Orientation="Horizontal" Margin="0,7,0,0">
-    <Border CornerRadius="10" Padding="8,1,8,2" Background="{Binding ToneBack}" MaxWidth="240" ToolTip="{Binding State}">
+   <Grid Grid.Row="2" Grid.ColumnSpan="2" Margin="0,7,0,0">
+    <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+    <Border CornerRadius="10" Padding="8,1,8,2" Background="{Binding ToneBack}" MaxWidth="180" ToolTip="{Binding State}">
      <TextBlock Text="{Binding State}" FontSize="11.5" FontWeight="SemiBold" Foreground="{Binding ToneFore}" TextTrimming="CharacterEllipsis"/>
     </Border>
-    <TextBlock Text="{Binding Mode}" Margin="9,0,0,0" Foreground="{DynamicResource FaintBrush}" FontSize="12" VerticalAlignment="Center"/>
-   </StackPanel>
+    <TextBlock Grid.Column="1" Text="{Binding Mode}" Margin="9,0,0,0" Foreground="{DynamicResource FaintBrush}" FontSize="12" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" ToolTip="{Binding Mode}"/>
+   </Grid>
   </Grid>
  </DataTemplate>
 </ResourceDictionary>

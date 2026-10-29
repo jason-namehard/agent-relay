@@ -12,22 +12,29 @@
 
 同时用几个 Agent 时，工作通常靠复制粘贴推进：把请求贴进一个会话，等它回答，再把答案抄到另一个会话。很快你就分不清哪个会话收到了什么、对方有没有接手、文件变了是不是就代表做完了。Agent Relay 把每次交接记成本机中转站里的一条任务（SQLite 账本），在 Windows 桌面程序中展示进度，并把「消息已提交」和「任务已凭回执完成」分开。Agent 和分工由你决定，Relay 只需要知道谁交给谁。
 
-当前状态：预览软件，Windows x64 桌面版。源码版本为 `0.1.1`，公开下载仍是 `0.1.0-preview.22`（见下）。CLI 与 stdio MCP 有 Windows 和 Linux 的 CI 覆盖。没有 macOS 桌面包、云端中转站，也没有在所有进程关闭后继续运行的后台服务。
+当前版本为 `0.1.2`，提供 Windows x64 桌面安装包。CLI 与 stdio MCP 有 Windows 和 Linux 的 CI 覆盖。没有 macOS 桌面包、云端中转站，也没有在所有进程关闭后继续运行的后台服务。
 
 ## 快速开始
 
-### Windows 安装包（源码候选版 `0.1.1`）
+### Windows 安装包
 
-`AgentRelay-v0.1.1-windows-x64-setup.exe` 由当前源码构建，**尚未**上传到 GitHub Release；上传后会按当前用户安装到 `%LOCALAPPDATA%\Programs\Agent Relay`，不需要管理员权限，也没有代码签名；桌面程序、CLI 和 MCP 都自带 .NET 运行库。安装后从开始菜单启动，或运行：
+从 [发布页](https://github.com/jason-namehard/agent-relay/releases/tag/v0.1.2) 下载 Windows x64 安装包，也可以在 PowerShell 运行：
 
 ```powershell
-"$env:LOCALAPPDATA\Programs\Agent Relay\app\gui\AgentRelay.Desktop.exe"
-"$env:LOCALAPPDATA\Programs\Agent Relay\app\relay.exe" --help    # app\mcp\relay-mcp.exe 同样是自包含的
+Invoke-WebRequest 'https://github.com/jason-namehard/agent-relay/releases/download/v0.1.2/AgentRelay-v0.1.2-windows-x64-setup.exe' -UseBasicParsing -OutFile 'AgentRelay-setup.exe'
+Start-Process '.\AgentRelay-setup.exe' -Wait
 ```
 
-安装包已在隔离配置中人工验证过：安装、卸载、保留数据、只移除规则、清除账本与偏好但保留工作区文件、取消卸载，以及中文路径下的卸载；规则文件损坏时的提示由核心测试覆盖，上轮端到端交互测试因窗口重叠没有完整跑通这一异常场景。
+安装包没有代码签名，默认按当前用户安装到 `%LOCALAPPDATA%\Programs\Agent Relay`；桌面程序、CLI 和 MCP 都自带 .NET 运行库。安装后从开始菜单启动，或运行：
 
-### 已发布的 preview `0.1.0-preview.22`
+```powershell
+& "$env:LOCALAPPDATA\Programs\Agent Relay\app\gui\AgentRelay.Desktop.exe"
+& "$env:LOCALAPPDATA\Programs\Agent Relay\app\relay.exe" --help    # app\mcp\relay-mcp.exe 同样是自包含的
+```
+
+按 0.1.1 和 0.1.2 源码分别构建的隔离安装包已通过覆盖升级测试。卸载测试覆盖了保留数据、移除规则、清除账本、规则损坏及位置记录缺失；两个原始交付安装包之间的升级尚未在隔离虚拟机中实测。升级前请先从托盘退出 Agent Relay。
+
+### 旧预览版 `0.1.0-preview.22`
 
 从 [Release 页面](https://github.com/jason-namehard/agent-relay/releases/tag/v0.1.0-preview.22) 下载，或用 PowerShell。请把压缩包完整解压到新目录，不要在 ZIP 里直接运行。
 
@@ -58,7 +65,7 @@ if ($actual -ne $asset.digest) { throw 'The file does not match the GitHub asset
 
 </details>
 
-运行要求：桌面程序和通知辅助程序自带运行库；CLI 与 MCP（`relay.dll`、`mcp\relay-mcp.dll`）需要 [.NET 10 runtime](https://dotnet.microsoft.com/download/dotnet/10.0)。没有代码签名，Windows 可能给出安全提示。「无需账号」指的是 Relay 自身和演示；接入的 Agent 仍按各自宿主的账号、权限和模型计费。
+运行要求：安装版的桌面程序、CLI 与 MCP 都自带运行库；便携 ZIP 的 CLI 与 MCP（`relay.dll`、`mcp\relay-mcp.dll`）需要 [.NET 10 runtime](https://dotnet.microsoft.com/download/dotnet/10.0)。没有代码签名，Windows 可能给出安全提示。「无需账号」指的是 Relay 自身和演示；接入的 Agent 仍按各自宿主的账号、权限和模型计费。
 
 ## 四个主页面
 

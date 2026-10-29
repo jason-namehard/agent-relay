@@ -12,22 +12,29 @@ A local handoff desk for people who work with several AI agents. Pass a file or 
 
 If you use more than one agent, the work usually moves by copy and paste: you paste a request into one session, wait, copy the answer into another, and lose track of which session received what, whether it was picked up, and whether a changed file means the work is finished. Agent Relay keeps each handoff as a task in a local relay folder with a SQLite ledger, shows its progress in a Windows desktop app, and separates "the message was submitted" from "the task was completed with a receipt". You decide the agents and their roles; Relay only needs to know who sends and who receives.
 
-Current state: preview software, Windows x64 desktop. Source is `0.1.1`; the latest public download is `0.1.0-preview.22` (see below). The CLI and stdio MCP server have Windows and Linux CI coverage. There is no macOS desktop package, no cloud relay and no background service after every process closes.
+Current release: `0.1.2`, with a Windows x64 desktop installer. The CLI and stdio MCP server have Windows and Linux CI coverage. There is no macOS desktop package, no cloud relay and no background service after every process closes.
 
 ## Quick start
 
-### Windows installer (source candidate `0.1.1`)
+### Windows installer
 
-The installer `AgentRelay-v0.1.1-windows-x64-setup.exe` is built from this source tree and is **not** published on GitHub Releases yet; once uploaded it installs into `%LOCALAPPDATA%\Programs\Agent Relay` as a per-user install with no admin prompt. It has no code signature and bundles the .NET runtime for the desktop app, the CLI and the MCP server. Start it from the Start menu, or run:
+Download [Agent Relay 0.1.2 for Windows x64](https://github.com/jason-namehard/agent-relay/releases/tag/v0.1.2), or run in PowerShell:
 
 ```powershell
-"$env:LOCALAPPDATA\Programs\Agent Relay\app\gui\AgentRelay.Desktop.exe"
-"$env:LOCALAPPDATA\Programs\Agent Relay\app\relay.exe" --help    # app\mcp\relay-mcp.exe is self-contained too
+Invoke-WebRequest 'https://github.com/jason-namehard/agent-relay/releases/download/v0.1.2/AgentRelay-v0.1.2-windows-x64-setup.exe' -UseBasicParsing -OutFile 'AgentRelay-setup.exe'
+Start-Process '.\AgentRelay-setup.exe' -Wait
 ```
 
-The installer is verified locally by running it in a disposable profile: the install, uninstall, "keep data", "remove rules only" and "clear ledger and preferences, keep workspace files" choices, cancellation, and a Chinese-path uninstall have been exercised; true end-to-end coverage of a corrupted rule file is provided by unit tests rather than a completed interactive run.
+The unsigned installer defaults to a per-user installation under `%LOCALAPPDATA%\Programs\Agent Relay` and bundles the .NET runtime for the desktop app, CLI and MCP server. Start it from the Start menu, or run:
 
-### Published preview `0.1.0-preview.22`
+```powershell
+& "$env:LOCALAPPDATA\Programs\Agent Relay\app\gui\AgentRelay.Desktop.exe"
+& "$env:LOCALAPPDATA\Programs\Agent Relay\app\relay.exe" --help    # app\mcp\relay-mcp.exe is self-contained too
+```
+
+Isolated installers built from the 0.1.1 and 0.1.2 revisions passed an upgrade test. Uninstall tests covered keeping data, removing rules, clearing the ledger, a damaged rule and a missing location record. The original distributed installers have not been tested together in an isolated virtual machine. Exit Agent Relay from the tray before upgrading.
+
+### Older preview `0.1.0-preview.22`
 
 Download the ZIP from the [release page](https://github.com/jason-namehard/agent-relay/releases/tag/v0.1.0-preview.22) or with PowerShell. Extract the whole archive into a new folder; do not run files from inside the ZIP.
 

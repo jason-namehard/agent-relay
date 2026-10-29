@@ -17,7 +17,7 @@ public partial class MainWindow
                 service.ForceCompleteTask(task.TaskId, "Marked complete by user", true);
                 return Task.CompletedTask;
             });
-        Add(actions, "Delete task", () =>
+        var delete = Add(actions, "Delete task", () =>
         {
             if (ThemedMessageBox.Show(this, T("Delete this task and its history? Files will be kept; unregistered relay files remain eligible for retention cleanup. This does not stop an already running Agent. This action cannot be undone."),
                 T("Delete task"), MessageBoxButton.OKCancel, MessageBoxImage.Warning) != MessageBoxResult.OK)
@@ -26,5 +26,8 @@ public partial class MainWindow
             taskId = "";
             return Task.CompletedTask;
         });
+        delete.Content = Icons.Create("Trash", size: 17);
+        delete.ToolTip = T("Delete task");
+        delete.SetResourceReference(StyleProperty, "IconButtonStyle");
     }
 }

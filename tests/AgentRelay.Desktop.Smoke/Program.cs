@@ -64,7 +64,7 @@ internal static class Program
         await CheckNotificationDelivery(window,root);
         await CheckBatchTasks(window,root);
         await CheckLongAgentNames(window,root);
-        await CheckTaskFooterLayout(window);
+        await CheckTaskFooterLayout(window,waiting.TaskId);
         await CheckDemoSampleTranslations(window,root);
         await CheckBlockedDeliveryUi(window,root);
         await CheckFileCancellation(window,root);
@@ -852,17 +852,24 @@ internal static class Program
         window.RequestExit();
     }
 
-    private static async Task CheckTaskFooterLayout(MainWindow window)
+    private static async Task CheckTaskFooterLayout(MainWindow window,string taskId)
     {
         var navigation=(ListBox)window.FindName("Navigation");
         foreach(var language in new[]{"en","ja","es","zh-CN"})
         {
             await SetLanguage(window,language);
-            navigation.SelectedItem=navigation.Items.Cast<ListBoxItem>().Single(i=>(string)i.Tag=="Home");window.UpdateLayout();
+            navigation.SelectedItem=navigation.Items.Cast<ListBoxItem>().Single(i=>(string)i.Tag=="Home");SelectTask(window,taskId);window.UpdateLayout();
             var identity=Find<TextBlock>(window,"TaskFooterIdentity");var actions=Find<WrapPanel>(window,"TaskFooterActions");
             var identityBounds=identity.TransformToAncestor(window).TransformBounds(new Rect(0,0,identity.ActualWidth,identity.ActualHeight));
             var actionBounds=actions.TransformToAncestor(window).TransformBounds(new Rect(0,0,actions.ActualWidth,actions.ActualHeight));
             Check(identityBounds.Bottom<=actionBounds.Top,"Task footer identity and actions never overlap: "+language);
+            if(language is "en" or "ja")
+            {
+                var buttons=actions.Children.OfType<Button>().ToArray();
+                var tops=buttons.Select(button=>button.TransformToAncestor(actions).Transform(new Point(0,0)).Y).ToArray();
+                Check(buttons.Length==4 && tops.Max()-tops.Min()<1,"Task footer actions fit on one row at the default window size: "+language);
+                Check(AutomationProperties.GetName(buttons[^1])==UiText.Translate("Delete task",language) && buttons[^1].ToolTip?.ToString()==UiText.Translate("Delete task",language),"Compact delete action remains accessible: "+language);
+            }
         }
         navigation.SelectedItem=navigation.Items.Cast<ListBoxItem>().Single(i=>(string)i.Tag=="Settings");window.UpdateLayout();
         var languageChoice=Find<ComboBox>(window,"LanguageChoice");
