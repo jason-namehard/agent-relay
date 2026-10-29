@@ -980,6 +980,7 @@ internal static class Program
         var script=Path.Combine(root,"probe-progress.ps1");var started=Path.Combine(root,"probe-started");
         var release=Path.Combine(root,"probe-release");var fail=Path.Combine(root,"probe-fail");
         File.WriteAllText(script,"""
+            [Console]::InputEncoding=[Text.UTF8Encoding]::new($false)
             $text=[Console]::In.ReadToEnd()
             Set-Content -LiteralPath $args[0] -Value started
             while (-not (Test-Path -LiteralPath $args[1])) { Start-Sleep -Milliseconds 25 }

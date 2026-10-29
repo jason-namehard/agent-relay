@@ -176,6 +176,14 @@ public sealed partial class RelayService
             {
                 var original = File.ReadAllText(registration.InstructionFile);
                 var cleaned = StripGuidanceBlock(original, state.WorkspaceKey, agentId);
+                var backup = Path.Combine(Home, registration.BackupRelativePath);
+                if (cleaned != original && File.Exists(backup))
+                {
+                    var beforeInstall = File.ReadAllText(backup);
+                    if (beforeInstall.Length > 0 && !beforeInstall.EndsWith('\n') &&
+                        (cleaned == beforeInstall + "\n" || cleaned == beforeInstall + "\r\n"))
+                        cleaned = beforeInstall;
+                }
                 if (cleaned != original) WritePreservingUtf8Bom(registration.InstructionFile, cleaned);
             }
             File.Delete(registration.InstructionPath);

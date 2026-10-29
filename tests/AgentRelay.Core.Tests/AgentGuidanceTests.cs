@@ -113,6 +113,19 @@ public sealed class AgentGuidanceTests
     }
 
     [TestMethod]
+    public void RemovingRuleRestoresFileWithoutFinalNewline()
+    {
+        var file = Path.Combine(root, "no-newline.md");
+        const string original = "User instruction without a final newline.";
+        File.WriteAllText(file, original);
+        Stable(service, "agent-a");
+        service.InstallGuidance("agent-a", file);
+        service.InstallGuidance("agent-a", file);
+        service.RemoveGuidance("agent-a");
+        Assert.AreEqual(original, File.ReadAllText(file));
+    }
+
+    [TestMethod]
     public void WorkspacesWithSameNodeIdHaveDifferentStableEntries()
     {
         var other = new RelayService(Path.Combine(root, "other")); other.Initialize();

@@ -4,6 +4,7 @@ param(
     [string]$OutputDirectory,
     [string]$BuildDirectory,
     [string]$TestAppId,
+    [string]$TestLocationPath,
     [switch]$NoRestore
 )
 $ErrorActionPreference='Stop'
@@ -54,7 +55,14 @@ $helpText = (& $compiler '/?' 2>&1 | Out-String)
 $definePrefix = if ($helpText.Contains('--define=')) { '--define=' } else { '/D' }
 $arguments=@("${definePrefix}SourcePath=$stage","${definePrefix}ReleaseVersion=$version","${definePrefix}OutputPath=$output",
     "${definePrefix}IconPath=$(Join-Path $projectRoot 'src/AgentRelay.Desktop/Assets/AgentRelay.ico')")
-if ($TestAppId) { $arguments+="${definePrefix}TestAppId=$TestAppId" }
+if ($TestAppId) {
+    $arguments+="${definePrefix}TestAppId=$TestAppId"
+    if (-not $TestLocationPath) { $TestLocationPath=Join-Path $build 'relay.location.json' }
+}
+if ($TestLocationPath) {
+    if (-not $TestAppId) { throw 'TestLocationPath requires TestAppId.' }
+    $arguments+="${definePrefix}TestLocationPath=$([IO.Path]::GetFullPath($TestLocationPath))"
+}
 & $compiler @arguments (Join-Path $PSScriptRoot 'windows-installer.iss')
 if ($LASTEXITCODE -ne 0) { throw 'Installer compilation failed.' }
 Get-Item -LiteralPath $installer | Select-Object FullName,Length
