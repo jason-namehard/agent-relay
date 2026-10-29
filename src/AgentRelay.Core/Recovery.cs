@@ -27,6 +27,7 @@ public sealed partial class RelayService
                 {
                     // File handoffs keep their sessions and files when a turn runs over; the user decides how to go on.
                     if (task.State != TaskState.Paused && task.DeadlineAt <= Now) { PauseForTimeout(s, task); s.Save(task); }
+                    else if (RecoverExpiredFileDelivery(s, task)) s.Save(task);
                 }
                 else if (task.DeadlineAt <= Now)
                 {

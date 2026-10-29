@@ -237,12 +237,10 @@ public partial class MainWindow : Window
             StatusText.Text = T("Waiting for handoff details…");
             if (dialog.ShowDialog() != true) { reviewCancelled = true; return; }
             var draft = dialog.Result!;
-            var existing = service.Tasks().FirstOrDefault(v => v.Task.IsFileHandoff && v.Task.RequesterId == draft.From && v.Task.RecipientId == draft.To && v.Task.ManualSourceFile == draft.File &&
-                v.Task.State is not (TaskState.Succeeded or TaskState.Failed or TaskState.Cancelled or TaskState.TimedOut));
-            if (existing is not null) { taskId = existing.Task.TaskId; return; }
-            var result = await Task.Run(() => service.CreateFileHandoff(draft));
+            var existingIds = service.Tasks().Select(v => v.Task.TaskId).ToHashSet(StringComparer.Ordinal);
+            var result = await Task.Run(() => service.CreateFileHandoff(draft,reuseExisting:dialog.ReuseExisting));
             taskId = result.Task.TaskId;
-            service.ConfigureFileHandoff(taskId, dialog.Options(draft));
+            if (!existingIds.Contains(taskId)) service.ConfigureFileHandoff(taskId, dialog.Options(draft));
         }, "You copy the prompt into the Agent yourself");
     }
 

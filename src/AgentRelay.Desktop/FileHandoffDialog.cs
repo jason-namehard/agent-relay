@@ -8,6 +8,7 @@ namespace AgentRelay.Desktop;
 public sealed class FileHandoffDialog : Window
 {
     public ManualTransferDraft? Result { get; private set; }
+    public bool ReuseExisting { get; private set; }
     public FileHandoffOptions Options(ManualTransferDraft draft) => new(ManualContinuous:true);
 
     public FileHandoffDialog(Window owner,RelayService service,string language)
@@ -24,8 +25,9 @@ public sealed class FileHandoffDialog : Window
         }
         var from=Node("Sender","FileHandoffFrom",0);var to=Node("Recipient","FileHandoffTo",1);
         var work=ui.Field(ui.Body,"Work to give the sender Agent","ManualWorkRequest",multiline:true);work.Height=150;
-        void Accept(ManualTransferDraft draft)
+        void Accept(ManualTransferDraft draft, bool reuseExisting)
         {
+            ReuseExisting=reuseExisting;
             Result=string.IsNullOrWhiteSpace(draft.Message)&&!string.IsNullOrWhiteSpace(work.Text)
                 ?draft with {Message=work.Text.Trim()}:draft;
             DialogResult=true;
@@ -40,7 +42,7 @@ public sealed class FileHandoffDialog : Window
         ui.Body.Children.Add(ui.Note("Paste the sender Agent's handoff JSON below. Later replies use the task's context and receipt, so another handoff does not need to be created for each turn."));
         var reply=ui.Field(ui.Body,"Agent handoff JSON","FileHandoffReply",multiline:true);reply.Height=150;
         ui.Button(ui.Body,"Parse and create handoff","ParseFileHandoff",()=>
-        {Accept(ManualTransfers.Parse(reply.Text,agents));},true);
+        {Accept(ManualTransfers.Parse(reply.Text,agents),true);},true);
 
         var manual=new StackPanel{Margin=new(10)};
         var expander=new Expander{Header=ui.T("Or select an existing file"),Content=manual,Margin=new(0,16,0,8)};ui.Body.Children.Add(expander);
@@ -50,7 +52,7 @@ public sealed class FileHandoffDialog : Window
         var message=ui.Field(manual,"Short work request","FileHandoffMessage",multiline:true);message.Height=75;
         ui.Button(manual,"Create handoff","CreateFileHandoff",()=>
         {
-            Accept(ManualTransfers.Parse(RelayJson.Write(new ManualTransferDraft(from.SelectedValue as string??"",to.SelectedValue as string??"",file.Text,message.Text)),agents));
+            Accept(ManualTransfers.Parse(RelayJson.Write(new ManualTransferDraft(from.SelectedValue as string??"",to.SelectedValue as string??"",file.Text,message.Text)),agents),false);
         });
         var cancel=ui.Button(ui.Actions,"Cancel","CancelFileHandoff",()=>DialogResult=false);cancel.IsCancel=true;
     }

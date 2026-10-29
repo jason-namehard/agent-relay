@@ -53,6 +53,56 @@ public sealed class ManualTransferTests
     }
 
     [TestMethod]
+    public void ChangedInstructionsCreateANewHandoffAndKeepTheOriginal()
+    {
+        var original = Create();
+        var updated = service.CreateFileHandoff(new("agent-a", "agent-b", source, "请修正并重新验收")).Task;
+        Assert.AreNotEqual(original.TaskId, updated.TaskId);
+        Assert.AreEqual("请修正并重新验收", updated.ManualNextAction);
+        Assert.AreEqual("请检查文件", service.Status(original.TaskId).Task.ManualNextAction);
+        Assert.HasCount(2, service.Tasks());
+    }
+
+    [TestMethod]
+    public void ChangedSourceContentCreatesANewSnapshot()
+    {
+        var original = Create();
+        var originalBytes = File.ReadAllBytes(original.RequestPath);
+        File.WriteAllBytes(source, [0x50, 0x4b, 0x03, 0x04, 1, 254]);
+        var updated = Create();
+        Assert.AreNotEqual(original.TaskId, updated.TaskId);
+        CollectionAssert.AreEqual(File.ReadAllBytes(source), File.ReadAllBytes(updated.RequestPath));
+        CollectionAssert.AreEqual(originalBytes, File.ReadAllBytes(original.RequestPath));
+        Assert.HasCount(2, service.Tasks());
+    }
+
+    [TestMethod]
+    public void ExplicitCreationKeepsIdenticalFilesAsSeparateTasksWithTheirOwnOptions()
+    {
+        var original = Create();
+        var created = service.CreateFileHandoff(new("agent-a", "agent-b", source, "请检查文件"), reuseExisting:false).Task;
+        service.ConfigureFileHandoff(created.TaskId, new(ManualContinuous:true));
+        Assert.AreNotEqual(original.TaskId, created.TaskId);
+        Assert.IsTrue(service.Status(created.TaskId).Task.ManualContinuous);
+        Assert.IsFalse(service.Status(original.TaskId).Task.ManualContinuous);
+        Assert.HasCount(2, service.Tasks());
+    }
+
+    [TestMethod]
+    public void DuplicateImportUsesOriginalInstructionsAfterTheTaskAdvances()
+    {
+        var original = Create();
+        var reply = Path.Combine(root, "reply.md"); File.WriteAllText(reply, "Please decide option 2.");
+        Receipt(original, "agent-b", "done", true, reply, "选择选项并更新计划");
+        Assert.HasCount(1, service.ImportManualReceipts().UpdatedTaskIds);
+        var repeated = Create();
+        Assert.AreEqual(original.TaskId, repeated.TaskId);
+        Assert.AreEqual(1, repeated.ManualTurn);
+        Assert.AreEqual("选择选项并更新计划", repeated.ManualNextAction);
+        Assert.HasCount(1, service.Tasks());
+    }
+
+    [TestMethod]
     public void AlreadyManagedUnregisteredFileDoesNotGetCopied()
     {
         var path = Path.Combine(service.Home, "workspace", "outgoing", "report.md");

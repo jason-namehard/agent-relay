@@ -222,6 +222,28 @@ internal static class Program
         });
         await Wait(()=>service.Tasks().Count==beforeDirect+1);
         var direct=service.Tasks().Single(v=>v.Task.ManualSourceFile==directSource).Task;
+        File.WriteAllText(service.ManualReceiptPath(direct),RelayJson.Write(new ManualReceipt(direct.TaskId,direct.AttemptId,"agent-c",0,"working")));
+        await Wait(()=>service.Status(direct.TaskId).Task.State==TaskState.Running);
+        await Modal<FileHandoffDialog>(window,"New manual transfer task",dialog=>
+        {
+            Find<TextBox>(dialog,"FileHandoffReply").Text=RelayJson.Write(new{from=manual.AgentId,to="agent-c",file=directSource});
+            Press(dialog,"ParseFileHandoff");return Task.CompletedTask;
+        });
+        Check(service.Tasks().Count==beforeDirect+1&&service.Status(direct.TaskId).Task.State==TaskState.Running,
+            "Pasting an identical handoff reopens the running task without reconfiguring it");
+        await Modal<FileHandoffDialog>(window,"New manual transfer task",dialog=>
+        {
+            Expand(dialog);
+            Find<ComboBox>(dialog,"FileHandoffFrom").SelectedValue=manual.AgentId;
+            Find<ComboBox>(dialog,"FileHandoffTo").SelectedValue="agent-c";
+            Find<TextBox>(dialog,"FileHandoffFile").Text=directSource;
+            Press(dialog,"CreateFileHandoff");return Task.CompletedTask;
+        });
+        await Wait(()=>service.Tasks().Count==beforeDirect+2);
+        var separate=service.Tasks().Single(v=>v.Task.ManualSourceFile==directSource&&v.Task.TaskId!=direct.TaskId).Task;
+        Check(separate.ManualContinuous&&separate.State==TaskState.AwaitingManual&&service.Status(direct.TaskId).Task.State==TaskState.Running,
+            "Explicitly creating another handoff for the same file keeps both tasks and configures the new one");
+        service.Cancel(separate.TaskId,"Separate creation verified.");
         File.WriteAllText(service.ManualReceiptPath(direct),RelayJson.Write(new ManualReceipt(direct.TaskId,direct.AttemptId,"agent-c",0,"done",false,TaskComplete:true)));
         await Wait(()=>service.Status(direct.TaskId).Task.State==TaskState.Succeeded);
         Check(service.Status(direct.TaskId).Task.ManualTurn==0,"Receipt that needs no reply ends the handoff immediately without returning to its sender");

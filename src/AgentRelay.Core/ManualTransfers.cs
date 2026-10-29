@@ -77,17 +77,23 @@ public sealed partial class RelayService
 
     public string ManualReceiptPath(TaskRecord task) => Path.Combine(workspace.AttemptDirectory(task.TaskId, task.AttemptId), ".relay", "receipt.json");
 
-    public TaskView CreateFileHandoff(ManualTransferDraft draft, OriginSession? origin = null)
+    public TaskView CreateFileHandoff(ManualTransferDraft draft, OriginSession? origin = null, bool reuseExisting = true)
     {
         if (origin is not null) RequireOriginContext(origin);
         var normalized = ManualTransfers.Parse(RelayJson.Write(draft), Agents());
         return store.Write(s =>
         {
             Agent(s, normalized.From); Agent(s, normalized.To);
-            var active = s.Query("SELECT json FROM tasks", r => RelayJson.Read<TaskRecord>(r.GetString(0)))
-                .FirstOrDefault(t => t.IsFileHandoff && !Terminal(t.State) && t.RequesterId == normalized.From &&
-                    t.RecipientId == normalized.To && t.ManualSourceFile == normalized.File);
-            if (active is not null) return ManualView(active);
+            if (reuseExisting)
+            {
+                var active = s.Query("SELECT json,input_json FROM tasks", r =>
+                        (Task: RelayJson.Read<TaskRecord>(r.GetString(0)), Input: RelayJson.Read<DispatchRequest>(r.GetString(1))))
+                    .FirstOrDefault(entry => entry.Task.IsFileHandoff && !Terminal(entry.Task.State) &&
+                        entry.Task.RequesterId == normalized.From && entry.Task.RecipientId == normalized.To &&
+                        entry.Task.ManualSourceFile == normalized.File && entry.Input.Content == normalized.Message &&
+                        SameContent(entry.Task.RequestPath, normalized.File)).Task;
+                if (active is not null) return ManualView(active);
+            }
             var now = Now;
             var settings = s.Json<RelaySettings>("SELECT json FROM settings WHERE id=1")!;
             var task = new TaskRecord
@@ -138,12 +144,16 @@ public sealed partial class RelayService
                 }
             }
             if (applied) { changed.Add(task.TaskId); continue; }
-            if (task.State == TaskState.Paused || task.DeadlineAt > Now) continue;
+            if (task.DeadlineAt > Now) continue;
             var paused = store.Write(s =>
             {
                 var current = s.Task(task.TaskId);
-                if (Terminal(current.State) || current.State == TaskState.Paused || current.DeadlineAt > Now) return false;
-                PauseForTimeout(s, current);
+                if (Terminal(current.State) || current.DeadlineAt > Now) return false;
+                if (current.State == TaskState.Paused)
+                {
+                    if (!RecoverExpiredFileDelivery(s, current)) return false;
+                }
+                else PauseForTimeout(s, current);
                 s.Save(current);
                 return true;
             });

@@ -113,6 +113,7 @@ public sealed partial class RelayService
         }
         if (!string.IsNullOrWhiteSpace(note))
             task.ManualNextAction = "用户说明：" + note.Trim() + (string.IsNullOrWhiteSpace(task.ManualNextAction) ? "" : "\n" + task.ManualNextAction);
+        RecoverExpiredFileDelivery(s, task);
         task.State = task.PausedFrom.Value;
         task.PauseReason = null; task.PauseMessage = null; task.PausedFrom = null;
         task.DeadlineAt = Now + TurnTimeout(s, task);
@@ -174,9 +175,10 @@ public sealed partial class RelayService
 
     private void PauseForTimeout(StoreSession s, TaskRecord task)
     {
+        var recovered = RecoverExpiredFileDelivery(s, task);
         var recipient = task.AwaitingAgentId ?? task.RecipientId;
         var blocked = ReadCliExtension(s, recipient)?.Block;
-        var deliveryError = blocked?.Message ?? (task.CliFileTurn == task.ManualTurn ? task.CliFileError : null);
+        var deliveryError = blocked?.Message ?? (!recovered && task.CliFileTurn == task.ManualTurn ? task.CliFileError : null);
         if (deliveryError is not null)
         {
             PauseFileHandoff(s, task, "delivery_failed", deliveryError, task.State);
@@ -186,6 +188,17 @@ public sealed partial class RelayService
         PauseFileHandoff(s, task, "turn_timeout",
             $"本轮已超过设定时限（{minutes} 分钟），已暂停等待你的决定。Agent 可能仍在处理，晚到的回执仍会被接收；也可以继续等待、取消或人工标记完成。",
             task.State);
+    }
+
+    private bool RecoverExpiredFileDelivery(StoreSession s, TaskRecord task)
+    {
+        if (task.CliFileTurn != task.ManualTurn || task.CliFileStatus != "submitting" || task.DeadlineAt > Now)
+            return false;
+        // A stopped sender cannot report its outcome; the turn deadline bounds the wait without resending it.
+        task.CliFileStatus = "unknown";
+        task.CliFileError = "桥接未在本轮时限内留下投递结果。请先检查目标会话；确认未收到后再允许重发。";
+        s.Event(task, "file.cli_unknown", "relay", Now, task.CliFileError);
+        return true;
     }
 
     private void AdvanceFileHandoff(StoreSession s, TaskRecord task, string next, string? action)
