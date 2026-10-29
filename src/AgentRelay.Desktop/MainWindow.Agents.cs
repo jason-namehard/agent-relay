@@ -123,10 +123,10 @@ public partial class MainWindow
             if (table.SelectedItem is not AgentRow row) return;
             agentId = row.Source.AgentId;
             var id = row.Source.AgentId;
-            var header = new StackPanel { Orientation = Orientation.Horizontal, Margin = new(0, 22, 0, 0) };
-            header.Children.Add(Avatar(id, 30));
+            var header = new DockPanel { Margin = new(0, 22, 0, 0) };
+            var headerAvatar=Avatar(id,30); DockPanel.SetDock(headerAvatar,Dock.Left); header.Children.Add(headerAvatar);
             var names = new StackPanel { Margin = new(10, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center };
-            names.Children.Add(new TextBlock { Text = row.Name, FontSize = 15, FontWeight = FontWeights.SemiBold });
+            names.Children.Add(new TextBlock { Text = row.Name, FontSize = 15, FontWeight = FontWeights.SemiBold, TextWrapping = TextWrapping.Wrap });
             names.Children.Add(Brushed(new TextBlock { Text = T("Agent ID") + ": " + id, FontSize = 12, FontFamily = new("Cascadia Mono, Consolas") }, "FaintBrush"));
             header.Children.Add(names);
             details.Children.Add(header);
@@ -136,7 +136,13 @@ public partial class MainWindow
             var state = registration is null ? T("Not installed") : string.Format(System.Globalization.CultureInfo.CurrentUICulture, T("Recorded installation: {0}"), registration.InstructionFile);
             var ruleRow = SettingRow(rules, "Instruction file", state + "\n" + T("Install the rule in the instruction file your host actually loads. The one-line rule uses a little context; details are read on demand. Existing sessions may need to reread the file or restart."));
             RowAction(ruleRow, "Install handoff rule", () => { InstallRules(Selected().AgentId); return Task.CompletedTask; });
-            Styled(RowAction(ruleRow, "Remove handoff rule", () => { service.RemoveGuidance(Selected().AgentId); return Task.CompletedTask; }), "GhostButtonStyle");
+            Styled(RowAction(ruleRow, "Remove handoff rule", () =>
+            {
+                if (ThemedMessageBox.Show(this, T("Remove this Agent's Relay handoff rule? Other instructions will be kept."), T("Remove handoff rule"), MessageBoxButton.OKCancel, MessageBoxImage.Warning) == MessageBoxResult.OK)
+                    service.RemoveGuidance(Selected().AgentId);
+                else reviewCancelled = true;
+                return Task.CompletedTask;
+            }), "GhostButtonStyle");
 
             var bridge = Group(details, "Agent bridge");
             var bridgeState = new StackPanel { Orientation = Orientation.Horizontal };
@@ -195,12 +201,12 @@ public partial class MainWindow
 
     private DataGridTemplateColumn AgentColumn()
     {
-        var row = new FrameworkElementFactory(typeof(StackPanel));
-        row.SetValue(StackPanel.OrientationProperty, Orientation.Horizontal);
+        var row = new FrameworkElementFactory(typeof(DockPanel));
         row.SetValue(VerticalAlignmentProperty, VerticalAlignment.Center);
         var avatar = new FrameworkElementFactory(typeof(Border));
         avatar.SetValue(WidthProperty, 32.0); avatar.SetValue(HeightProperty, 32.0); avatar.SetValue(Border.CornerRadiusProperty, new CornerRadius(9));
         avatar.SetBinding(Border.BackgroundProperty, new Binding(nameof(AgentRow.AvatarBrush)));
+        avatar.SetValue(DockPanel.DockProperty, Dock.Left);
         var letter = new FrameworkElementFactory(typeof(TextBlock));
         letter.SetBinding(TextBlock.TextProperty, new Binding(nameof(AgentRow.Initial)));
         letter.SetValue(TextBlock.FontSizeProperty, 14.0); letter.SetValue(TextBlock.FontWeightProperty, FontWeights.Bold);
@@ -212,8 +218,11 @@ public partial class MainWindow
         var name = new FrameworkElementFactory(typeof(TextBlock));
         name.SetBinding(TextBlock.TextProperty, new Binding(nameof(AgentRow.Name)));
         name.SetValue(TextBlock.FontWeightProperty, FontWeights.SemiBold);
+        name.SetValue(TextBlock.TextTrimmingProperty, TextTrimming.CharacterEllipsis);
+        name.SetBinding(ToolTipProperty, new Binding(nameof(AgentRow.Name)));
         var host = new FrameworkElementFactory(typeof(TextBlock));
         host.SetBinding(TextBlock.TextProperty, new Binding(nameof(AgentRow.Host)));
+        host.SetValue(TextBlock.TextTrimmingProperty, TextTrimming.CharacterEllipsis);
         host.SetValue(TextBlock.FontSizeProperty, 12.0); host.SetResourceReference(TextBlock.ForegroundProperty, "FaintBrush");
         names.AppendChild(name); names.AppendChild(host);
         row.AppendChild(avatar); row.AppendChild(names);

@@ -21,6 +21,7 @@ public partial class MainWindow : Window
 {
     private RelayService service;
     private bool demo;
+    private readonly HashSet<string> demoSampleIds;
     private DesktopPreferences preferences;
     private readonly Dictionary<string, TextBox> fields = new(StringComparer.Ordinal);
     private bool busy;
@@ -38,6 +39,7 @@ public partial class MainWindow : Window
     {
         this.service = service;
         this.demo = demo;
+        demoSampleIds = demo ? service.Tasks().Select(view => view.Task.TaskId).ToHashSet(StringComparer.Ordinal) : [];
         preferences = Appearance.Load(service.Home);
         InitializeComponent();
         Appearance.Apply(this, preferences);
@@ -218,6 +220,7 @@ public partial class MainWindow : Window
     private void NewTaskMenu()
     {
         var trigger = new Button { Tag = "New task", Margin = new(0) };
+        AutomationProperties.SetName(trigger, T("New task"));
         trigger.SetResourceReference(StyleProperty, "PrimaryButtonStyle");
         var label = Icons.WithLabel("Plus", T("New task"));
         var chevron = Icons.Create("Down", size: 14); chevron.Margin = new(8, 1, 0, 0);
@@ -285,7 +288,7 @@ public partial class MainWindow : Window
         var name=System.Text.RegularExpressions.Regex.Replace(label,"[^a-zA-Z0-9_]","");
         if(name.Length==0 || !char.IsLetter(name[0]))name="Action"+Guid.NewGuid().ToString("N");
         var button=new Button{Content=T(label),Tag=label,Name=name};
-        AutomationProperties.SetAutomationId(button,button.Name);row.Children.Add(button);
+        AutomationProperties.SetAutomationId(button,button.Name);AutomationProperties.SetName(button,T(label));row.Children.Add(button);
         button.Click+=async(_,_)=>
         {
             var drafts=label=="Save Accent" ? CaptureInputs() : null;

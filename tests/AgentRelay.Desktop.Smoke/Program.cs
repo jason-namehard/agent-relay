@@ -64,6 +64,8 @@ internal static class Program
         await CheckNotificationDelivery(window,root);
         await CheckBatchTasks(window,root);
         await CheckLongAgentNames(window,root);
+        await CheckTaskFooterLayout(window);
+        await CheckDemoSampleTranslations(window,root);
         await CheckBlockedDeliveryUi(window,root);
         await CheckFileCancellation(window,root);
         Check(navigation.Items.Cast<ListBoxItem>().Select(i=>(string)i.Tag).SequenceEqual(new[]{"Home","Agents","Connections","Settings"}),"Exactly four main pages");
@@ -93,6 +95,7 @@ internal static class Program
         Check(service.Agents().Any(a=>a.AgentId=="agent-b") && ((Border)window.FindName("ErrorBanner")).Visibility==Visibility.Visible && ((TextBox)window.FindName("ErrorText")).Text.Contains("未完成交接"),"Removing an active Agent is blocked before any confirmation dialog");
         Check(!FindAll<TextBox>(window).Any(b=>b.Name.StartsWith("AgentEntry")||b.Name.EndsWith("SetupReply")),"Agent page has no competing setup form");
         Check(FindAll<Button>(window).Count(b=>Equals(b.Tag,"New Agent"))==1,"The Agent page has one New Agent action");
+        Check(AutomationProperties.GetName(FindAll<Button>(window).Single(b=>Equals(b.Tag,"New Agent")))=="新建 Agent","Icon-labelled Agent action exposes a readable accessible name");
         var rowMenu=(Panel)FindAll<Button>(window).Single(b=>Equals(b.Tag,"Edit Agent")).Parent;
         Check(rowMenu.Children.OfType<Button>().Select(b=>(string)b.Tag).SequenceEqual(new[]{"Edit Agent","Test bridge","Recheck and restore bridge","Delete Agent"}),"Each Agent's row menu holds editing, bridge testing, recovery and removal");
         window.UpdateLayout();
@@ -101,7 +104,12 @@ internal static class Program
         Check(FindAll<Button>(window).Any(b=>Equals(b.Tag,"Install handoff rule"))&&FindAll<Button>(window).Any(b=>Equals(b.Tag,"Remove handoff rule")),"Agent page exposes explicit installation and removal of handoff rules");
         Check(FindAll<TextBlock>(window).Any(t=>t.Text.Contains("未安装",StringComparison.Ordinal)),"Selected Agent shows the handoff rule installation state");
         var count=service.Agents().Count;
-        var hostInstruction=Path.Combine(root,"host-instructions.md");File.WriteAllText(hostInstruction,"Existing host instructions.");
+        var hostInstruction=Path.Combine(root,"host-instructions.md");File.WriteAllText(hostInstruction,"Existing host instructions.\n");
+        service.InstallGuidance("agent-b",hostInstruction);
+        await ConfirmAction(window,"Remove handoff rule",false);
+        Check(service.GuidanceRegistrations().Count==1&&File.ReadAllText(hostInstruction).Contains("agent-relay:"),"Cancelling removal keeps the installed rule");
+        await ConfirmAction(window,"Remove handoff rule",true);
+        Check(service.GuidanceRegistrations().Count==0&&File.ReadAllText(hostInstruction)=="Existing host instructions.\n","Confirming removal only removes the Agent's marked rule");
         var oneClickDone=new TaskCompletionSource();
         async Task CheckOneClick()
         {
@@ -115,7 +123,7 @@ internal static class Program
                 Check(FindAll<TextBlock>(message).Any(t=>t.Text.Contains("可选交接规则",StringComparison.Ordinal)&&t.Text.Contains("确认后",StringComparison.Ordinal)),"One-click setup confirmation explains the optional rule");
                 Check(Clipboard.GetText().Contains("agent setup --manifest",StringComparison.Ordinal),"One-click setup copies an Agent registration prompt");
                 Press(message,"MessageOk");
-                Check(service.GuidanceRegistrations().Count==0&&File.ReadAllText(hostInstruction)=="Existing host instructions.","Copying the Agent setup prompt does not install a rule or modify instruction files");
+                Check(service.GuidanceRegistrations().Count==0&&File.ReadAllText(hostInstruction)=="Existing host instructions.\n","Copying the Agent setup prompt does not install a rule or modify instruction files");
                 oneClickDone.SetResult();
             }
             catch(Exception error){message?.Close();chooser.Close();oneClickDone.SetException(error);}
@@ -149,7 +157,7 @@ internal static class Program
         });
         var manual=service.Agents().Single(a=>a.DisplayName=="任意节点甲");
         Check(manual.ConfigPath==""&&manual.Host=="manual","Name alone registers a manual Agent without configuration paths");
-        Check(manual.InstructionPaths.Contains(hostInstruction)&&service.GuidanceRegistrations().Count==0&&File.ReadAllText(hostInstruction)=="Existing host instructions.","Registering an instruction file does not install a rule or modify the file");
+        Check(manual.InstructionPaths.Contains(hostInstruction)&&service.GuidanceRegistrations().Count==0&&File.ReadAllText(hostInstruction)=="Existing host instructions.\n","Registering an instruction file does not install a rule or modify the file");
         await SaveImage(window,Path.Combine(root,"Agents.png"));
         Navigate("Home");
         await SetLanguage(window,"en");
@@ -834,6 +842,65 @@ internal static class Program
         navigation.SelectedItem=navigation.Items.Cast<ListBoxItem>().Single(i=>(string)i.Tag=="Connections");
         await Wait(()=>FindAll<TextBlock>(window).Any(t=>AutomationProperties.GetAutomationId(t).StartsWith("RouteName_",StringComparison.Ordinal)));window.UpdateLayout();
         CheckNames("Connection details");
+        navigation.SelectedItem=navigation.Items.Cast<ListBoxItem>().Single(i=>(string)i.Tag=="Agents");
+        await Wait(()=>FindAll<DataGrid>(window).Any(t=>t.Name=="AgentsTable"));window.UpdateLayout();
+        var agentTable=Find<DataGrid>(window,"AgentsTable");
+        agentTable.SelectedItem=agentTable.Items.Cast<object>().Single(r=>(string)r.GetType().GetProperty("Name")!.GetValue(r)! == first);
+        window.UpdateLayout();
+        Check(FindAll<TextBlock>(agentTable).Any(t=>t.Text==first&&t.TextTrimming==TextTrimming.CharacterEllipsis&&Equals(t.ToolTip,first)),"Long Agent list names trim with ellipsis and retain their full tooltip");
+        Check(FindAll<TextBlock>(window).Any(t=>t.Text==first&&t.TextWrapping==TextWrapping.Wrap),"Long Agent detail names wrap");
+        window.RequestExit();
+    }
+
+    private static async Task CheckTaskFooterLayout(MainWindow window)
+    {
+        var navigation=(ListBox)window.FindName("Navigation");
+        foreach(var language in new[]{"en","ja","es","zh-CN"})
+        {
+            await SetLanguage(window,language);
+            navigation.SelectedItem=navigation.Items.Cast<ListBoxItem>().Single(i=>(string)i.Tag=="Home");window.UpdateLayout();
+            var identity=Find<TextBlock>(window,"TaskFooterIdentity");var actions=Find<WrapPanel>(window,"TaskFooterActions");
+            var identityBounds=identity.TransformToAncestor(window).TransformBounds(new Rect(0,0,identity.ActualWidth,identity.ActualHeight));
+            var actionBounds=actions.TransformToAncestor(window).TransformBounds(new Rect(0,0,actions.ActualWidth,actions.ActualHeight));
+            Check(identityBounds.Bottom<=actionBounds.Top,"Task footer identity and actions never overlap: "+language);
+        }
+        navigation.SelectedItem=navigation.Items.Cast<ListBoxItem>().Single(i=>(string)i.Tag=="Settings");window.UpdateLayout();
+        var languageChoice=Find<ComboBox>(window,"LanguageChoice");
+        Check(AutomationProperties.GetName(languageChoice).Contains("简体中文",StringComparison.Ordinal),"Language selector exposes its current value in its accessible name");
+        Check(languageChoice.Items.Cast<AppearanceOption>().All(item=>item.ToString()==item.Label),"Language choices expose their readable labels to accessibility");
+        await SetLanguage(window,"en");
+        navigation.SelectedItem=navigation.Items.Cast<ListBoxItem>().Single(i=>(string)i.Tag=="Home");window.UpdateLayout();
+    }
+
+    private static async Task CheckDemoSampleTranslations(MainWindow owner,string root)
+    {
+        var service=await DemoWorkspace.CreateAsync(Path.Combine(root,"localized-demo"));
+        var original=service.Tasks().Single(view=>File.ReadAllText(view.Task.RequestPath).Contains("复制此请求提示词",StringComparison.Ordinal)).Task;
+        var raw=File.ReadAllText(original.RequestPath);
+        Appearance.Save(service.Home,new DesktopPreferences("en"));
+        var window=new MainWindow(service,true){Owner=owner};window.Show();
+        await Wait(()=>((TextBlock)window.FindName("StatusText")).Text!="Working…");
+        var sampleBody=raw[(raw.IndexOf("---\n\n",4,StringComparison.Ordinal)+5)..];
+        var custom=(await service.DispatchAsync(new("agent-a","agent-b",sampleBody,"manual","manual","same-user-text"))).Task;
+        var customRaw=File.ReadAllText(custom.RequestPath);
+        ((Button)window.FindName("RefreshButton")).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+        await Wait(()=>Find<DataGrid>(window,"TasksTable").Items.Count==4);
+        foreach(var (lang,expected) in new[]{("en","Copy this request prompt"),("zh-CN","复制此请求提示词"),("zh-TW","複製此請求提示詞"),("ja","この依頼をコピー"),("ko","이 요청을 복사"),("es","Copia esta solicitud")})
+        {
+            await SetLanguage(window,lang);SelectTask(window,original.TaskId);window.UpdateLayout();
+            Check(Find<TextBox>(window,"TaskRequest").Text.Contains(expected,StringComparison.Ordinal),"Demo sample details follow UI language: "+lang);
+            var row=Find<DataGrid>(window,"TasksTable").Items.Cast<object>().Single(item=>(string)item.GetType().GetProperty("TaskId")!.GetValue(item)! == original.TaskId);
+            Check(((string)row.GetType().GetProperty("Title")!.GetValue(row)!).Contains(expected,StringComparison.Ordinal),"Demo sample title follows UI language: "+lang);
+            SelectTask(window,custom.TaskId);window.UpdateLayout();
+            Check(Find<TextBox>(window,"TaskRequest").Text==customRaw,"User-created task is not translated: "+lang);
+        }
+        Check(File.ReadAllText(original.RequestPath)==raw,"Demo translations do not alter saved request files");
+        await SetLanguage(window,"en");
+        typeof(MainWindow).GetField("demo",System.Reflection.BindingFlags.Instance|System.Reflection.BindingFlags.NonPublic)!.SetValue(window,false);
+        ((Button)window.FindName("RefreshButton")).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+        await Wait(()=>((FrameworkElement)window.FindName("PageContent")).IsEnabled);
+        SelectTask(window,original.TaskId);window.UpdateLayout();
+        Check(Find<TextBox>(window,"TaskRequest").Text==raw,"Demo task is not translated after switching to normal mode");
         window.RequestExit();
     }
 

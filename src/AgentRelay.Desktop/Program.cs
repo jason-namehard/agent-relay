@@ -16,10 +16,14 @@ internal static class Program
             var options = args.Where(a => a != "--demo").ToArray();
             if (args.Count(a => a == "--demo") > 1 || options.Length != 0 && (options.Length != 2 || options[0] != "--home"))
                 throw new RelayException("invalid_arguments", "用法：AgentRelay.Desktop.exe [--demo] [--home <data directory>]");
-            var home = options.Length == 2 ? options[1] : demo ? NewDemoHome() : Environment.GetEnvironmentVariable("RELAY_HOME") ?? RelayLocation.Load() ??
+            var environmentHome = Environment.GetEnvironmentVariable("RELAY_HOME");
+            var savedHome = options.Length == 0 && !demo && environmentHome is null ? RelayLocation.Load() : null;
+            var defaultHome = options.Length == 0 && !demo && environmentHome is null && savedHome is null;
+            var home = options.Length == 2 ? options[1] : demo ? NewDemoHome() : environmentHome ?? savedHome ??
                 Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "AgentRelay");
             var service = demo ? DemoWorkspace.CreateAsync(home).GetAwaiter().GetResult() : new RelayService(home);
             service.Initialize();
+            if (defaultHome) RelayLocation.Save(service.Home);
             return app.Run(new MainWindow(service, demo));
         }
         catch (Exception error) when (error is RelayException or IOException or UnauthorizedAccessException or Microsoft.Data.Sqlite.SqliteException)

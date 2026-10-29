@@ -50,9 +50,11 @@ foreach ($file in @('relay.exe','relay.dll','coreclr.dll','mcp/relay-mcp.exe','m
 }
 $private=@(Get-ChildItem -LiteralPath $stage -Recurse -File | Where-Object { $_.Name -match '^(auth\.json|config\.toml|relay\.db(-wal|-shm)?|original\.bin|backup\.bin|proposed\.bin)$' })
 if ($private.Count) { throw ('Private data in installer payload: ' + (($private.FullName) -join ', ')) }
-$arguments=@("--define=SourcePath=$stage","--define=ReleaseVersion=$version","--define=OutputPath=$output",
-    "--define=IconPath=$(Join-Path $projectRoot 'src/AgentRelay.Desktop/Assets/AgentRelay.ico')")
-if ($TestAppId) { $arguments+="--define=TestAppId=$TestAppId" }
+$helpText = (& $compiler '/?' 2>&1 | Out-String)
+$definePrefix = if ($helpText.Contains('--define=')) { '--define=' } else { '/D' }
+$arguments=@("${definePrefix}SourcePath=$stage","${definePrefix}ReleaseVersion=$version","${definePrefix}OutputPath=$output",
+    "${definePrefix}IconPath=$(Join-Path $projectRoot 'src/AgentRelay.Desktop/Assets/AgentRelay.ico')")
+if ($TestAppId) { $arguments+="${definePrefix}TestAppId=$TestAppId" }
 & $compiler @arguments (Join-Path $PSScriptRoot 'windows-installer.iss')
 if ($LASTEXITCODE -ne 0) { throw 'Installer compilation failed.' }
 Get-Item -LiteralPath $installer | Select-Object FullName,Length

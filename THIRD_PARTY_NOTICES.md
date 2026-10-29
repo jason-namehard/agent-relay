@@ -4,6 +4,8 @@ Agent Relay 的应用代码按本仓库 MIT License 提供。研究对象不是�
 
 ## 分发依赖
 
+Windows 安装器使用 [Inno Setup](https://github.com/jrsoftware/issrc) 构建；`scripts/installer-languages/` 中的简体和繁体中文翻译来自其官方源代码仓库，保留原文件中的译者署名。Inno Setup 的版权和许可见 `licenses/InnoSetup-license.txt`。
+
 实际版本以各项目 `packages.lock.json` 为准。恢复后运行 `pwsh ./scripts/check-licenses.ps1`，读取 NuGet 包自身的 `.nuspec`，检查全部直接和传递依赖的许可声明；不是仅检查顶层包。
 
 | 组件 | 版本 | 许可与版权 | 用途 |

@@ -150,7 +150,8 @@ public partial class MainWindow
     /// <summary>The first meaningful line of the request, or the file name for files that are not text.</summary>
     private string TaskTitle(TaskRecord task)
     {
-        if (taskTitles.TryGetValue(task.TaskId, out var cached)) return cached;
+        var sample = demo && demoSampleIds.Contains(task.TaskId);
+        if (!sample && taskTitles.TryGetValue(task.TaskId, out var cached)) return cached;
         // The managed copy outlives the original source file, which may be a deleted draft.
         var path = File.Exists(task.RequestPath) || task.ManualSourceFile is null ? task.RequestPath : task.ManualSourceFile;
         var title = Path.GetFileName(path);
@@ -160,7 +161,7 @@ public partial class MainWindow
             {
                 using var reader = new StreamReader(path);
                 var buffer = new char[4096];
-                var text = new string(buffer, 0, reader.ReadBlock(buffer, 0, buffer.Length));
+                var text = DemoSampleText.Translate(sample, new string(buffer, 0, reader.ReadBlock(buffer, 0, buffer.Length)), preferences.Language);
                 var raw = text.Split('\n').Select(l => l.Trim()).ToList();
                 // Skip a front-matter header such as Relay's own "relay_version: 1".
                 if (raw.FirstOrDefault() == "---" && raw.IndexOf("---", 1) is > 0 and var close) raw = raw.Skip(close + 1).ToList();
@@ -171,7 +172,8 @@ public partial class MainWindow
             }
         }
         catch (Exception error) when (error is IOException or UnauthorizedAccessException) { }
-        return taskTitles[task.TaskId] = title;
+        if (!sample) taskTitles[task.TaskId] = title;
+        return title;
     }
 
     private void TaskDetail(StackPanel card, TaskView view, TaskRow row)
@@ -180,7 +182,7 @@ public partial class MainWindow
         if (task.IsFileHandoff) { FileTaskPane(card, view, row); return; }
         var head = DetailSection(card);
         DetailHeader(head, task, row);
-        if (task.ErrorMessage is not null) Alert(head, "bad", null, task.ErrorMessage);
+        if (task.ErrorMessage is not null) Alert(head, "bad", null, DemoSampleText.Translate(demo && demoSampleIds.Contains(task.TaskId), task.ErrorMessage, preferences.Language));
         if (task.ResumeStatus == "operator_completed") Alert(head, "info", null, T("Marked complete by the user. Agent completion was not verified."));
         var actionsSection = DetailSection(card);
         var actions = new WrapPanel { Margin = new(0, 0, 0, -8) };
@@ -206,11 +208,11 @@ public partial class MainWindow
         Add(actions, "Copy diagnostics", () => { Clipboard.SetText(RelayJson.Write(new { view, events = service.Audit(task.TaskId), delivery = service.DeliveryEvidence(task.TaskId) })); return Task.CompletedTask; }, false);
 
         var files = DetailSection(card);
-        var request = Output("TaskRequest", 130); request.Text = File.Exists(task.RequestPath) ? File.ReadAllText(task.RequestPath) : T("File expired or missing.");
+        var request = Output("TaskRequest", 130); request.Text = File.Exists(task.RequestPath) ? DemoSampleText.Translate(demo && demoSampleIds.Contains(task.TaskId), File.ReadAllText(task.RequestPath), preferences.Language) : T("File expired or missing.");
         files.Children.Add(new Expander { Header = T("Request"), Content = request, IsExpanded = true });
         if (task.State is TaskState.Succeeded or TaskState.Failed)
         {
-            var reply = Output("TaskResult", 130); reply.Text = File.Exists(task.ResultPath) ? File.ReadAllText(task.ResultPath) : T("File expired or missing.");
+            var reply = Output("TaskResult", 130); reply.Text = File.Exists(task.ResultPath) ? DemoSampleText.Translate(demo && demoSampleIds.Contains(task.TaskId), File.ReadAllText(task.ResultPath), preferences.Language) : T("File expired or missing.");
             files.Children.Add(new Expander { Header = T("Reply"), Content = reply, IsExpanded = true });
         }
         files.Children.Add(new Expander { Header = T("Processing history"), Content = Timeline(service.Audit(task.TaskId).Select(e => (e.RecordedAt, DesktopLocalizedContent.NotificationEvent(e.Event, preferences.Language), "")).ToArray()) });
@@ -239,13 +241,11 @@ public partial class MainWindow
     private WrapPanel DetailFooter(StackPanel card, TaskRecord task)
     {
         var section = DetailSection(card);
-        var row = new DockPanel();
-        section.Children.Add(row);
-        var actions = new WrapPanel { HorizontalAlignment = HorizontalAlignment.Right, Margin = new(0, 0, -8, -8) };
-        DockPanel.SetDock(actions, Dock.Right); row.Children.Add(actions);
         var identity = Brushed(new TextBlock { Text = task.TaskId[..8] + " · " + task.CreatedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture),
-            FontFamily = new("Cascadia Mono, Consolas"), FontSize = 11.5, VerticalAlignment = VerticalAlignment.Center, ToolTip = task.TaskId }, "FaintBrush");
-        row.Children.Add(identity);
+            Name = "TaskFooterIdentity", FontFamily = new("Cascadia Mono, Consolas"), FontSize = 11.5, VerticalAlignment = VerticalAlignment.Center, ToolTip = task.TaskId }, "FaintBrush");
+        section.Children.Add(identity);
+        var actions = new WrapPanel { Name = "TaskFooterActions", HorizontalAlignment = HorizontalAlignment.Right, Margin = new(0, 8, -8, -8) };
+        section.Children.Add(actions);
         Styled(Add(actions, "Open task folder", () => { Process.Start(new ProcessStartInfo(Path.GetDirectoryName(task.RequestPath)!) { UseShellExecute = true }); return Task.CompletedTask; }, false), "GhostButtonStyle", "Folder");
         return actions;
     }

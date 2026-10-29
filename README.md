@@ -3,129 +3,128 @@
 **English** | [简体中文](README.zh.md)
 
 [![CI](https://github.com/jason-namehard/agent-relay/actions/workflows/ci.yml/badge.svg)](https://github.com/jason-namehard/agent-relay/actions/workflows/ci.yml)
-[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![Release](https://img.shields.io/github/v/release/jason-namehard/agent-relay?include_prereleases&label=latest)](https://github.com/jason-namehard/agent-relay/releases)
+[![License: MIT](https://img.shields.io/badge/license-MIT.svg)](LICENSE)
 
-A local handoff desk for people working with several AI agents. Pass a file from A to B, see who needs to act next, and finish without unnecessary back-and-forth.
+A local handoff desk for people who work with several AI agents. Pass a file or request from A to B, see who holds the task now, and stop the loop when the work is actually done.
 
-The public download is `0.1.0-preview.22`; the source contains the redesigned `0.1.1` desktop candidate.
+![Task board after a completed handoff](docs/images/ui-tasks.png)
 
-## Quick start — Windows x64
+If you use more than one agent, the work usually moves by copy and paste: you paste a request into one session, wait, copy the answer into another, and lose track of which session received what, whether it was picked up, and whether a changed file means the work is finished. Agent Relay keeps each handoff as a task in a local relay folder with a SQLite ledger, shows its progress in a Windows desktop app, and separates "the message was submitted" from "the task was completed with a receipt". You decide the agents and their roles; Relay only needs to know who sends and who receives.
 
-Public preview: `0.1.0-preview.22`. In Windows PowerShell 5.1 or PowerShell 7, download and extract the whole package into a new folder:
+Current state: preview software, Windows x64 desktop. Source is `0.1.1`; the latest public download is `0.1.0-preview.22` (see below). The CLI and stdio MCP server have Windows and Linux CI coverage. There is no macOS desktop package, no cloud relay and no background service after every process closes.
+
+## Quick start
+
+### Windows installer (source candidate `0.1.1`)
+
+The installer `AgentRelay-v0.1.1-windows-x64-setup.exe` is built from this source tree and is **not** published on GitHub Releases yet; once uploaded it installs into `%LOCALAPPDATA%\Programs\Agent Relay` as a per-user install with no admin prompt. It has no code signature and bundles the .NET runtime for the desktop app, the CLI and the MCP server. Start it from the Start menu, or run:
+
+```powershell
+"$env:LOCALAPPDATA\Programs\Agent Relay\app\gui\AgentRelay.Desktop.exe"
+"$env:LOCALAPPDATA\Programs\Agent Relay\app\relay.exe" --help    # app\mcp\relay-mcp.exe is self-contained too
+```
+
+The installer is verified locally by running it in a disposable profile: the install, uninstall, "keep data", "remove rules only" and "clear ledger and preferences, keep workspace files" choices, cancellation, and a Chinese-path uninstall have been exercised; true end-to-end coverage of a corrupted rule file is provided by unit tests rather than a completed interactive run.
+
+### Published preview `0.1.0-preview.22`
+
+Download the ZIP from the [release page](https://github.com/jason-namehard/agent-relay/releases/tag/v0.1.0-preview.22) or with PowerShell. Extract the whole archive into a new folder; do not run files from inside the ZIP.
 
 ```powershell
 $version = 'v0.1.0-preview.22'
 $zip = "AgentRelay-$version-windows-x64.zip"
-$download = Join-Path $PWD $zip
 $ProgressPreference = 'SilentlyContinue'
-Invoke-WebRequest "https://github.com/jason-namehard/agent-relay/releases/download/$version/$zip" -UseBasicParsing -OutFile $download
-Expand-Archive -LiteralPath $download -DestinationPath ".\AgentRelay-$version"
+Invoke-WebRequest "https://github.com/jason-namehard/agent-relay/releases/download/$version/$zip" -UseBasicParsing -OutFile $zip
+Expand-Archive $zip -DestinationPath ".\AgentRelay-$version"
 Set-Location ".\AgentRelay-$version"
-.\gui\AgentRelay.Desktop.exe
+
+.\TryDemo.cmd                    # isolated demo: sample Agents, preset tasks, no model account, no model calls
+.\gui\AgentRelay.Desktop.exe     # normal use
 ```
 
-Or download from [Releases](https://github.com/jason-namehard/agent-relay/releases/tag/v0.1.0-preview.22). Start the executable above to configure real Agents. `TryDemo.cmd` opens isolated samples and blocks real CLI calls; Settings can keep that workspace and switch it to normal use. GUI and notifications bundle their runtime. CLI/MCP require [.NET 10 runtime](https://dotnet.microsoft.com/download/dotnet/10.0). There is no installer or code signing; Windows may show a security warning.
-
 <details>
-<summary>Verify the uploaded GitHub asset</summary>
-
-In the same PowerShell session:
+<summary>Verify the downloaded ZIP against the GitHub asset digest</summary>
 
 ```powershell
 $release = Invoke-RestMethod "https://api.github.com/repos/jason-namehard/agent-relay/releases/tags/$version"
 $asset = $release.assets | Where-Object name -eq $zip
 if (-not $asset.digest) { throw 'The release API did not provide an asset digest.' }
-$actual = 'sha256:' + (Get-FileHash -LiteralPath $download -Algorithm SHA256).Hash.ToLowerInvariant()
+$actual = 'sha256:' + (Get-FileHash -LiteralPath $zip -Algorithm SHA256).Hash.ToLowerInvariant()
 if ($actual -ne $asset.digest) { throw 'The file does not match the GitHub asset.' }
 ```
 
-Independent local and CI builds are not claimed to be byte-for-byte reproducible.
+Local and CI builds are not claimed to be byte-for-byte reproducible.
 
 </details>
 
-## Start a CLI task
+Requirements: the installer and the desktop app bundle their runtime, including the installed `relay.exe` and `mcp\relay-mcp.exe`. The portable ZIP's CLI and MCP server (`relay.dll`, `mcp\relay-mcp.dll`) need the [.NET 10 runtime](https://dotnet.microsoft.com/download/dotnet/10.0). There is no code signing, so Windows may show a security prompt. "No account" refers to Relay itself and the demo; the agents you connect still use their own accounts, permissions and model billing.
 
-1. **Configure A and B** in Agents with **One-click setup** or the manual fields. CLI delivery needs a real calling method.
-2. **Choose New task** on the task board. Select A and, optionally, its source conversation (without one, turns for A are copied manually), select B, and choose a new or existing target conversation. Write the work request directly; Relay prepares the prompt and invokes the selected CLI. No preliminary handoff file or JSON is required.
-3. **Choose the collaboration.** A **Single handoff** ends when B finishes. **Keep revising until the review passes** lets you select the final reviewer, enter acceptance criteria or have the initiating Agent prepare them, and optionally set a review limit. The selected reviewer requests concrete changes or approves with no unresolved issues; Relay records that decision without independently verifying the work. Optionally set a per-turn time limit and allow automatic CLI delivery.
-4. **Create task.** Explicitly allow any required directions that are not enabled yet. This starts a real host call and may incur model charges. The board names the current worker, role, round and phase and updates from receipts; later turns resume the exact bound conversations. Automatic sends happen only after that Agent's CLI is verified.
+## The four pages
 
-Running out of rounds, a turn timeout or no progress pauses the task; you continue (optionally with a note), cancel or mark it complete. Unconfirmed delivery is not automatically retried; after checking, **Not received · Allow resending** permits one more send. A missing session requires another explicit choice, never a fallback to the latest conversation. A CLI response alone does not prove the work is complete. [Session selection and limits](docs/SESSIONS.md).
+![Agents: names, bridge status and the optional handoff rule](docs/images/ui-agents.png)
 
-<details>
-<summary>Pass an existing file manually</summary>
+| Page | What it does |
+| --- | --- |
+| Tasks | Left list, right detail. Create automatic or manual transfers, read request, reply and processing history together, filter by all / needs attention / in progress / completed, select several tasks for batch actions. |
+| Agents | Register a sender and a recipient under any names. One-click setup inspects the local host and imports a calling method; manual fields are always available. Each Agent row has edit, test, recovery and delete actions; the detail card shows bridge status and the optional one-line handoff rule. |
+| Connections | One line per Agent pair. Arrows show which directions have a verified calling method, green/red shows whether each direction is enabled, grey dashed means no method. Click a line to manage both directions with switches; manual copy works regardless. |
+| Settings | Appearance (five themes, accent colour, six languages), notifications and sounds, relay storage, retention, advanced timeouts, and a danger zone. Changes apply immediately. |
 
-### A manual handoff in practice
+![Connections: direction, method and enablement are separate](docs/images/ui-connections.png)
 
-1. Register both Agents using **One-click setup** or the manual fields.
-2. Choose **New task → New manual transfer task**, select sender and recipient, and enter the work request. Copy the complete prompt and send it to the sender.
-3. Paste the sender's JSON response into Relay and parse it to create the task; alternatively, choose an existing file.
-4. Copy the next prompt to the indicated recipient. Relay reads its receipt while running and on refresh. Continue when further work is needed; the task ends only when the whole task is explicitly complete.
+## How a handoff works
 
-While an Agent is processing, the board tells you to wait for its receipt. A CLI submission is recorded once per turn; if delivery is unconfirmed, inspect the target session before sending manually. Within the same task attempt, later turns reuse each Agent's exact bound session ID. A missing session stops automatic delivery and asks for another explicit choice; Relay never falls back to the latest conversation. [Session selection and limits](docs/SESSIONS.md).
+### Automatic CLI transfer
 
-Files changing do not establish completion: explicit receipts do. External files are copied into managed storage; managed files are reused without redundant wrappers or result snapshots. Control JSON lives under a hidden `.relay` directory. Keep permanent deliverables in your project; expired managed files can be removed through cleanup.
+1. Register A and B. **One-click setup** in **New Agent** reads CLI help and non-secret settings, then imports a calling method when one is available. If the local interface cannot run, use the manual fields instead of pasting a configuration block.
+2. Choose **New task → New automatic transfer task**. Select A (and optionally the source conversation; without one, the turn for A is copied manually), select B, and choose a new or existing target conversation. Write the work request; Relay prepares the prompt and calls the selected CLI.
+3. Choose a **single handoff** — it ends when B finishes — or **keep revising until the review passes**. In review mode you pick the final reviewer, type acceptance criteria or have the initiating Agent prepare them, and can set a review limit. The reviewer requests concrete changes or approves with no open items. Relay records that decision; it does not independently verify the work.
+4. Create the task. Explicitly allow any direction that is not enabled yet, since automatic sending requires a verified method for that Agent. The board names the current worker, role, round and phase. Later turns resume the exact bound conversation; if that conversation is missing, Relay asks for another choice instead of falling back to the latest one.
 
-</details>
+![Settings: appearance, notifications and storage in one place](docs/images/ui-settings.png)
+
+### Manual transfer
+
+1. **New task → New manual transfer task**, choose sender and recipient, write the request. Copy the prompt for the sender and paste it into that session.
+2. Paste the sender's JSON reply back into Relay and parse it to create the task, or pick an existing file.
+3. Copy the next prompt to the Agent the board names. Receipts are read while Relay is running and on refresh; keep passing turns as the work needs, and the task ends only when it is explicitly complete.
+4. Optionally install the one-line handoff rule into the instruction file your host actually reads. Relay never edits that file silently: you see the line before it is written, and detailed instructions are read on demand.
+
+A result file appearing or changing never completes a task. A task changes state only through a valid receipt, or through your explicit "mark handoff complete", which records a user decision. If a CLI delivery is unconfirmed, inspect the target session first; **Not received · Allow resending** permits one more send instead of automatic retry.
 
 ## What it includes
 
 | Area | Current behaviour |
 | --- | --- |
-| Task board | Direct CLI work requests or file handoffs, explicit conversations, single handoff or review loop, pause decisions and task controls |
-| Sessions | SQLite bindings per task/attempt/turn/Agent, targeted discovery, display cache and fresh checks before resume |
-| Agent entry | One name, one-click configuration, separate manual fields and a local configuration endpoint |
-| Handoff rules | User-approved one-line entry, details on demand, removal preserving other edits |
-| Connection map | Direction arrows and switches; node dots distinguish a recorded method, a failed probe and no method |
-| CLI extensions | Native JSON/JSONL/text output adapters; separate new-session and resume probes |
-| Settings | Relay location, retention, desktop alerts, selectable sounds, six languages and colour preferences |
-| Windows tray | Minimize stays on the taskbar; × follows the remembered tray/exit choice. Tray Exit always closes the app |
+| Task board | Direct CLI work requests or file handoffs, explicit conversations, single handoff or review loop, pause decisions, batch selection and task controls |
+| Sessions | SQLite bindings per task, attempt, turn and Agent; targeted discovery, display cache and a fresh check before resuming |
+| Agent entry | One name, one-click setup, separate manual fields, and a local configuration endpoint |
+| Handoff rules | Optional one-line entry, shown for approval, details on demand, removal that preserves your other edits |
+| Connection map | Direction arrows, per-direction switches, node dots for a recorded method, a failed probe or no method |
+| CLI extensions | Native JSON, JSONL and final-text output adapters; separate new-session and resume probes |
+| Storage | Local relay folder, retention cleanup, relocation that copies and verifies before switching |
+| Appearance | Minimal, warm, fresh, night and follow-system themes; accent colours; English, Simplified and Traditional Chinese, Japanese, Korean, Spanish |
+| Notifications | Optional Windows helper with selectable sounds; an in-app notice while Relay is running |
+| Uninstall | Per-user Windows installer; uninstall keeps data by default, or removes rules, or clears the ledger and preferences while keeping workspace files |
 
-GUI/notifications are Windows x64. Core CLI/MCP have Windows/Linux CI coverage and require .NET 10. There is no macOS desktop package, cloud relay or background service after all processes close. CLI output and most detailed documents are currently Chinese.
+## Bridges, verification and cost
 
-### Agent setup and rule removal
+A bridge is one of three kinds: ACP, the running desktop app's own interface (DSH: `dsh-desktop`), or the host's CLI. Relay adapts supported native JSON, JSONL and final-text output; the host does not have to emit Relay's private receipt format.
 
-The Agents page offers **One-click setup** in the **New Agent** menu; each Agent row has edit, delete, bridge test and recovery actions. Setup inspects CLI help and non-secret settings, reads the latest node directory, then submits through `agent setup --manifest` and imports a calling method when available. New setup never targets the selected node's ID. Edit changes the node you selected. If the local interface cannot run, use the manual fields rather than pasting a configuration block into the GUI.
+- Sending by hand through a bridge needs only a registered method and an enabled direction. **Automatic** delivery also needs the task's opt-in and verified capability: a passing probe, where the Agent writes a marker file and you confirm the session is visible, or one real handoff turn whose receipt the Agent wrote.
+- A probe calls the real CLI and may cost money. Login refusal, a missing model or missing tool permissions block automatic sending for that Agent until you choose **I have resolved · Allow automatic sends**.
+- Resuming a conversation requires an exact binding, a fresh host-store check, and a matching session ID in the response. Relay does not ask models to discover session IDs or make hidden conversations visible.
+- Zcode can keep old conversation content in memory after a CLI delivery. Switch to another conversation and return after about 11 minutes, or save and restart Zcode; an old view does not mean delivery failed.
+- Relay aligns the known hosts' request prefixes so prompt caches keep matching across a switch — Zcode by launch flags, Hermes through its shared gateway, DSH through its running desktop. Measured cache hits after a switch were 93–99%. `cli-recipe doctor` reports launch settings that differ from the desktop's; `agent cache-check` shows each request's cache hit. For other hosts, one-click setup hands the configuring Agent the built-in `relay-cache-parity` skill.
+- WorkBuddy offers no usable external interface here, so handoffs to it are copied manually.
 
-Relay adapts supported native JSON, JSONL and final text outputs; the host does not have to emit Relay's private receipt format. Sending through CLI by hand needs only a registered method and an enabled direction. Automatic delivery also needs the task's opt-in and a verified capability: a passing probe (including a marker file the Agent writes) with visibility confirmation, or one real handoff turn whose receipt the Agent wrote. Login refusal, a missing model or missing tool permission blocks automatic sends for that Agent until you choose **I have resolved this · Allow automatic sends**. Enable the desired direction in Connections after configuring its command. Resuming an existing conversation requires an exact binding, a fresh host-store check and a matching session ID in the response. A green node dot means a method is recorded; its tooltip states diagnostic status. Red means a failed probe, grey means no method. A session log or CLI executable path alone is not a complete calling method.
-
-Source identity is automatic only when the calling adapter supplies exact session context. Relay does not ask models to discover IDs or make hidden conversations visible. Native create commands may still require a model configured in the host. Resume normally inherits that conversation's model and settings; Relay does not invent a common model or reasoning override.
-
-Zcode can keep old conversation content in memory after a CLI delivery. Switch to another conversation and return after about 11 minutes, or save your work and restart Zcode. An old view does not mean delivery failed; do not repeat delivery or a paid probe just to refresh it. DSH desktop bridging normally appears live. The task board distinguishes sending, blocked bridges, unconfirmed delivery and unverified automatic capability. Use its leading checkboxes to mark selected tasks complete or delete them after confirmation.
-
-Select all is available on the task board. Blocked task cards, Agent details and bridge tests can copy a targeted repair prompt with the node ID and local diagnostic entry points. It excludes command parameters, environment values and host transcripts. DSH setup checks authenticate a read-only API request without starting a model turn; saved blockers remain until the user resolves them.
-
-Task summaries show the round and next recipient; work requirements live in collapsed file contents. Cancellation requires confirmation and ends Relay tracking and further delivery, while host work already started may continue. DSH authentication blockers offer an explicit recheck-and-restore action: successful checks clear the saved blocker without changing probe evidence or restarting cancelled tasks.
-
-A bridge is one of three kinds:
-- ACP;
-- the running desktop app's own interface (DSH: `dsh-desktop`);
-- the host's CLI.
-
-When Relay continues a conversation, its request must begin with the same tools and system prompt the desktop sends. Otherwise the provider's prompt cache misses, and the whole history is billed again at every switch. Relay handles this as follows:
-- It aligns the known hosts: Zcode by its launch flags, Hermes through its shared gateway, and DSH through its running desktop. Measured cache hits after a switch are 93–99%.
-- `cli-recipe doctor` reports launch settings that differ from the desktop's.
-- `agent cache-check` shows each request's cache hit for a session.
-- For other hosts, one-click setup hands the configuring Agent the built-in `relay-cache-parity` skill.
-
-The DSH desktop bridge signs in with the desktop's own local signing secret, which it uses only with your consent and never stores. DSH must be running when a turn is sent.
-
-The one-line rule consumes a little persistent context. Detailed instructions are read on demand; triggering depends on host compliance. Choose the actual host instruction file, not an assumed filename. Stable instruction links are refreshed after relocation.
-
-Before deleting the portable software, use Settings → **Remove all handoff rules**, or run from the extracted package with .NET 10:
-
-```powershell
-dotnet .\relay.dll --home <relay-directory> guidance remove --all
-```
-
-Only Relay's marked blocks are removed. Deleting the ZIP or extracted folder cannot run uninstall cleanup.
+## Development
 
 <details>
-<summary>CLI, MCP, development and architecture</summary>
+<summary>Build and test from source</summary>
 
-`dotnet .\relay.dll --help` lists CLI commands. A host starts stdio MCP with `dotnet .\mcp\relay-mcp.dll --home <relay-directory> --agent <registered-id>`; the caller identity is fixed. The MCP server does not implement `--help`.
-
-From a fresh clone with .NET 10 SDK:
+Requires the .NET 10 SDK (see `global.json`). From a fresh clone, in PowerShell:
 
 ```powershell
 git clone https://github.com/jason-namehard/agent-relay.git
@@ -134,7 +133,7 @@ dotnet restore --locked-mode
 dotnet test --configuration Release --no-restore
 ```
 
-The solution covers Core, CLI, MCP and core tests. Windows GUI checks and packaging use PowerShell 7:
+This covers Core, CLI, MCP and the core test suite. The desktop app and notification helper build separately on Windows (PowerShell 7):
 
 ```powershell
 dotnet restore src/AgentRelay.Notify/AgentRelay.Notify.csproj --locked-mode
@@ -143,23 +142,45 @@ pwsh ./scripts/check-licenses.ps1 -IncludeDesktop
 pwsh ./scripts/package.ps1 -Flavor Windows
 ```
 
-Scripts accept `-Dotnet <path>`. Packages go to `artifacts/packages`; existing archives are not overwritten. Regular tests use local fixtures, not paid model requests. Core owns the SQLite ledger and lifecycle; CLI/MCP and the four-page WPF app share it. Notify is an optional Windows helper.
-
-[Setup and receipts](docs/CONFIGURATION_ASSISTANT.md) · [Sessions](docs/SESSIONS.md) · [UI spec](docs/UI_SPEC.md) · [Legacy protocol](docs/PROTOCOL.md) · [Advanced adapters](docs/ADAPTERS.md)
+The installer is built with Inno Setup: `pwsh ./scripts/build-installer.ps1` (pass `-Dotnet` and `-InnoCompiler` if they are not on `PATH`). Scripts accept `-Dotnet <path>`; packages go to `artifacts/packages` and existing archives are not overwritten. Regular tests use local fixtures and never call a paid model.
 
 </details>
 
-## Limits and verification
+<details>
+<summary>CLI and stdio MCP</summary>
 
-- One-click setup registers an invocation recipe; it does not synchronize desktop authentication with a standalone CLI. WorkBuddy offers no usable external interface, so handoffs to it are copied manually ([details](docs/SESSIONS.md#workbuddy)). Real host creation, visibility and continuation need testing in that host. Simulated bridges do not establish real integration; actual probes may incur model fees.
-- Invalid or incomplete receipts need attention; saving a result alone never completes a task. Old message tasks retain their earlier CLI/MCP protocol.
-- Deleting a task requires confirmation and removes its ledger history, retaining files for retention cleanup. Manually marking complete records a user decision; neither action verifies the Agent's work or stops an already running Agent.
-- Relocation requires no unfinished task, including a return awaiting the other agent. Files and ledger are copied before switching. The old root is a backup and is not automatically cleaned; Check migration only resumes a recorded pending move.
-- While Relay is running, a labelled in-app reminder appears at the bottom right. Windows receives a silent notification-center entry when available, with no duplicate system banner. Settings includes a notification test, sound selection and preview. Display scaling still needs manual checks.
-- Agents must have access to the relay files; arbitrary remote or sandboxed sessions may not.
+`dotnet .\relay.dll --help` lists the commands; the MCP server does not implement `--help`. A host starts one MCP instance per Agent:
 
-[Getting started](docs/GETTING_STARTED.md) · [Contributing](CONTRIBUTING.md) · [Changelog](CHANGELOG.md) · [Issues](https://github.com/jason-namehard/agent-relay/issues). Reports should include version, platform, steps and redacted errors.
+```powershell
+dotnet .\mcp\relay-mcp.dll --home <relay folder> --agent <registered Agent id>
+```
+
+Tools: `relay_task_dispatch`, `relay_task_ack`, `relay_task_start`, `relay_task_complete`, `relay_task_fail`, `relay_task_status`, `relay_prompt_show`. The caller identity is fixed at startup. CLI output and most detailed documents are currently in Chinese.
+
+</details>
+
+<details>
+<summary>Relay folder resolution</summary>
+
+| Program | Order |
+| --- | --- |
+| CLI, MCP | `--home` → `RELAY_HOME` → `%LOCALAPPDATA%\AgentRelay` |
+| Desktop app | `--home` → `RELAY_HOME` → folder chosen in Settings → `%LOCALAPPDATA%\AgentRelay` |
+| Demo | A new folder under `%LOCALAPPDATA%\AgentRelay.Demos\` |
+
+After moving the relay folder in Settings, point the CLI and MCP at the new `--home` and copy handoff prompts again. Managed files expire after the retention period (3 days by default); keep permanent deliverables in your project folder.
+
+</details>
+
+## Limits
+
+- Preview software with real gaps: real host creation, visibility and continuation need testing in that host; simulated bridges do not establish real integration. Windows display scaling and multi-monitor behaviour need manual checks.
+- No background service or scheduled task. A running desktop app monitors receipts; after every process closes, overdue work waits for the next `relay recover` (CLI) or the next launch.
+- Uninstall cleanup only covers rules registered for the current relay folder. Other sites you used need separate handling. Deleting the install or ZIP folder does not replace uninstalling or removing rules.
+- Cancelling a task stops Relay's tracking and further delivery; it does not stop an Agent that is already working. Deleting a task removes its ledger record and keeps the files until retention cleanup.
+
+[Getting started](docs/GETTING_STARTED.md) · [Setup and receipts](docs/CONFIGURATION_ASSISTANT.md) · [Sessions](docs/SESSIONS.md) · [Architecture](docs/ARCHITECTURE.md) · [UI spec](docs/UI_SPEC.md) · [Adapters](docs/ADAPTERS.md) · [Contributing](CONTRIBUTING.md) · [Changelog](CHANGELOG.md) · [Issues](https://github.com/jason-namehard/agent-relay/issues)
 
 ## License
 
-Project code is [MIT](LICENSE). Bundled .NET, Windows App SDK and other components retain their own terms: [distribution terms](DISTRIBUTION_TERMS.md), [third-party notices](THIRD_PARTY_NOTICES.md) and `licenses/`.
+Project code is [MIT](LICENSE). The Windows package and installer also redistribute the .NET runtime, the Windows App SDK and other components under their own terms: [distribution terms](DISTRIBUTION_TERMS.md), [third-party notices](THIRD_PARTY_NOTICES.md) and `licenses/`.

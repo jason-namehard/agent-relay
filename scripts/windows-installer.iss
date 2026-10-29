@@ -39,8 +39,8 @@ CloseApplications=yes
 
 [Languages]
 Name: "english"; MessagesFile: "compiler:Default.isl"
-Name: "chinesesimplified"; MessagesFile: "compiler:Languages\ChineseSimplified.isl"
-Name: "chinesetraditional"; MessagesFile: "compiler:Languages\ChineseTraditional.isl"
+Name: "chinesesimplified"; MessagesFile: "installer-languages\ChineseSimplified.isl"
+Name: "chinesetraditional"; MessagesFile: "installer-languages\ChineseTraditional.isl"
 
 [Tasks]
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"
@@ -85,7 +85,7 @@ chinesetraditional.UninstallLocationFailed=無法讀取目前 Relay 中轉站。
 [Code]
 procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
 var
-  Cli, LocationFile, PlanFile, ReportFile, Home, Args, Detail: String;
+  Cli, LocationFile, PlanFile, ReportFile, ErrorFile, Home, Args, Detail: String;
   Lines: TArrayOfString;
   Code, I: Integer;
   RemoveData, RemoveRules: Boolean;
@@ -98,6 +98,7 @@ begin
 #endif
   PlanFile := ExpandConstant('{tmp}\agent-relay-uninstall-plan.txt');
   ReportFile := ExpandConstant('{tmp}\agent-relay-uninstall-report.json');
+  ErrorFile := ExpandConstant('{tmp}\agent-relay-uninstall-error.txt');
   Args := 'uninstall plan --location-file "' + LocationFile + '" --output "' + PlanFile + '"';
   if not Exec(Cli, Args, '', SW_HIDE, ewWaitUntilTerminated, Code) or (Code <> 0) or
      not LoadStringsFromFile(PlanFile, Lines) or (GetArrayLength(Lines) <> 1) then begin
@@ -110,11 +111,11 @@ begin
   if not RemoveData then
     RemoveRules := MsgBox(CustomMessage('UninstallRules'), mbConfirmation, MB_YESNO or MB_DEFBUTTON2) = IDYES;
   if not RemoveRules then Exit;
-  Args := 'uninstall cleanup --location-file "' + LocationFile + '" --expected-home "' + Home + '" --report-path "' + ReportFile + '" --remove-rules';
+  Args := 'uninstall cleanup --location-file "' + LocationFile + '" --expected-home "' + Home + '" --report-path "' + ReportFile + '" --error-message-path "' + ErrorFile + '" --remove-rules';
   if RemoveData then Args := Args + ' --remove-data';
   if not Exec(Cli, Args, '', SW_HIDE, ewWaitUntilTerminated, Code) or (Code <> 0) then begin
     Detail := IntToStr(Code);
-    if LoadStringsFromFile(ReportFile, Lines) then begin
+    if LoadStringsFromFile(ErrorFile, Lines) then begin
       Detail := '';
       for I := 0 to GetArrayLength(Lines) - 1 do Detail := Detail + Lines[I] + #13#10;
     end;

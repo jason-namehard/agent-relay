@@ -3,6 +3,7 @@ using System.Globalization;
 using System.Windows;
 using System.Windows.Automation;
 using System.Windows.Controls;
+using System.Windows.Data;
 using System.Windows.Input;
 using System.Windows.Media;
 using AgentRelay.Core;
@@ -79,7 +80,8 @@ public partial class MainWindow
 
         var language = new ComboBox { Name = "LanguageChoice", Width = 160, DisplayMemberPath = "Label", SelectedValuePath = "Id",
             ItemsSource = Appearance.Languages.Select(o => new AppearanceOption(o.Id, T(o.Label))).ToArray(), SelectedValue = preferences.Language };
-        AutomationProperties.SetAutomationId(language, language.Name); AutomationProperties.SetName(language, T("Language"));
+        AutomationProperties.SetAutomationId(language, language.Name);
+        BindingOperations.SetBinding(language, AutomationProperties.NameProperty, new Binding("SelectedItem.Label") { Source = language, StringFormat = T("Language") + ": {0}" });
         language.SelectionChanged += async (_, _) => { if (language.SelectedValue is string selected && selected != preferences.Language) await ChangeLanguage(selected); };
         SettingRow(look, "Language", null, language);
         AddCloseBehaviorSetting(look);

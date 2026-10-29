@@ -44,6 +44,12 @@ public static class RelayCli
                         File.WriteAllText(path, RelayJson.Write(value), new System.Text.UTF8Encoding(false));
                     else Print(value);
                 }
+                int Fail(string errorCode, string message, int exitCode)
+                {
+                    if (options.TryGetValue("error-message-path", out var errorOption) && parse.GetValue(errorOption) is { } errorPath)
+                        File.WriteAllText(errorPath, message, new System.Text.UTF8Encoding(false));
+                    return Error(errorCode, message, exitCode, Emit);
+                }
                 try
                 {
                     var directory = parse.GetValue(home) ?? Environment.GetEnvironmentVariable("RELAY_HOME")
@@ -66,13 +72,13 @@ public static class RelayCli
                         state = view?.Task.State, next_action = view?.NextAction, data = result, error = operationError });
                     return code;
                 }
-                catch (RelayException error) { return Error(error.Code, error.Message, error.ExitCode, Emit); }
-                catch (IOException error) { return Error("file_error", error.Message, 1, Emit); }
-                catch (UnauthorizedAccessException error) { return Error("access_denied", error.Message, 3, Emit); }
-                catch (JsonException error) { return Error("invalid_json", error.Message, 2, Emit); }
-                catch (ArgumentException error) { return Error("invalid_argument", error.Message, 2, Emit); }
-                catch (SqliteException error) { return Error("database_error", error.Message, 1, Emit); }
-                catch (Win32Exception error) { return Error("process_start_failed", error.Message, 3, Emit); }
+                catch (RelayException error) { return Fail(error.Code, error.Message, error.ExitCode); }
+                catch (IOException error) { return Fail("file_error", error.Message, 1); }
+                catch (UnauthorizedAccessException error) { return Fail("access_denied", error.Message, 3); }
+                catch (JsonException error) { return Fail("invalid_json", error.Message, 2); }
+                catch (ArgumentException error) { return Fail("invalid_argument", error.Message, 2); }
+                catch (SqliteException error) { return Fail("database_error", error.Message, 1); }
+                catch (Win32Exception error) { return Fail("process_start_failed", error.Message, 3); }
             });
             parent.Subcommands.Add(command);
         }
@@ -87,15 +93,15 @@ public static class RelayCli
         var uninstall = Group("uninstall", "卸载时检查和清除 Relay 数据");
         Sync(uninstall, "plan", "查询当前站点，供卸载程序显示", ["location-file!", "output!"], (s, v) =>
         {
-            var directory = UninstallCleanup.ResolveHome(v.Get("location-file"), Environment.GetEnvironmentVariable("RELAY_HOME"), s.Home);
+            var directory = UninstallCleanup.ResolveHome(v.Get("location-file"), v.Parse.GetValue(home) ?? Environment.GetEnvironmentVariable("RELAY_HOME"));
             File.WriteAllText(v.Get("output"), directory, new System.Text.UTF8Encoding(false));
             return new { home = directory };
         });
-        Sync(uninstall, "cleanup", "移除已登记的规则并按确认清理站点配置", ["location-file!", "expected-home!", "remove-rules?", "remove-data?", "report-path"], (s, v) =>
+        Sync(uninstall, "cleanup", "移除已登记的规则并按确认清理站点配置", ["location-file!", "expected-home!", "remove-rules?", "remove-data?", "report-path", "error-message-path"], (s, v) =>
         {
             if (Process.GetProcessesByName("AgentRelay.Desktop").Length > 0)
                 throw new RelayException("uninstall_app_running", "请先从托盘退出 Agent Relay，再重新执行数据清理。", 3);
-            return new { rules_removed = UninstallCleanup.Apply(v.Get("location-file"), Environment.GetEnvironmentVariable("RELAY_HOME"), s.Home,
+            return new { rules_removed = UninstallCleanup.Apply(v.Get("location-file"), v.Parse.GetValue(home) ?? Environment.GetEnvironmentVariable("RELAY_HOME"),
                 v.Get("expected-home"), v.Flag("remove-rules"), v.Flag("remove-data")) };
         });
         var agent = Group("agent", "Agent 注册与只读发现");

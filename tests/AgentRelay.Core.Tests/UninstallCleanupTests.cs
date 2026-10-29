@@ -35,8 +35,8 @@ public sealed class UninstallCleanupTests
     [TestMethod]
     public void ConfirmedDataCleanupRemovesRulesAndLedgerButPreservesUserFiles()
     {
-        Assert.AreEqual(home, UninstallCleanup.ResolveHome(location, null, root));
-        Assert.AreEqual(1, UninstallCleanup.Apply(location, null, root, home, false, true));
+        Assert.AreEqual(home, UninstallCleanup.ResolveHome(location, null));
+        Assert.AreEqual(1, UninstallCleanup.Apply(location, null, home, false, true));
         Assert.AreEqual("# User instructions\nKeep this.\n", File.ReadAllText(instructions));
         Assert.IsFalse(File.Exists(stable)); Assert.IsFalse(File.Exists(Path.Combine(home, "relay.db")));
         Assert.IsFalse(File.Exists(Path.Combine(home, "desktop.preferences.json"))); Assert.IsFalse(File.Exists(location));
@@ -47,7 +47,7 @@ public sealed class UninstallCleanupTests
     [TestMethod]
     public void KeepDataCanRemoveOnlyRules()
     {
-        Assert.AreEqual(1, UninstallCleanup.Apply(location, null, root, home, true, false));
+        Assert.AreEqual(1, UninstallCleanup.Apply(location, null, home, true, false));
         Assert.IsTrue(File.Exists(Path.Combine(home, "relay.db"))); Assert.IsTrue(File.Exists(location));
         Assert.IsTrue(File.Exists(Path.Combine(home, "desktop.preferences.json")));
         Assert.AreEqual("# User instructions\nKeep this.\n", File.ReadAllText(instructions));
@@ -57,14 +57,58 @@ public sealed class UninstallCleanupTests
     public void DamagedRulePreventsDatabaseRemoval()
     {
         File.WriteAllText(instructions, File.ReadAllText(instructions).Replace(":end -->", ":broken -->"));
-        Assert.ThrowsExactly<RelayException>(() => UninstallCleanup.Apply(location, null, root, home, true, true));
+        Assert.ThrowsExactly<RelayException>(() => UninstallCleanup.Apply(location, null, home, true, true));
         Assert.IsTrue(File.Exists(Path.Combine(home, "relay.db"))); Assert.IsTrue(File.Exists(location));
     }
 
     [TestMethod]
     public void ChangedLocationDoesNotDeleteAnyData()
     {
-        Assert.ThrowsExactly<RelayException>(() => UninstallCleanup.Apply(location, null, root, Path.Combine(root, "other"), true, true));
+        Assert.ThrowsExactly<RelayException>(() => UninstallCleanup.Apply(location, null, Path.Combine(root, "other"), true, true));
         Assert.IsTrue(File.Exists(Path.Combine(home, "relay.db"))); Assert.IsTrue(File.Exists(location));
+    }
+    [TestMethod]
+    public void MissingLocationIsNotTreatedAsDefaultStation()
+    {
+        File.Delete(location);
+        var error=Assert.ThrowsExactly<RelayException>(() => UninstallCleanup.ResolveHome(location, null));
+        Assert.AreEqual("uninstall_location_missing",error.Code);
+        Assert.ThrowsExactly<RelayException>(() => UninstallCleanup.Apply(location, null, home, true, true));
+        Assert.IsTrue(File.Exists(Path.Combine(home,"relay.db")));
+        Assert.IsTrue(File.Exists(instructions));
+    }
+
+    [TestMethod]
+    public void ExplicitEnvironmentStationWorksWithoutLocationFile()
+    {
+        File.Delete(location);
+        Assert.AreEqual(home,UninstallCleanup.ResolveHome(location,home));
+        Assert.AreEqual(1,UninstallCleanup.Apply(location,home,home,true,false));
+        Assert.IsTrue(File.Exists(Path.Combine(home,"relay.db")));
+    }
+
+    [TestMethod]
+    public async Task ExplicitCliHomeCanBePlannedWithoutLocationFile()
+    {
+        File.Delete(location);
+        var output=Path.Combine(root,"plan.txt");
+        var exit=await RelayCli.RunAsync(["--home",home,"uninstall","plan","--location-file",location,"--output",output]);
+        Assert.AreEqual(0,exit);
+        Assert.AreEqual(home,File.ReadAllText(output));
+        Assert.IsTrue(File.Exists(Path.Combine(home,"relay.db")));
+    }
+
+    [TestMethod]
+    public async Task UninstallFailureWritesReadableMessageAlongsideJsonReport()
+    {
+        var report=Path.Combine(root,"report.json"); var message=Path.Combine(root,"error.txt");
+        var exit=await RelayCli.RunAsync(["--home",home,"uninstall","cleanup","--location-file",location,
+            "--expected-home",Path.Combine(root,"different"),"--remove-data","--report-path",report,"--error-message-path",message]);
+        Assert.AreNotEqual(0,exit);
+        using var json=System.Text.Json.JsonDocument.Parse(File.ReadAllText(report));
+        var expected=json.RootElement.GetProperty("error").GetProperty("message").GetString();
+        Assert.IsFalse(string.IsNullOrWhiteSpace(expected));
+        Assert.AreEqual(expected,File.ReadAllText(message));
+        Assert.IsTrue(File.Exists(Path.Combine(home,"relay.db")));
     }
 }

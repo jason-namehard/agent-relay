@@ -19,7 +19,10 @@ public sealed record DesktopPreferences(
     string NotificationSound = "default",
     long? LastNotificationId = null);
 
-public sealed record AppearanceOption(string Id, string Label);
+public sealed record AppearanceOption(string Id, string Label)
+{
+    public override string ToString() => Label;
+}
 
 public static class Appearance
 {
