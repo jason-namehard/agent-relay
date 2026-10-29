@@ -99,10 +99,33 @@ internal static class Program
         Check(FindAll<Button>(window).Any(b=>Equals(b.Tag,"AgentMore"))&&Find<DataGrid>(window,"AgentsTable").Columns.Last() is DataGridTemplateColumn,"Agent rows carry their own more-actions button");
         Check(FindAll<Button>(window).Single(b=>Equals(b.Tag,"Test bridge")).IsEnabled,"CLI test remains available to explain missing calling methods instead of silently disabling itself");
         Check(FindAll<Button>(window).Any(b=>Equals(b.Tag,"Install handoff rule"))&&FindAll<Button>(window).Any(b=>Equals(b.Tag,"Remove handoff rule")),"Agent page exposes explicit installation and removal of handoff rules");
+        Check(FindAll<TextBlock>(window).Any(t=>t.Text.Contains("未安装",StringComparison.Ordinal)),"Selected Agent shows the handoff rule installation state");
         var count=service.Agents().Count;
+        var hostInstruction=Path.Combine(root,"host-instructions.md");File.WriteAllText(hostInstruction,"Existing host instructions.");
+        var oneClickDone=new TaskCompletionSource();
+        async Task CheckOneClick()
+        {
+            var chooser=await Next<AgentSetupChoiceDialog>();
+            ThemedMessageBox? message=null;
+            try
+            {
+                Check(FindAll<TextBlock>(chooser).Any(t=>t.Text.Contains("可选交接规则",StringComparison.Ordinal)&&t.Text.Contains("确认后",StringComparison.Ordinal)),"Agent setup choice explains the optional handoff rule and confirmation");
+                Press(chooser,"ChooseOneClickSetup");
+                message=await Next<ThemedMessageBox>();
+                Check(FindAll<TextBlock>(message).Any(t=>t.Text.Contains("可选交接规则",StringComparison.Ordinal)&&t.Text.Contains("确认后",StringComparison.Ordinal)),"One-click setup confirmation explains the optional rule");
+                Check(Clipboard.GetText().Contains("agent setup --manifest",StringComparison.Ordinal),"One-click setup copies an Agent registration prompt");
+                Press(message,"MessageOk");
+                Check(service.GuidanceRegistrations().Count==0&&File.ReadAllText(hostInstruction)=="Existing host instructions.","Copying the Agent setup prompt does not install a rule or modify instruction files");
+                oneClickDone.SetResult();
+            }
+            catch(Exception error){message?.Close();chooser.Close();oneClickDone.SetException(error);}
+        }
+        _=CheckOneClick();
+        await Click(window,"New Agent");await oneClickDone.Task;
         await NewAgentByHand(window,async dialog=>
         {
             Check(((TextBlock)window.FindName("StatusText")).Text!=UiText.Translate("Working…","zh-CN"),"Agent form reports a waiting state instead of processing during modal input");
+            Check(FindAll<TextBlock>(dialog).Any(t=>t.Text.Contains("可选交接规则",StringComparison.Ordinal)),"Manual Agent setup explains the optional handoff rule");
             Expand(dialog);
             Check(!FindAll<TextBox>(dialog).Any(b=>b.Name is "AgentEntryHost" or "AgentEntryReply"),"Manual Agent entry has one name and no redundant host-name or AI reply field");
             Check(!FindAll<Button>(dialog).Any(b=>b.Name.Contains("ParseReply",StringComparison.Ordinal)||b.Name.Contains("CopyPrompt",StringComparison.Ordinal)),"Manual Agent entry has no competing AI configuration buttons");
@@ -121,10 +144,12 @@ internal static class Program
         {
             Expand(dialog);
             Find<TextBox>(dialog,"AgentEntryName").Text="任意节点甲";
+            Find<TextBox>(dialog,"AgentEntryInstructions").Text=hostInstruction;
             Press(dialog,"SaveAgentEntry");return Task.CompletedTask;
         });
         var manual=service.Agents().Single(a=>a.DisplayName=="任意节点甲");
         Check(manual.ConfigPath==""&&manual.Host=="manual","Name alone registers a manual Agent without configuration paths");
+        Check(manual.InstructionPaths.Contains(hostInstruction)&&service.GuidanceRegistrations().Count==0&&File.ReadAllText(hostInstruction)=="Existing host instructions.","Registering an instruction file does not install a rule or modify the file");
         await SaveImage(window,Path.Combine(root,"Agents.png"));
         Navigate("Home");
         await SetLanguage(window,"en");

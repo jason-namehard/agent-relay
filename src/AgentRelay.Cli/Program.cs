@@ -84,6 +84,20 @@ public static class RelayCli
         }
 
         Sync(root, "init", "创建独立数据目录和 SQLite 账本", [], (s, _) => { s.Initialize(); return new { home = s.Home }; });
+        var uninstall = Group("uninstall", "卸载时检查和清除 Relay 数据");
+        Sync(uninstall, "plan", "查询当前站点，供卸载程序显示", ["location-file!", "output!"], (s, v) =>
+        {
+            var directory = UninstallCleanup.ResolveHome(v.Get("location-file"), Environment.GetEnvironmentVariable("RELAY_HOME"), s.Home);
+            File.WriteAllText(v.Get("output"), directory, new System.Text.UTF8Encoding(false));
+            return new { home = directory };
+        });
+        Sync(uninstall, "cleanup", "移除已登记的规则并按确认清理站点配置", ["location-file!", "expected-home!", "remove-rules?", "remove-data?", "report-path"], (s, v) =>
+        {
+            if (Process.GetProcessesByName("AgentRelay.Desktop").Length > 0)
+                throw new RelayException("uninstall_app_running", "请先从托盘退出 Agent Relay，再重新执行数据清理。", 3);
+            return new { rules_removed = UninstallCleanup.Apply(v.Get("location-file"), Environment.GetEnvironmentVariable("RELAY_HOME"), s.Home,
+                v.Get("expected-home"), v.Flag("remove-rules"), v.Flag("remove-data")) };
+        });
         var agent = Group("agent", "Agent 注册与只读发现");
         Sync(agent, "discover", "列出候选路径；不登记、不修改配置", [], (s, _) => s.Discover());
         Sync(agent, "list", "列出已登记 Agent", [], (s, _) => s.Agents());

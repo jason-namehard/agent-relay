@@ -67,7 +67,7 @@ public partial class MainWindow
             if (choice.ShowDialog() != true) { reviewCancelled = true; return Task.CompletedTask; }
             if (choice.Choice == "manual") return Edit(null);
             Clipboard.SetText(service.AgentSetupPrompt(relayCommand: AgentEntryDialog.ResolveRelayCommand()));
-            ThemedMessageBox.Show(this, T("Setup prompt copied. Paste it into a new conversation with the Agent you want to register. It will inspect its calling method and fill Relay directly. This creates a new node and does not overwrite the selected Agent."),
+            ThemedMessageBox.Show(this, T("Setup prompt copied. Paste it into a new conversation with the Agent you want to register. It will inspect its calling method and fill Relay directly. This creates a new node and does not overwrite the selected Agent.") + "\n\n" + T("Optional handoff rule: after adding an Agent, select it and choose Install handoff rule. Relay will show the one-line rule and ask before changing its instruction file. The detailed guidance is read only when the Agent follows the rule."),
                 T("One-click setup"), MessageBoxButton.OK, MessageBoxImage.Information);
             return Task.CompletedTask;
         }), "PrimaryButtonStyle", "Plus");
@@ -131,6 +131,13 @@ public partial class MainWindow
             header.Children.Add(names);
             details.Children.Add(header);
 
+            var rules = Group(details, "Handoff rule");
+            var registration = service.GuidanceRegistrations().SingleOrDefault(r => r.AgentId == id);
+            var state = registration is null ? T("Not installed") : string.Format(System.Globalization.CultureInfo.CurrentUICulture, T("Recorded installation: {0}"), registration.InstructionFile);
+            var ruleRow = SettingRow(rules, "Instruction file", state + "\n" + T("Install the rule in the instruction file your host actually loads. The one-line rule uses a little context; details are read on demand. Existing sessions may need to reread the file or restart."));
+            RowAction(ruleRow, "Install handoff rule", () => { InstallRules(Selected().AgentId); return Task.CompletedTask; });
+            Styled(RowAction(ruleRow, "Remove handoff rule", () => { service.RemoveGuidance(Selected().AgentId); return Task.CompletedTask; }), "GhostButtonStyle");
+
             var bridge = Group(details, "Agent bridge");
             var bridgeState = new StackPanel { Orientation = Orientation.Horizontal };
             bridgeState.Children.Add(new Ellipse { Width = 8, Height = 8, Fill = row.BridgeBrush, Margin = new(0, 0, 8, 0), VerticalAlignment = VerticalAlignment.Center });
@@ -167,11 +174,6 @@ public partial class MainWindow
             Styled(copy, "GhostButtonStyle"); copy.Content = T("Copy diagnostic prompt");
             bridge.Children.Add(health);
             AddModelDefaults(details, id);
-
-            var rules = Group(details, "Handoff rule");
-            var ruleRow = SettingRow(rules, "Instruction file", "Install the rule in the instruction file your host actually loads. The one-line rule uses a little context; details are read on demand. Existing sessions may need to reread the file or restart.");
-            RowAction(ruleRow, "Install handoff rule", () => { InstallRules(Selected().AgentId); return Task.CompletedTask; });
-            Styled(RowAction(ruleRow, "Remove handoff rule", () => { service.RemoveGuidance(Selected().AgentId); return Task.CompletedTask; }), "GhostButtonStyle");
 
             var discovery = Group(details, "Session discovery");
             var current = service.DiscoverySource(id);

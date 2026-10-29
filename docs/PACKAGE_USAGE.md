@@ -1,6 +1,6 @@
 # Agent Relay 发布包
 
-Windows 安装版可通过开始菜单启动；便携包解压后运行 `gui/AgentRelay.Desktop.exe`。`TryDemo.cmd` 是隔离演示，不会调用真实 Agent。安装版卸载只移除程序文件，保留中转站和用户数据。
+Windows 安装版可通过开始菜单启动；便携包解压后运行 `gui/AgentRelay.Desktop.exe`。`TryDemo.cmd` 是隔离演示，不会调用真实 Agent。安装版在系统应用列表卸载，默认保留数据；可选择清除当前站点的配置与任务记录。
 
 在任务页面选择“新建任务”，再选自动或手动传递。自动传递直接填写工作要求、选择会话；持续验收可选择最终验收方，标准可手动填写或由发起方 Agent 拟定，也可以不设验收次数上限。最终验收方通过且无未解决问题时任务完成。Relay 发送标准并记录 Agent 回执，不独立验证工作质量；自动调用可能产生模型费用。
 
@@ -8,13 +8,13 @@ Windows 安装版可通过开始菜单启动；便携包解压后运行 `gui/Age
 
 Agent 管理只有一个用户名称；一键配置复制的是独立新建请求，不覆盖当前选中节点。编辑已有节点请使用“编辑 Agent”。CLI 调用配置为分区字段，支持原生 JSON/JSONL/文本适配；导入方案不启动模型。手动 CLI 发送不要求测试；自动投递要求探针（含写文件检查）通过并确认可见，或一次真实交接写回了回执。真实调用可能产生费用；已有会话必须明确选择，执行前核实存储，不能用最近会话替代。
 
-规则安装只在用户确认后修改所选宿主指令文件，常驻一行仍占少量上下文。如果不再使用交接规则，请先在设置移除，或用 `guidance remove --all`；卸载不会自动修改宿主指令文件。
+规则安装只在用户确认后修改所选宿主指令文件，常驻一行仍占少量上下文。卸载时可以选择移除当前站点登记的规则，或在设置中移除；便携版也可用 `guidance remove --all`。
 
 Windows 安装版自带运行库；便携 CLI/MCP 包需要 .NET 10 runtime。发布包不包含目标 Agent、账号或桥接程序。JSON 配置不等于可调用接口，真实 CLI 探针可能产生费用。
 
 任务详情允许取消、确认删除记录以及人工标记完成。删除不直接删文件，后续仍可按保留期清理；人工完成不验证 Agent 的工作，也不停止已运行的 Agent。CLI 结果不确定时先检查真实会话，不重复发送同一轮。
 
-Windows 安装版可在安装目录用 PowerShell 调用 `./relay.exe --help`，MCP 入口是 `mcp/relay-mcp.exe`。便携 CLI/MCP 包仍使用 `dotnet relay.dll` 和 `dotnet mcp/relay-mcp.dll`，需要 .NET 10 runtime；MCP 不实现 `--help`。详细上手见 `GETTING_STARTED.md`。
+Windows 安装版可在安装目录下的 `app` 目录中调用 `./relay.exe --help`，MCP 入口是 `app/mcp/relay-mcp.exe`。便携 CLI/MCP 包仍使用 `dotnet relay.dll` 和 `dotnet mcp/relay-mcp.dll`，需要 .NET 10 runtime；MCP 不实现 `--help`。详细上手见 `GETTING_STARTED.md`。
 
 文件回执位于任务的隐藏 `.relay` 子目录，GUI 打开时观察事件，启动和刷新补读。所有进程关闭后无后台监控。迁移要求没有未完成任务，复制文件与账本后切换，旧站备份不自动清理；无 pending 的迁移校验不会假称成功。
 

@@ -26,6 +26,6 @@ git push origin v0.1.0-preview.1
 
 在 Windows x64 上先安装 [Inno Setup](https://jrsoftware.org/isinfo.php)，然后用 `pwsh ./scripts/build-installer.ps1 -InnoCompiler <ISCC.exe 路径> -OutputDirectory <输出目录>` 构建 `AgentRelay-v<Version>-windows-x64-setup.exe`。安装版将 CLI、MCP、GUI 和通知运行库一并打包；脚本验证运行时构建的依赖与锁定的项目依赖一致，并检查安装内容不包含账本或认证文件。
 
-安装器按当前用户安装；卸载只移除程序文件，保留中转站与用户数据。安装前若已在宿主指令文件中安装交接规则，卸载前请在软件设置中移除不再需要的规则。没有代码签名时，Windows 可能提示未知发布者。
+安装器按当前用户安装；卸载默认保留数据，并可选择移除当前站点登记的规则、清除账本与偏好。工作区文件保留；其他站点规则需分别处理。没有代码签名时，Windows 可能提示未知发布者。
 
 标签工作流生成两个 ZIP；如果发布包含 Windows 安装版，还需将经验证的安装器添加到同一 Release。正式版本不标为预览版。

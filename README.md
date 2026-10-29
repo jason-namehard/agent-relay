@@ -7,7 +7,7 @@
 
 A local handoff desk for people working with several AI agents. Pass a file from A to B, see who needs to act next, and finish without unnecessary back-and-forth.
 
-The public download is `0.1.0-preview.22`; the source contains the redesigned `0.1.0` desktop candidate.
+The public download is `0.1.0-preview.22`; the source contains the redesigned `0.1.1` desktop candidate.
 
 ## Quick start — Windows x64
 

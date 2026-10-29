@@ -23,6 +23,9 @@ public sealed class AgentSetupChoiceDialog : Window
         var intro = new TextBlock { Text = T("Choose how to add it. If you are not sure, let the Agent set itself up."), TextWrapping = TextWrapping.Wrap, FontSize = 12.5, Margin = new(0, 0, 0, 18) };
         intro.SetResourceReference(TextBlock.ForegroundProperty, "MutedBrush");
         body.Children.Add(intro);
+        var ruleNote = new TextBlock { Text = T("Optional handoff rule: after adding an Agent, select it and choose Install handoff rule. Relay will show the one-line rule and ask before changing its instruction file. The detailed guidance is read only when the Agent follows the rule."), TextWrapping = TextWrapping.Wrap, FontSize = 12.5, Margin = new(0, 0, 0, 18) };
+        ruleNote.SetResourceReference(TextBlock.ForegroundProperty, "MutedBrush");
+        body.Children.Add(ruleNote);
 
         void Option(string name, string icon, string title, string description, string choice, bool recommended)
         {

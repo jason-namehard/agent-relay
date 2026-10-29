@@ -8,6 +8,14 @@ internal static class AgentEntryUiText
         Add("New Agent", "新建 Agent", "新增 Agent", "Agent を作成", "Agent 만들기", "Nuevo agente");
         Add("Delete Agent", "删除 Agent", "刪除 Agent", "Agent を削除", "Agent 삭제", "Eliminar agente");
         Add("One-click setup", "一键配置", "一鍵設定", "ワンクリック設定", "원클릭 설정", "Configuración con un clic");
+        Add("Optional handoff rule: after adding an Agent, select it and choose Install handoff rule. Relay will show the one-line rule and ask before changing its instruction file. The detailed guidance is read only when the Agent follows the rule.",
+            "可选交接规则：添加 Agent 后，选中它并点击“安装交接规则”。Relay 会先展示一行规则，确认后才修改其指令文件；Agent 遵循规则时才读取详细指引。",
+            "可選交接規則：新增 Agent 後，選取它並點擊「安裝交接規則」。Relay 會先顯示一行規則，確認後才修改其指令檔；Agent 遵循規則時才讀取詳細指引。",
+            "任意の引き継ぎルール：追加後に Agent を選び「引き継ぎ規則を追加」を押します。Relay は一行のルールを提示し、確認後に指示ファイルを変更します。詳細は Agent がルールに従ったときに読みます。",
+            "선택 사항인 전달 규칙: Agent를 추가한 뒤 선택하고 전달 규칙 설치를 누르세요. Relay는 한 줄 규칙을 보여 주고 확인 후 지침 파일을 수정합니다. 상세 지침은 Agent가 규칙을 따를 때 읽습니다.",
+            "Regla de entrega opcional: después de añadir un agente, selecciónalo y elige instalar la regla. Relay mostrará la línea y pedirá confirmación antes de modificar el archivo. El agente leerá los detalles solo al seguir la regla.");
+        Add("Not installed", "未安装", "未安裝", "未導入", "설치되지 않음", "No instalada");
+        Add("Recorded installation: {0}", "已登记安装路径：{0}", "已登記安裝路徑：{0}", "登録済みの導入先: {0}", "기록된 설치 위치: {0}", "Instalación registrada: {0}");
         Add("Use one name per Agent. Configure it directly with a prompt, or enter the fields yourself.",
             "每个 Agent 只需一个名称。用一键配置让 Agent 直接登记，也可按字段手动填写。", "每個 Agent 只需一個名稱。可一鍵設定直接登記，或按欄位手動填寫。",
             "Agent ごとに名前は一つです。ワンクリック設定か手動入力で登録します。", "Agent마다 이름 하나만 사용합니다. 원클릭 설정이나 직접 입력으로 등록하세요.", "Un nombre por agente. Regístralo con un prompt o introduce los campos manualmente.");
