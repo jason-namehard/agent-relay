@@ -12,16 +12,16 @@
 
 同时用几个 Agent 时，工作通常靠复制粘贴推进：把请求贴进一个会话，等它回答，再把答案抄到另一个会话。很快你就分不清哪个会话收到了什么、对方有没有接手、文件变了是不是就代表做完了。Agent Relay 把每次交接记成本机中转站里的一条任务（SQLite 账本），在 Windows 桌面程序中展示进度，并把「消息已提交」和「任务已凭回执完成」分开。Agent 和分工由你决定，Relay 只需要知道谁交给谁。
 
-当前版本为 `0.1.2`，提供 Windows x64 桌面安装包。CLI 与 stdio MCP 有 Windows 和 Linux 的 CI 覆盖。没有 macOS 桌面包、云端中转站，也没有在所有进程关闭后继续运行的后台服务。
+当前版本为 `0.1.3`，提供 Windows x64 桌面安装包。CLI 与 stdio MCP 有 Windows 和 Linux 的 CI 覆盖。没有 macOS 桌面包、云端中转站，也没有在所有进程关闭后继续运行的后台服务。
 
 ## 快速开始
 
 ### Windows 安装包
 
-从 [发布页](https://github.com/jason-namehard/agent-relay/releases/tag/v0.1.2) 下载 Windows x64 安装包，也可以在 PowerShell 运行：
+从 [发布页](https://github.com/jason-namehard/agent-relay/releases/tag/v0.1.3) 下载 Windows x64 安装包，也可以在 PowerShell 运行：
 
 ```powershell
-Invoke-WebRequest 'https://github.com/jason-namehard/agent-relay/releases/download/v0.1.2/AgentRelay-v0.1.2-windows-x64-setup.exe' -UseBasicParsing -OutFile 'AgentRelay-setup.exe'
+Invoke-WebRequest 'https://github.com/jason-namehard/agent-relay/releases/download/v0.1.3/AgentRelay-v0.1.3-windows-x64-setup.exe' -UseBasicParsing -OutFile 'AgentRelay-setup.exe'
 Start-Process '.\AgentRelay-setup.exe' -Wait
 ```
 
@@ -32,7 +32,7 @@ Start-Process '.\AgentRelay-setup.exe' -Wait
 & "$env:LOCALAPPDATA\Programs\Agent Relay\app\relay.exe" --help    # app\mcp\relay-mcp.exe 同样是自包含的
 ```
 
-按 0.1.1 和 0.1.2 源码分别构建的隔离安装包已通过覆盖升级测试。卸载测试覆盖了保留数据、移除规则、清除账本、规则损坏及位置记录缺失；两个原始交付安装包之间的升级尚未在隔离虚拟机中实测。升级前请先从托盘退出 Agent Relay。
+按 0.1.1 和 0.1.2 源码分别构建的隔离安装包已通过覆盖升级测试。卸载测试覆盖了保留数据、移除规则、清除账本、规则损坏及位置记录缺失；原始交付安装包之间的升级尚未在隔离虚拟机中实测。升级前请先从托盘退出 Agent Relay。
 
 ### 旧预览版 `0.1.0-preview.22`
 

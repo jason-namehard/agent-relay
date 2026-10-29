@@ -854,11 +854,18 @@ internal static class Program
 
     private static async Task CheckTaskFooterLayout(MainWindow window,string taskId)
     {
+        var previousWidth=window.Width;
+        window.Width=960;window.UpdateLayout();
         var navigation=(ListBox)window.FindName("Navigation");
         foreach(var language in new[]{"en","ja","es","zh-CN"})
         {
             await SetLanguage(window,language);
             navigation.SelectedItem=navigation.Items.Cast<ListBoxItem>().Single(i=>(string)i.Tag=="Home");SelectTask(window,taskId);window.UpdateLayout();
+            // Lay out the actual window content at the documented default size, independently
+            // of the display resolution supplied by the Windows runner.
+            var root=(FrameworkElement)window.FindName("Root");
+            root.Measure(new Size(1200,780));
+            root.Arrange(new Rect(0,0,1200,780));
             var identity=Find<TextBlock>(window,"TaskFooterIdentity");var actions=Find<WrapPanel>(window,"TaskFooterActions");
             var identityBounds=identity.TransformToAncestor(window).TransformBounds(new Rect(0,0,identity.ActualWidth,identity.ActualHeight));
             var actionBounds=actions.TransformToAncestor(window).TransformBounds(new Rect(0,0,actions.ActualWidth,actions.ActualHeight));
@@ -867,10 +874,13 @@ internal static class Program
             {
                 var buttons=actions.Children.OfType<Button>().ToArray();
                 var tops=buttons.Select(button=>button.TransformToAncestor(actions).Transform(new Point(0,0)).Y).ToArray();
-                Check(buttons.Length==4 && tops.Max()-tops.Min()<1,"Task footer actions fit on one row at the default window size: "+language);
+                Check(Math.Abs(root.ActualWidth-1200)<1 && buttons.Length==4 && tops.Max()-tops.Min()<1,
+                    $"Task footer actions fit on one row at the default window size: {language}; root width={root.ActualWidth}, button tops={string.Join(",",tops)}");
                 Check(AutomationProperties.GetName(buttons[^1])==UiText.Translate("Delete task",language) && buttons[^1].ToolTip?.ToString()==UiText.Translate("Delete task",language),"Compact delete action remains accessible: "+language);
             }
+            root.InvalidateMeasure();window.UpdateLayout();
         }
+        window.Width=previousWidth;window.UpdateLayout();
         navigation.SelectedItem=navigation.Items.Cast<ListBoxItem>().Single(i=>(string)i.Tag=="Settings");window.UpdateLayout();
         var languageChoice=Find<ComboBox>(window,"LanguageChoice");
         Check(AutomationProperties.GetName(languageChoice).Contains("简体中文",StringComparison.Ordinal),"Language selector exposes its current value in its accessible name");
